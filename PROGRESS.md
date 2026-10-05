@@ -2,7 +2,14 @@
 
 - Milestone: M0 — Foundation (complete) · M1 — Core domain (complete) · **M2 — Adapters (in progress)**
   Branch: main
-- Last completed step: **step 13 — the `.tabula` reader, the dry run and the migration.** A legacy
+- Last completed step: **step 14 — the settings schema, its persistence, and the real settings tab.**
+  One schema file is the only place a setting is described; `data.json` is read by a validator that defaults
+  what it cannot read and keeps what it does not know; the save path debounces, writes only on a real change,
+  and never writes the passthrough keys it did not come up with. The tab is Obsidian 1.13's **declarative**
+  surface (`PluginSettingTab.getSettingDefinitions()`), which resolves the lint warning that has been standing
+  since step 04 — `eslint .` is now **0 errors, 0 warnings** for the first time.
+
+- Last completed step before that: **step 13 — the `.tabula` reader, the dry run and the migration.** A legacy
   `.tabula` file is read into a neutral, read-only model (v1 and v2 detected from content, tolerant of
   BOM/CRLF/trailing space/zero rows/unknown types/orphaned option values, **never** throwing); the dry run
   turns it into a report a dialog can show; the migration is ordinary ops — one `importBlock` per table, one
@@ -10,7 +17,7 @@
   and the `.tabula` bytes are untouched. Seven committed fixtures, 6 snapshots of the parse result and 6 of the
   report.
 
-- Last completed step before that: **step 12 — `BasesSource`, the real Bases view, and note creation.** Rows
+- Before that: **step 12 — `BasesSource`, the real Bases view, and note creation.** Rows
   and values come from a real Bases view (keyed by `entry.file.path`), edits go out through step 11's queue,
   and the optimistic overlay is what the grid reads in between. The whole **data path is ASSUMED**: there is no
   real vault here, and the step's real-vault observation is not produced (see the step-12 block below).
@@ -20,6 +27,157 @@
   `processFrontMatter` call per file per flush, a promise chain per file so two writers never overlap, a
   250 ms debounce with a `flush()` that bypasses it, per-file failure reporting, and an overlay that holds
   pending values only.
+
+---
+
+**Step 14 — the settings schema, its persistence, and the real settings tab.**
+
+- Verified (`bun run check` — raw): `tsc --noEmit` clean; `eslint .` → **0 errors, 0 warnings** (the step-04
+  `prefer-setting-definitions` warning is resolved by adopting the 1.13 declarative API, not suppressed);
+  `brand-gate: OK — 61 permitted match(es), 0 violations` (after it caught one real violation, below);
+  `manifest:check: OK`; `All matched files use Prettier code style!`; **948 tests across 24 files**
+  (was 912 / 23: +22 in `tests/unit/settings-load.test.ts`, +20 in `tests/dom/settings-tab.test.ts`, and
+  `plugin-smoke` +1 manifest field); `bundle-size: OK` — `main.js raw 68920 bytes (67.30 KB)`
+  (**+16173 B / +3.88 KB gzip** over step 13: the settings schema, validator, store, tab and diagnostics),
+  `gzip 21985 bytes (21.47 KB)`, `styles.css !important check: clean`. Coverage: all files **91.15 / 89.72**;
+  `src/plugin/settings` **86.54** (`diagnostics.ts` 96.22, `schema.ts` / `load.ts` / `save.ts` / `tab.ts`
+  between 88 and 100), `TablifySettingTab.ts` **18.18** — the class is the Obsidian-facing half and only
+  Obsidian constructs it; the parts of that file that carry logic are exported and tested (below).
+
+- The settings inventory (path → default → what changing it does):
+
+  | Path | Default | Row |
+  |---|---|---|
+  | `rows.targetFolder` | `''` (vault root) | Folder for new notes — where a created note is written |
+  | `rows.filenameTemplate` | `'{{Name}}'` | File name template — `{{Column}}`, falling back to `Row 1`, `Row 2` |
+  | `rows.dateFormat` | `'iso'` | Date format — display only; the note keeps the same value |
+  | `import.warnOnLargeImport` | `true` | Warn before a large import |
+  | `import.largeImportThreshold` | `250` (range 10–5000) | Large import threshold — hidden while the warning is off |
+  | `import.inferTypes` | `true` | Detect column types |
+  | `import.clipboardPasteMode` | `'expand'` | Pasting a block — grow / fill / ask |
+  | `appearance.followObsidianTheme` | `false` | Follow my Obsidian theme — the one host-theme switch |
+  | `appearance.defaultRowHeight` | `'medium'` | Row height for **new** views (a view's own height lives in `.base`) |
+  | `appearance.motionPreference` | `'system'` | Motion — follow the system reductions |
+  | `legacy.showMigrationEntryPoints` | `true` | Show the legacy import entries |
+  | `advanced.logLevel` | `'off'` | Log level — silent unless asked |
+  | `advanced.experimental` | `{}` (empty) | Experimental features — hidden until a flag exists |
+  | — (no value) | — | Version (read-only line) · Diagnostics (button) |
+
+  `docs/01` names the 250-row threshold; every other default is this step's own choice, recorded here so the
+  next step reads one table rather than four files.
+
+- The migration table (item 6), each case as a test:
+  1. `{}` → `DEFAULT_SETTINGS`, no warning, `migratedFrom: 0` (no version field **is** version 0; a missing
+     file is the different case and reports nothing).
+  2. a partial file (`{rows:{targetFolder}}`) → that one value stored, everything else at its default, no
+     warning: an absent key is what a fresh install looks like, not a mistake.
+  3. a wrong type (`largeImportThreshold: 'many'`, `warnOnLargeImport: 'yes'`, `defaultRowHeight: 'enormous'`)
+     → three defaults and three warnings, in schema order, e.g. *“Warn before a large import” keeps its
+     default (on): the stored value expected true or false.* and *… expected one of short, medium, tall.*
+  4. a number out of range (`999999`) → the default, and *… expected a number between 10 and 5000.*
+  5. unknown keys (`somethingNewer`) → kept in `passthrough`, warned, and present in the payload after a real
+     load → set → debounce → flush cycle.
+  6. `version: 0` → `migratedFrom: 0`, values untouched, `MIGRATIONS[0]` asserted to be pure (same input,
+     same output); `version: 99` → nothing changed, nothing thrown, two warnings (the newer-version notice and
+     the unknown key), and the payload keeps `futureSection` while writing our own `version`.
+  Plus: a non-object file (`null`, `'nonsense'`, `42`, `[1,2]`) → defaults, never a throw.
+
+- The `passthrough` behaviour, implemented and asserted: `loadSettings` splits the **top level** only —
+  `version`, `rows`, `import`, `appearance`, `legacy`, `advanced` are ours, and every other key is copied
+  verbatim into `passthrough`, warned about once, and merged back by `payloadFor` **before** our own `version`
+  is written last. The store can never set a passthrough key: `set()` resolves the path through
+  `settingRowFor` and refuses anything the schema does not declare (asserted for a real path, a made-up path,
+  and an internal `__warning.0` key).
+
+- **Three things the tooling caught, fixed in the product rather than the test** — the reason this step is
+  worth its own block:
+  1. **The brand gate fired on real product code**: `src/plugin/settings/schema.ts` said “Airtable-style” in a
+     comment about what may never be stored. Removed — the token does not appear in `src/**` at all, and the
+     gate is what proved it.
+  2. **`obsidianmd/no-unsupported-api`**: `SettingSliderControl.displayFormat` is **`@since 1.13.1`** while
+     this plugin's `minAppVersion` is 1.13.0. The field is gone; the slider's unit and range now live in the
+     row's description (*“The row count, from 10 to 5000, …”*), which is also searchable. The group-level
+     `search` field (`@since 1.13.1` as well) was removed for the same reason, unprompted by the linter.
+  3. **`consistent-type-assertions` × 5 + two `no-unsafe-assignment`**: the defaults were written with `as`
+     on five enum values, and `Reflect.get` returns `any`, which is an unsafe assignment even into `unknown`.
+     Both are gone: the defaults rely on the annotation for contextual typing, and `readPath`/`writePath` walk
+     objects through an `isRecord` guard and an index access, with `containerOf` shared by both.
+  4. A behavioural bug the tests found before the gate did: `set()` notified listeners for a value **equal** to
+     the stored one, so a slider dragged back to where it started re-rendered the tab. `set()` now compares
+     first: equal value → accepted, no notification, no dirty flag, no write.
+  5. The sandbox restore stripped the **byte-order mark** from `tests/fixtures/tabula/crlf-bom.tabula` — the
+     fixture's entire purpose. Restored from git, and `tabula-parse.test.ts` now asserts the fixture's bytes
+     (`charCodeAt(0) === 0xfeff`, contains `\r\n`, not `\n\r`) before asserting the parse, so a tool that
+     tidies the file away fails the test instead of making it vacuous. This is step 13's file, fixed here.
+
+- Decisions and deviations worth recording:
+  1. **The tab is declarative (`getSettingDefinitions()`), not `Setting().addToggle()`.** `prompts/step-14`
+     item 4 names the imperative controls; the API marks `display()` **deprecated since 1.13.0** and calls it
+     only when `getSettingDefinitions()` returns an empty array, `minAppVersion` is 1.13.0, and the project's
+     own lint rule (`obsidianmd/settings-tab/prefer-setting-definitions`) asked for exactly this in step 04.
+     Writing both renderers would mean two places to keep in step for every future setting — the thing the
+     schema exists to prevent. There is **no `display()` override at all** (asserted), so the declarative path
+     is the only path.
+  2. **The tab's logic lives in `src/plugin/settings/tab.ts`, which does not import `obsidian`.** The rows,
+     the visibility predicates, the control mapping, the validators, the Diagnostics action and the versions
+     line are all testable without a browser — and `renderFor` is the seam the tests drive, so what is asserted
+     is the function the definition itself calls. `SettingSurface`/`ToggleSurface` are the narrow interfaces
+     those callbacks declare: a real `Setting` satisfies them, and a test can build one without an assertion.
+  3. **The class's logic is exported and tested; its delegations are not.** `settingsOf`, `isSettings` and
+     `writeSetting` are exported from `TablifySettingTab.ts` and asserted against a hand-built host (defaults
+     for a store that has nothing, a schema-only path guard, the value passed through unchanged). What remains
+     uncovered is the constructor and three one-line delegations, which only Obsidian calls — reported as
+     **ASSUMED**, like every DOM-facing surface in this project so far.
+  4. **The debounce is 500 ms, and the number is a named constant.** No doc names an interval for plugin
+     settings; the write queue's 250 ms is tuned for typing and this is a click path. `flush()` bypasses it,
+     `dispose()` drops it, and a refused write keeps the value in memory with the dirty flag back on.
+  5. **Diagnostics has a secrets filter, not a promise.** `looksSecret`/`redactedSettings` replace any
+     credential-looking key with `"<removed>"` and a test proves the filter fires — so when step 25 adds a
+     sync section, the button cannot leak it even by accident. The blob carries versions, the settings, and a
+     **count** of notes: no note text, no file names, no folder paths.
+  6. **The versions row shows two versions, not three.** “The version running now” is not public API
+     (step 10's finding, recorded in `spike/bases-path/FINDINGS.md`), so the line reads
+     `Tablify 0.1.0 · Obsidian 1.13.0 or newer` — true, and it does not pretend to know more.
+
+- Findings worth keeping (the docs did not say, or said differently):
+  1. **`docs/02` §settings does not exist.** The step's “read first” names a section that is not in the file
+     (its neighbours are §Store, §Grid rendering, §Performance budget). The placement rule used here came from
+     `docs/03` §view config (per-view state in `.base`) and `docs/01` §views (row height/density are *view*
+     options), and it is written into `schema.ts` as a comment. *(reported, not applied)*
+  2. **`docs/01` §settings also does not exist**, and `docs/01` names only one settings default (the 250-row
+     threshold). The remaining twelve defaults are this step's, listed above for review.
+  3. Unchanged: `docs/02` §Rows become notes needs the “`createFileForView` is single-row only” line, and
+     step 10's three `FINDINGS.md` corrections are still unapplied.
+
+- Open questions for the human:
+  1. **Twelve defaults are choices, not quotations** — the table above is the list. Anything to change before
+     step 16 reads them?
+  2. (unchanged) **Does anything ever write `.tablify/migrations/<timestamp>.json`**, or does the dry-run
+     report replace it?
+  3. (unchanged) **`empty.tabula` has nothing to migrate** — should the dialog offer it at all?
+  4. (unchanged) **`docs/01` §in scope** needs the missing §undo paragraph (depth 60, one step per action, the
+     menu wording, no keystroke coalescing).
+  5. (unchanged) **`docs/02` §Store's `Command`/`GridStore` sketch** is behind the implemented shape, and
+     step 13 leaned on that shape.
+  6. (unchanged) `docs/02` §Query and `docs/01` are behind the query layer (step 08, Findings 1–3);
+     `@standard-schema/spec` as a types-only devDependency or the local declaration; `docs/04` has no
+     §cell-rendering section; `attachment`: `[[link]]` or plain path; the layout-guard warning; the banned word
+     in `docs/09` line 33 and the three candidate descriptions.
+
+- Next step: `prompts/step-15-tokens-css-and-contrast-gate.md` — `src/styles/{tokens,brand,grid}.css` with the
+  three token layers, the assembled `styles.css` entry, `scripts/contrast.ts` (a port of `tools/contrast.js`
+  and its `@contrast` convention) and `scripts/css-gate.ts`, both wired into `check` after `build`, plus
+  `tests/unit/tokens.test.ts`. The palette values come from `prototype/css/tokens.css` (the identity set), and
+  the gate must pass in light, dark and host mode.
+
+- Files touched in **step 14**: new — `src/plugin/settings/{schema,load,save,tab,diagnostics}.ts`,
+  `tests/unit/settings-load.test.ts`; changed — `src/plugin/settings/TablifySettingTab.ts`,
+  `src/plugin/main.ts`, `tests/mocks/obsidian.ts` (Setting `addToggle`/`controlEl`, `SettingGroup`,
+  `PluginSettingTab`'s five declarative members, `Plugin.loadData`/`saveData` + app.vault),
+  `tests/dom/settings-tab.test.ts`, `tests/unit/plugin-smoke.test.ts`,
+  `tests/unit/tabula-parse.test.ts` (the fixture-bytes assertion, over a step-13 file), `PROGRESS.md`.
+  Nothing outside `src/plugin/**`, `tests/**` and `PROGRESS.md` — in particular the `.base`-owned per-view
+  settings were left alone, and no field of `data.json` holds one.
 
 ---
 

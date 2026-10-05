@@ -3,6 +3,7 @@ import { Modal, Notice, Plugin } from 'obsidian';
 import { TablifyView } from './TablifyView';
 import { KEY_BINDINGS } from './help/keyBindings';
 import { TablifySettingTab } from './settings/TablifySettingTab';
+import { createSettingsStore } from './settings/save';
 
 /** The view type id Bases stores in a `.base` file. Public contract: never change it after release. */
 export const TABLIFY_VIEW_TYPE = 'tablify-grid';
@@ -106,8 +107,42 @@ export default class TablifyPlugin extends Plugin {
 			},
 		});
 
-		// Plugin.addSettingTab(settingTab: PluginSettingTab): void — obsidian.d.ts, @since 0.9.7.
-		this.addSettingTab(new TablifySettingTab(this.app, this));
+		// The settings store owns `data.json`: one reader, one writer, one debounce. `loadData`/`saveData`
+		// (obsidian.d.ts @since 0.9.7) are the only paths to the file, and the store is what holds the
+		// passthrough bag that keeps a newer version's keys intact. It is disposed with the plugin, so a
+		// pending write cannot outlive the view.
+		const settings = createSettingsStore({
+			persistence: {
+				read: () => this.loadData(),
+				write: (data) => this.saveData(data),
+			},
+			onError: (error) => {
+				const detail = error instanceof Error ? error.message : 'unknown error';
+				new Notice(`Tablify: could not save the settings (${detail}).`);
+			},
+		});
+		this.register(() => {
+			settings.dispose();
+		});
+
+		// Plugin.addSettingTab(settingTab: PluginSettingTab): void — obsidian.d.ts, @since 0.9.7. The tab
+		// renders from the schema on every display; `update()` (SettingTab.update(), @since 1.13.0) is what
+		// re-renders it once the file has been read, so the one frame before the load resolves shows defaults
+		// and is then corrected rather than left wrong.
+		const settingsTab = new TablifySettingTab(this.app, this, {
+			store: settings,
+			pluginVersion: this.manifest.version,
+			minAppVersion: this.manifest.minAppVersion,
+			noteCount: () => this.app.vault.getMarkdownFiles().length,
+			warnings: () => settings.warnings(),
+			warningsShown: () => {
+				settings.clearWarnings();
+			},
+		});
+		this.addSettingTab(settingsTab);
+		void settings.load().then(() => {
+			settingsTab.update();
+		});
 
 		// Plugin.addStatusBarItem(): HTMLElement — obsidian.d.ts, @since 0.9.7. The text stays empty
 		// until a mounted view has something true to report (step 17); the class is the styling hook, so

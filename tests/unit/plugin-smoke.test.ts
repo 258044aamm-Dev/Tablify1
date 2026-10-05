@@ -8,7 +8,7 @@ import { noticeLog, openedModals, Plugin } from '../mocks/obsidian';
 /** Load the plugin against the double, exactly as Obsidian would load it. */
 function loadPlugin(version = '9.9.9'): Plugin {
 	const plugin = new Plugin();
-	plugin.manifest = { version };
+	plugin.manifest = { version, minAppVersion: '1.13.0' };
 	Reflect.apply(TablifyPlugin.prototype.onload, plugin, []);
 	return plugin;
 }

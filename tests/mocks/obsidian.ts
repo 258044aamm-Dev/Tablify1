@@ -179,16 +179,28 @@ export const openedModals: Modal[] = [];
 /** Every `new Setting(...)` in a test run, in order. */
 export const createdSettings: Setting[] = [];
 
+/** The components a declarative setting render callback can ask for. */
+export type ToggleStub = {
+	value: boolean;
+	setValue(value: boolean): ToggleStub;
+	onChange(callback: (value: boolean) => void): ToggleStub;
+	/** Fires the callback as a click would, so a test drives the real change path. */
+	click(value: boolean): void;
+};
+
 /**
- * A setting row. `addText`, `addToggle`, `addDropdown` and `addButton` are deliberately absent: this
- * milestone must not offer anything to configure, and a call to a method that does not exist throws
- * instead of silently rendering nothing.
+ * A setting row. `addToggle` exists because the flags row draws one switch per experimental flag; nothing
+ * else is implemented, so a call to a control this milestone does not use throws instead of rendering
+ * nothing silently.
  */
 export class Setting {
 	readonly containerEl: ElementStub;
+	/** Where a control is placed. The versions row writes its read-only text here. */
+	readonly controlEl: ElementStub = elementStub();
 	settingName = '';
 	isHeading = false;
 	description = '';
+	readonly toggles: ToggleStub[] = [];
 
 	constructor(containerEl: ElementStub) {
 		this.containerEl = containerEl;
@@ -209,24 +221,121 @@ export class Setting {
 		this.description = desc;
 		return this;
 	}
+
+	addToggle(configure: (toggle: ToggleStub) => unknown): this {
+		let onChange: ((value: boolean) => void) | null = null;
+		const toggle: ToggleStub = {
+			value: false,
+			setValue(value) {
+				toggle.value = value;
+				return toggle;
+			},
+			onChange(callback) {
+				onChange = callback;
+				return toggle;
+			},
+			click(value) {
+				toggle.value = value;
+				onChange?.(value);
+			},
+		};
+		configure(toggle);
+		this.toggles.push(toggle);
+		return this;
+	}
 }
 
+/**
+ * The runtime half of `SettingGroup`. The real class is concrete (its constructor takes the container), and a
+ * `render` callback receives one — so a test that calls a `render` built by `settings/tab.ts` needs a value
+ * of that shape. `listEl` is a real jsdom element in the `dom` project, and the four builder methods return
+ * `this`, exactly like the class they stand in for.
+ */
+export class SettingGroup {
+	listEl: HTMLElement;
+
+	constructor(containerEl: HTMLElement) {
+		this.listEl = containerEl;
+	}
+
+	setHeading(_text: string | DocumentFragment): this {
+		return this;
+	}
+
+	addClass(..._classes: string[]): this {
+		return this;
+	}
+
+	addSetting(_cb: (setting: Setting) => void): this {
+		return this;
+	}
+
+	addSearch(_cb: (component: unknown) => unknown): this {
+		return this;
+	}
+
+	addExtraButton(_cb: (component: unknown) => unknown): this {
+		return this;
+	}
+}
+
+/**
+ * The runtime half of `PluginSettingTab`. Obsidian 1.13 renders a tab declaratively from
+ * `getSettingDefinitions()`, so the double holds the definitions the same way and lets a test drive a control
+ * through `getControlValue`/`setControlValue` — the two hooks the real app calls.
+ */
 export class PluginSettingTab {
 	readonly containerEl: ElementStub = elementStub();
+	icon = '';
+	/** How many times `update()` was called: the app re-renders through it after a load. */
+	updates = 0;
+	refreshes = 0;
 
 	constructor(_app?: unknown, _plugin?: unknown) {
 		// Real signature: PluginSettingTab(app: App, plugin: Plugin).
 	}
 
-	/** Subclasses render here; a tab that does not override it renders nothing. */
+	/** Deprecated in 1.13.0 (`obsidian.d.ts`): the declarative path does not call it. */
 	display(): void {
 		this.containerEl.empty();
+	}
+
+	getSettingDefinitions(): unknown[] {
+		return [];
+	}
+
+	getControlValue(_key: string): unknown {
+		return undefined;
+	}
+
+	setControlValue(_key: string, _value: unknown): void {
+		// The double records nothing: a subclass override is what a test asserts on.
+	}
+
+	refreshDomState(): void {
+		this.refreshes += 1;
+	}
+
+	update(): void {
+		this.updates += 1;
 	}
 }
 
 export class Plugin {
-	manifest: { version: string } = { version: '0.0.0' };
-	app: unknown = {};
+	manifest: { version: string; minAppVersion: string } = {
+		version: '0.0.0',
+		minAppVersion: '1.13.0',
+	};
+	/**
+	 * The app, as far as this plugin touches it: the vault's markdown file list (Diagnostics counts notes)
+	 * and nothing else. `loadData`/`saveData` below stand in for `data.json`.
+	 */
+	app: unknown = { vault: { getMarkdownFiles: (): unknown[] => [] } };
+	/** What `saveData` was last given, and how many times it was called. */
+	savedData: unknown = null;
+	saveCount = 0;
+	/** What `loadData` will return. `null` is what a fresh install has. */
+	loadedData: unknown = null;
 	readonly commands: { id: string; name: string; callback: () => void }[] = [];
 	readonly statusBarItems: ElementStub[] = [];
 	readonly settingTabs: PluginSettingTab[] = [];
@@ -259,6 +368,16 @@ export class Plugin {
 
 	addSettingTab(tab: PluginSettingTab): void {
 		this.settingTabs.push(tab);
+	}
+
+	loadData(): Promise<unknown> {
+		return Promise.resolve(this.loadedData);
+	}
+
+	saveData(data: unknown): Promise<void> {
+		this.savedData = data;
+		this.saveCount += 1;
+		return Promise.resolve();
 	}
 
 	registerBasesView(viewId: string, registration: ViewRegistration): boolean {

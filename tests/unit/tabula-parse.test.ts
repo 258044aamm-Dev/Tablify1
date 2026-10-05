@@ -100,6 +100,13 @@ describe('the fixtures, parsed', () => {
 
 describe('what it tolerates', () => {
 	it('reads a BOM and CRLF line endings as if they were not there', () => {
+		const text = textOf('crlf-bom');
+		// The fixture's whole point is its bytes: a byte-order mark, and CRLF line endings. A tool that
+		// "tidies" them away turns this test green and meaningless, so the bytes are asserted first.
+		expect(text.charCodeAt(0)).toBe(0xfeff);
+		expect(text).toContain('\r\n');
+		expect(text).not.toContain('\n\r');
+
 		const doc = documentOf('crlf-bom');
 		expect(doc.version).toBe(1);
 		expect(doc.tables[0]?.name).toBe('Windows file');
