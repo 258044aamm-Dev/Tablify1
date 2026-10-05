@@ -12,8 +12,9 @@
     build, `bundle-size: OK`. The suite is now **746 tests across 14 files** — the unit project is 13 files:
     `field-roundtrip` 206, `query-table` 192, `field-contract.all` 179, `property-schema` 29,
     `field-contract.text` 26, `query-legacy` 21, `pipeline` 21, `registry` 16, `fakes-contract` 16,
-    `query-document` 12, `boundaries` 12, `plugin-smoke` 7, `bases-registration` 5 (742 in the unit project;
-    the layout project adds 4 skipped-until-step-21 tests).
+    `query-document` 12, `boundaries` 12, `plugin-smoke` 7, `bases-registration` 5 — 742 in the unit project,
+    plus `settings-tab.test.ts` (4 tests, the `dom` project). The workflow's layout job still skips its
+    harness steps until step 21, so nothing about this step's numbers depends on a browser.
   - **Coverage** (`bunx vitest run --coverage`, exit 0): all files **94.78 % stmts / 91.97 % branch**;
     `core/query` **91.33 / 90.08** (ast.ts 100, evaluate.ts 88.95, parse.ts 89.86, serialize.ts 88.32);
     `core/view` **98.9 / 97.18**; `core/fieldTypes` 97.83 / 95.06; `core/format` 90.6 / 85.96;
@@ -31,6 +32,11 @@
     7.75 ms** over five runs after a warm-up (the in-repo test asserts one run stays under 50 ms; this line
     comes from a throwaway probe script, since a passing test cannot print). It is a smoke budget, not a
     benchmark.
+  - **The serialiser's fixture table** — **22 cases**, 21 of which round-trip exactly (including the
+    quotations, the anchors, a list operand, nesting, booleans, a duration and a quoted instant) and one
+    which is the documented loss: an operand no column can format is written as quoted JSON text and re-reads
+    as an unreadable fragment *with* its error. (The step-08 commit message says "an 18-AST fixture table";
+    the table holds 22 — see Findings 6.)
   - **The legacy DSL** — 20 strings from the old build's README table and its own example, each asserted row
     by row against six fixture rows, plus a test that the README's table of seven spellings is covered.
 
@@ -127,7 +133,8 @@
      adapter's job; until then, a row built by hand is the only input the pipeline has seen.
   4. **Coverage is not a proof for the uncovered lines.** They are, by inspection: `serialize`'s
      unknown-operator fallback (unreachable for the closed `FilterOpId` union), some parser recovery spans,
-     and `evaluate`'s defensive shape checks. Step 09's mutation-style review is the place to attack them.
+     and `evaluate`'s defensive shape checks. Listed here so a later step can attack them deliberately
+     instead of by accident.
 
 - Findings worth keeping (things the docs did not say, or said differently):
   1. **`prompts/step-08` cites `docs/01` §filters, §the query string, §sort and §grouping, and a table of
@@ -150,6 +157,11 @@
   5. **The lexer needed one merge rule to be able to read what the serialiser writes**: an operator followed
      by a quoted value in operand mode is one token. Without it `When:>"2026-01-01"` was unreadable — found by
      the fixture table, not by a human.
+  6. **Corrections to this step's own record.** The step-08 commit message says the round-trip fixture table
+     has "18 AST shapes"; it has 22 cases (21 exact, 1 lossy). The same message calls `query-document.test.ts`
+     "a fourth test file beyond the step's three" — correct, and it is why `query-table.test.ts` reports 192
+     tests rather than the ~150 the prompt's bullet list implies. Neither number is asserted anywhere, so
+     nothing else moved; recorded here because the commit message is immutable once pushed.
 
 - Open questions for the human:
   1. **Should `docs/02` §Query (and `docs/01`) be updated to the implemented union, grammar and context?**
@@ -164,8 +176,9 @@
      `obsidian` minor bumps. `docs/09` line 33 still contains a banned word in its description template;
      the three candidate plugin descriptions await a pick.
 
-- Next step: `prompts/step-09-ops-undo-and-selection.md` (M1 — ops, inverse ops for undo, selection ranges
-  and the clipboard matrix), after which the `src/core/**` coverage floor is the real floor and M1 closes.
+- Next step: `prompts/step-09-ops-undo-selection.md` — the operation model (every mutation as a value with an
+  inverse), the undo/redo stack, selection ranges and the clipboard matrix. It is M1's last piece: after it,
+  the `src/core/**` coverage floor is the real floor and M1 closes.
 
 - Files touched this step: new — `src/core/query/{ast,parse,serialize,evaluate}.ts`,
   `src/core/view/pipeline.ts`, `tests/unit/{query-table,query-legacy,pipeline,query-document}.test.ts`;
