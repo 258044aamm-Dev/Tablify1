@@ -1,0 +1,11 @@
+Tablify — NOTICE
+
+1. Tablify is an independent work: its code, its design system and its name were written for this project. It is not a fork of any commercial product, and it is not derived from one.
+
+2. It is inspired by, and carries attribution to, the upstream project `airtable-tabula` (https://github.com/258044aamm-Dev/airtable-tabula, originally by MehulG at https://github.com/MehulG/airtable-tabula). That project is MIT licensed; its copyright line is reproduced verbatim in LICENSE, and it remains available as the archived `.tabula` reference.
+
+3. Tablify is not affiliated with, endorsed by, or sponsored by Airtable, Anthropic, or Obsidian. No third-party brand assets, logos or wordmarks are included, reproduced or approximated, and no such affiliation is implied in this repository or in the published plugin.
+
+4. The `.tabula` file format is supported for one-way import only: existing `.tabula` files can be read into notes, and nothing is ever written back to them.
+
+5. Network use: the plugin makes no network requests until you link a remote base, and that feature ships in a later version. When it does, the only host it contacts is api.airtable.com, and it sends only what you explicitly push.

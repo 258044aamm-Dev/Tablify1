@@ -10,12 +10,14 @@
 		"typecheck": "tsc --noEmit",
 		"lint": "eslint .",
 		"lint:fix": "eslint . --fix",
+		"brand:gate": "bun scripts/brand-gate.ts",
+		"manifest:check": "bun scripts/manifest-check.ts",
 		"format": "prettier --write .",
 		"format:check": "prettier --check .",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"size": "bun scripts/bundle-size.ts",
-		"check": "bun run typecheck && bun run lint && bun run format:check && bun run test && bun run build && bun run size"
+		"check": "bun run typecheck && bun run lint && bun run brand:gate && bun run manifest:check && bun run format:check && bun run test && bun run build && bun run size"
 	},
 	"devDependencies": {
 		"@eslint/js": "9.39.5",
