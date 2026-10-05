@@ -1,187 +1,183 @@
 # PROGRESS
 
-- Milestone: M0 — Foundation (complete) · M1 — Core domain (started)             Branch: main
-- Last completed step: **step 07 — every field type, one file each, and the suites that prove them.** The
-  registry holds all **sixteen** types of the `docs/03` mapping table, in that table's order, so
-  `switch (field.type)` stays deleted; `src/core/format/` holds the genuinely cross-type logic (locale
-  numbers and their readers, ISO dates and instants, text comparison, locale digits, shape checks) as named
-  functions. The step-06 contract suite is now pointed at `allFields()`, and a second suite round-trips 181
-  real-world inputs through `parse → toYaml → parse`.
+- Milestone: M0 — Foundation (complete) · M1 — Core domain (in progress)            Branch: main
+- Last completed step: **step 08 — the query layer.** One AST, a DSL parser and serialiser, an evaluator that
+  dispatches through the registry, and the filter → search → sort → group pipeline the grid will read rows
+  from. `src/core/query/**` and `src/core/view/**` are new; nothing else moved except one field on
+  `ResolvedField` (below) and the coverage table, which now measures the whole core.
 
 - Verified (commands run, observed results):
-  - `bun run check` — **exit 0**, with the suite grown from 115 tests / 8 files to **500 tests / 10 files**:
-    `field-roundtrip` 206, `field-contract.all` 179, `property-schema` 29, `field-contract.text` 26,
-    `fakes-contract` 16, `registry` 16, `boundaries` 12, `plugin-smoke` 7, `bases-registration` 5,
-    `settings-tab` 4. `brand-gate: OK — 59 permitted match(es), 0 violations`, `manifest:check: OK`,
-    Prettier clean, `bundle-size: OK` at `main.js 3905 B raw / 1843 B gzip` — **still unchanged**: the
-    plugin does not import `src/core` yet, so the sixteen types add zero shipped bytes until step 12 wires
-    `BasesSource` to the registry.
-  - **Coverage** (`bunx vitest run --coverage`, exit 0, with the step-05 glob thresholds live at
-    85/85/85/75 for `src/core/**`): all files **95.93 % stmts / 92.27 % branch**;
-    `core/types.ts` 100 %; `core/fieldTypes` **97.83 / 94.96** (nine type files at 100 %, lowest
-    `duration.ts` 90.47 and `singleSelect.ts` 95.94); `core/format` **90.6 / 85.96** (lowest `text.ts`
-    84.78); `core/schema` 98.71 / 95.09. The floor passes with room to spare; every uncovered line is a
-    refusal path or a defensive branch, and the table names them per file.
-  - **The registry equals the `docs/03` list** — 16 ids in the mapping table's own order:
-    `text, longText, number, checkbox, date, datetime, url, email, phone, singleSelect, multiSelect, rating,
-    currency, percent, duration, attachment`, with `createdTime` and `lastModifiedTime` asserted **absent**
-    (read from `file.ctime`/`file.mtime`, P11 — not storable).
-  - **The round-trip table** — the suite reports `16 types, 181 cases, 149 canonical round-trips, 32 refused
-    cleanly, 0 exceptions`. The 32 refusals are hostile or out-of-domain inputs (`{}`, a function, a
-    5,000-character string where a number belongs, `2024-02-30`, `1,5`, `12 usd`, `50%`, `half`, `1h 30`,
-    `45 minutes`, `-5m`, `not a rating`, …), each asserted to carry a reason and its original input.
-  - **The AUDIT §8 probe, closed in code**: `{"90": 90, "45m": 2700, "2h": 7200, "1h30m": 5400}` seconds,
-    asserted for storage *and* for filtering (`matches(2700, 'is', '45m') === true`), so the old build's
-    `45m → 45 s` mis-parse cannot come back through the filter path.
-  - **Two group commits** (this step, `git log --oneline`): `feat(core): the seven scalar field types and the
-    shared format helpers`, then `feat(core): the remaining eight field types, and the registry-wide suites`.
+  - `bun run check` — **exit 0**: typecheck, lint (0 errors; one pre-existing warning on the settings tab),
+    `brand-gate: OK — 59 permitted match(es), 0 violations`, `manifest:check: OK`, Prettier clean, tests,
+    build, `bundle-size: OK`. The suite is now **746 tests across 14 files** — the unit project is 13 files:
+    `field-roundtrip` 206, `query-table` 192, `field-contract.all` 179, `property-schema` 29,
+    `field-contract.text` 26, `query-legacy` 21, `pipeline` 21, `registry` 16, `fakes-contract` 16,
+    `query-document` 12, `boundaries` 12, `plugin-smoke` 7, `bases-registration` 5 (742 in the unit project;
+    the layout project adds 4 skipped-until-step-21 tests).
+  - **Coverage** (`bunx vitest run --coverage`, exit 0): all files **94.78 % stmts / 91.97 % branch**;
+    `core/query` **91.33 / 90.08** (ast.ts 100, evaluate.ts 88.95, parse.ts 89.86, serialize.ts 88.32);
+    `core/view` **98.9 / 97.18**; `core/fieldTypes` 97.83 / 95.06; `core/format` 90.6 / 85.96;
+    `core/schema` 98.72 / 95.15; `types.ts` 100. Both new directories are above the `src/core/**` floor
+    (85/85/85/75), which is what the step's acceptance asks for.
+  - **Parser totality, property-style** — the test reports itself in its own name, because this repo forbids
+    `console.*` everywhere: `never throws and never hangs for any of the 2000 generated inputs, 1534 of which
+    are broken` and `reads back what it writes, for the 439 generated inputs that parsed cleanly`. The
+    generator is seeded (mulberry32), so a failure is reproducible; a third of its inputs are well-formed
+    filters built from valid column/value pairs, a third are glued DSL fragments, a third are raw characters
+    from the DSL's own alphabet. The totality test also asserts the walk stays under two seconds — a loop
+    that never ended would hang the run, not fail an assertion.
+  - **The pipeline's budget** — measured on this machine (Linux sandbox, Node 20, `bun`), 5,000 rows × 5
+    columns through filter + search + two-level sort + group: **11.90 ms, 7.70 ms, 7.60 ms, 8.72 ms,
+    7.75 ms** over five runs after a warm-up (the in-repo test asserts one run stays under 50 ms; this line
+    comes from a throwaway probe script, since a passing test cannot print). It is a smoke budget, not a
+    benchmark.
+  - **The legacy DSL** — 20 strings from the old build's README table and its own example, each asserted row
+    by row against six fixture rows, plus a test that the README's table of seven spellings is covered.
 
-- Two real problems the step found, both worth keeping:
-  1. **`1h30m` was refused — the same family of bug as AUDIT §8.** The unit-group reader replaced each match
-     inside the very string it was still iterating, with one shared `lastIndex`, so the second group was
-     never seen and the reader reported "a duration mixes a unit with a number that has none". The reader now
-     validates the whole string in one pass and sums it in a second; `1h30m`, `1h 30m`, `1.5h` and `45m` are
-     all anchored, and a bare number is still read in the column's own unit.
-  2. **The display form must be readable, and that decided five behaviours.** The suite asserts
-     `parse(formatDisplay(v)) === v` for every canonical value, which forced: `longText` to keep its newlines
-     (`formatDisplay` collapses nothing — wrapping is the cell renderer's business); `multiSelect` and
-     `attachment` to use the *quoted* list form in the display too, so a label containing a comma cannot
-     split into two values; `rating` to read its own star string back; `date`/`datetime` to read the
-     locale's own rendering; and `percent`/`duration` to render exactly the unit they store.
+- The grammar implemented (productions, in order):
+  1. `query := group ( 'or' group )*`
+  2. `group := unary ( ('and')? unary )*` — juxtaposition is AND, which the legacy dialect needs
+  3. `unary := 'not' unary | '(' query ')' | atom`
+  4. `atom := function | name ':' shorthand | name operandOp value | name 'is' ['not'] ( value | emptiness )`
+  5. `function := ('empty'|'notEmpty') '(' name ')' | ('startsWith'|'endsWith'|'contains') '(' name ',' value ')'`
+  6. `shorthand := ['!'] [ '~' | '>' | '>=' | '<' | '<=' | '=' | '!=' ] (value | 'empty' | 'blank')`
+  7. `value := word | quoted | number | true | false | date`, and a legacy comma list is a comma-separated
+     run of value items.
+  The lexer keeps character offsets on every token, and switches to "operand mode" after `:` and `,` — which
+  is what lets `Site:https://example.com` and `Tags:draft,urgent` lex, and what lets an operator followed by
+  a quoted value (`When:>"2026-01-01T00:00:00Z"`) stay one token.
 
 - Decisions and interpretations worth recording:
-  1. **`duration` stores seconds and renders `h:mm:ss`**, with a bare number read in `fieldOptions.unit`
-     (seconds by default, P12). Explicit units always win: `45m` is 2,700 s, never 45. A `h:mm` value whose
-     reading is genuinely ambiguous (`1:30` — 1 h 30 m or 1 m 30 s) is accepted *with a warning that names
-     both readings*, instead of being silently guessed.
-  2. **`percent` stores the number a person reads** (25 means 25 %), per `docs/03`; the sync mapper is the
-     only thing that ever sees the other convention. `toYaml` writes the bare number, so changing a symbol
-     never rewrites a note.
-  3. **`multiSelect` stores labels as a YAML list** (docs/03 chose a property over the tag namespace), with
-     case-insensitive de-duplication, first spelling wins, and a canonicalisation to the option list's
-     spelling so grouping never splits one option into two. An empty list is `null`, never `[]` — "no value"
-     has exactly one representation.
-  4. **`attachment` stores vault paths, not links.** `[[path]]`, `[[path|label]]` and `[label](path)` are all
-     *read* (the old build wrote them, and notes are hand-edited), and the canonical form written back is the
-     plain path, which Obsidian's rename does not rewrite. `docs/03` allows the link form in the file; this
-     is the deliberate, documented divergence — flag it if links should be written instead.
-  5. **`datetime` canonicalises to UTC** (`2026-10-05T09:30:00Z`, milliseconds only when they exist), so one
-     moment has one text form and a touched note shows an empty diff unless the moment changed. An input
-     carrying another offset is converted (same moment, different spelling); a value with **no** offset is a
-     wall-clock reading resolved in the vault's timezone. `date` never converts at all: it renders at UTC
-     midnight in UTC, so `2025-09-24` is 24 September at every hour in every zone.
-  6. **Every `Intl` call has a documented fallback, and the reason is recorded.** A malformed locale tag
-     makes `Intl.NumberFormat`/`Intl.DateTimeFormat` **throw** (`RangeError: Incorrect locale information
-     provided`), so rendering walks locale → `en` → a plain rendering, and `localeProblemFor` returns the
-     reason for a settings screen to show. Reading walks the same two locales, so whatever a cell displays
-     can be typed back into it.
-  7. **The readers understand locale numerals, not just locale separators.** A `bn-BD` vault renders 2026 as
-     `২০২৬` and 1,234.5 as `১,২৩৪.৫`, so digits are translated through a table derived from `Intl`
-     (`format/digits.ts`), and grouping is accepted in both Western (`1,234,567`) and Indian (`12,34,567`)
-     forms. `1,5` is still refused in an `en-GB` vault: it is a grouping by neither rule, and reading it as
-     15 would be a data-destroying guess.
-  8. **Years before 100 are handled**, because `Date.UTC(1, 0, 1)` is 1901: the calendar helpers validate
-     month lengths directly and apply the year with `setUTCFullYear`. `0001-01-01` and `9999-12-31` are both
-     in the round-trip table.
-  9. **`rating` reads its own star string** (`★★★★½` sums to 4.5) and prefers a number written after the
-     glyphs (`★★★★☆ 4.3/5` → 4.3), because the display form must be an input. Out-of-range values are
-     clamped **with a warning**, never rejected. The half is `½`, not the rarely-installed `⯨`, which is
-     still *read* for a value copied out of an older build.
- 10. **`singleSelect` treats an unknown label as input, not as an error** — options are created by typing —
-     and canonicalises a known label to the list's spelling (one option, never two differing by case).
- 11. **`url`, `email`, `phone` are validators, not coercers**: any string is stored exactly as written, with
-     a warning when the shape is off, because the alternative is refusing or silently rewriting the user's
-     data. Only the editor (step 18) blocks a malformed commit. `number`, `currency` and `percent` do read
-     their displayed forms back, including their symbol and grouping.
- 12. **`optionsSchema` is still `undefined` everywhere.** Six types take `fieldOptions` and all six are
-     served by the generic, reason-recording `validateFieldOptions` from step 06. The `docs/02` member stays
-     declared and unused; adopting `@standard-schema/spec` is a dependency decision (open question 2).
- 13. **`docs/04` has no §cell-rendering section**, although `prompts/step-07` cites one. `formatDisplay` was
-     therefore built from the step's own bullets plus `docs/03` §the mapping table, and the descriptors
-     deliberately leave truncation, wrapping and the option colour dot to the cell renderer (step 16).
+  1. **The operator list is the 12 canonical ops, confirmed with the human** (`is, isNot, contains,
+     notContains, startsWith, endsWith, isEmpty, isNotEmpty, gt, gte, lt, lte`). The legacy vocabulary
+     (`equals`, `before`, `after`, `isTrue`, `isFalse`, `isAnyOf`, `containsAny`, `containsAll`) exists only
+     in the old build and in `.tabula` files, so the *parser* translates it: `equals`→`is`, `before`→`lt`,
+     `after`→`gt`, `isTrue`/`isFalse`→`is` with a boolean operand, `isAnyOf`/`containsAny`/`containsAll`→an
+     `or`/`and` of the canonical ops, and a comma list→`or` of comparisons. No node kind was needed for any
+     of them, which is exactly what the step's STOP clause asked about.
+  2. **The AST has six kinds, not the four `docs/02` §Query sketched.** `empty` and `unparsed` are the two
+     additions, and both are required by this step's deliverable: emptiness has three spellings that must
+     collapse to one node, and an unreadable fragment has to survive as itself so the UI can underline it.
+     `and`/`or` are n-ary (`parts`) rather than binary, and the constructors flatten and collapse as they
+     build, so two spellings of one filter are the same value. **`docs/02` §Query should be updated to this
+     union** — it currently documents `and|or|not|cmp` with `children`/`child`/`value` names.
+  3. **`empty` as `not(empty)` is not the same as `isNot`, and that is deliberate.** `not` negates the
+     *question*, so `not (Status = Done)` is true for a row whose status is empty; `Status != Done` is
+     `isNot`, and every type's contract answers false for a value operator on an empty cell (step 07's
+     suite, and the old engine did the same). `Status:!Done` — the legacy spelling — maps to `isNot`, which
+     is what keeps migrated filters selecting the same rows; `not (...)` is the new escape hatch. Asserted in
+     `query-legacy.test.ts` with both row sets side by side.
+  4. **Ambiguity in the shorthand is resolved by the column, not by the parser.** `field:!x` means `isNot` on
+     a single select (the README's table), `notContains` on a text-shaped column or a list column, `isNot`
+     where that is all the type declares, and `not(is x)` otherwise. The mapping is one function with a long
+     comment; the divergences are asserted.
+  5. **Operands are read by the column's own `parsePlain`**, so `45m` means 2,700 seconds, `25%` means 25,
+     `true` means a checked box and `Doing` is canonicalised against the option list — the query language
+     accepts exactly what a cell accepts. The exception is the four text operators, which take the raw text,
+     because `contains` on a multi-select column matches a *label substring* (step 07's contract) and handing
+     it a parsed value would ask the wrong question.
+  6. **`startsWith`/`endsWith` have no infix spelling, so they use the function family the dialect already
+     has**: `startsWith(Name, "text")`, `endsWith(Name, "text")`. Inventing `^`/`$` would have collided with
+     operands that contain them (`Site:$5`), and the round trip is exact — asserted for both anchors.
+  7. **The serialiser writes the infix form whenever the operand needs quoting** (`Status = "Ann Lee"`,
+     `When > "2026-05-04T09:30:00Z"`), because the shorthand scanner stops at a quote when it already carries
+     an operator. `isNot` is always written `!=`, never `:!`, since `:!` is type-resolved. The seven
+     normalisations are listed in the module header, including the one deliberate loss (an operand no column
+     can format becomes quoted JSON text, which re-reads as an unreadable fragment *with an error*).
+  8. **The search box reads `formatPlain`, not `formatDisplay`.** The machine spelling (`2026-01-01`,
+     `1234.5`) is locale-independent and is the text `parsePlain` accepts, so one search string finds the
+     same rows in every vault and can be pasted into a cell. The honest cost, asserted in the tests: typing
+     `5 Jan 2026` finds nothing, and `$4` does not find `4.50`. Hidden columns are not searched, because the
+     search box promises visible values only.
+  9. **Sorting is stable and its last key is the row's file path, ascending, whatever the sort directions
+     are.** Equal rows are common (empty cells, the same date), and a 5,000-row grid must not shuffle them
+     between renders. A sort level for a column the view does not have is skipped, like a filter for one.
+ 10. **`ViewResult.rows` holds data rows only, and leaves out the rows of a collapsed group.** Group headers
+     are derived (`groups` carries the same row objects), because the grid windows over known-height rows: a
+     pseudo-row would have to be measured and skipped by every selection, keyboard and clipboard path. A
+     collapsed group contributes no height to `rows` but still reports every row it has (`count`, `rows`), so
+     expanding needs no recomputation. `matchedRows` is therefore what the filter and the search let through,
+     and `rows.length` is what is on screen; they differ only when something is collapsed.
+ 11. **A group's key is the registry's folded `groupKey`; its label is the column's `formatDisplay`.** A
+     `.base` file stores `doing`, `draft\u0000urgent`, `2026-01-01`; the header reads `Doing`, `draft, urgent`,
+     `1 Jan 2026`. The empty group's key is `''` (both `textGroupKey` and `numericGroupKey` use the empty
+     string for "no value") and its label is the one piece of wording this module owns: `(empty)`.
+ 12. **Filter → search → sort → group, in one pass each.** The structured query is applied first because it
+     is the cheap per-row test, and the search only runs on what survives it. Filtering and searching share a
+     loop and write into a single output array (no per-row allocation); the sort decorates one array of
+     indices; the field lookup is a `Map` built once per call.
+ 13. **The evaluator is a pure dispatch with three documented defaults**: an `unparsed` fragment is true (a
+     typo never hides a row), a filter naming a column the view does not have is true (a saved filter must
+     not blank the table while a column is being re-added), and an unknown column in a `cmp` is true for the
+     same reason. `evaluate` answers a boolean and allocates nothing; the *diagnosis* is a separate walk
+     (`operandProblems`), which is what makes "one message per column" cheap.
+ 14. **`ResolvedField` gained a `definition` field** (a `PropertyDefinition`), because a filter names a
+     column and the query layer had no way to know which column a resolved field was. One field, filled in
+     the same three `return`s of `resolveField`; no test needed changing. Reported here because it is a
+     step-06 file touched by step 08.
 
-- Assumed / not verified (each with how to verify):
-  1. **Only this machine's ICU output is observed.** The Bengali numerals, the `en-CA` day key and the
-     locale-derived date/time patterns are asserted on Node 20. Electron ships its own ICU build; step 10
-     should re-run the locale cases in a real vault.
-  2. **The locale month and day-period tables are derived at runtime**, so a locale this ICU build does not
-     know falls back to `en` — correct, but silent. `localeProblemFor` is the hook a settings screen can use;
-     nothing displays it yet.
-  3. **The type's `editor` names are not validated against a cell-editor registry**, which does not exist
-     until step 18; `EditorId` is a closed union, so a typo is a compile error, and the renderer will fall
-     back to `text` for an id it does not know.
-  4. (carried from step 06) **`file.ctime`/`file.mtime` are epoch numbers** — taken from `obsidian.d.ts`,
-     not observed. Step 10 proves it.
-  5. (carried from step 06) **The hostile table's long input is 1,000,000 characters, not 1e9**: 1e9 would
-     allocate ~2 GB and take the runner out with an OOM instead of an assertion. The property under test is
-     unchanged and the readers use `indexOf`-class operations with no backtracking regexes.
-  6. **`url` uses `URL.canParse`**, which is available in Node 20 and in the DOM lib this project compiles
-     against; Electron's runtime is the same family, and step 10 confirms it in the app.
-  7. **The Indian-grouping rule (`12,34,567`) is derived from the CLDR convention, not from a cited spec.**
-     It is tested with a Bengali context; a locale that groups some other way would be refused rather than
-     mis-read, which is the safe direction.
+- Assumed / not verified:
+  1. **The generated-input distribution is mine, not a known-good corpus.** Two thousand inputs from a fixed
+     seed prove the parser is total *over that sample*; the seed and the generator are in the test, so a
+     failure is reproducible, but a different generator could still find something. The corpus from the
+     prompt's "fixtures from `docs/01`" does not exist (see the finding below).
+  2. **The timing numbers are from a Linux container on Node 20**, not from Obsidian's Electron on a
+     mid-range laptop. The in-repo assertion is the 50 ms budget; the numbers above are indicative.
+  3. **The pipeline has not met a real adapter.** Rows arrive as canonical values, which is the step-12
+     adapter's job; until then, a row built by hand is the only input the pipeline has seen.
+  4. **Coverage is not a proof for the uncovered lines.** They are, by inspection: `serialize`'s
+     unknown-operator fallback (unreachable for the closed `FilterOpId` union), some parser recovery spans,
+     and `evaluate`'s defensive shape checks. Step 09's mutation-style review is the place to attack them.
 
-- Findings worth keeping:
-  1. **The shared suite is what found the design bugs.** Its first run against the fifteen new types produced
-     nine failures: `longText`'s `toYaml` returned an object the suite refuses and `parse` could not read
-     back; `duration` refused `1h30m`; `singleSelect` re-tagged a nested failure with the element instead of
-     the original input; two fixtures had wrong expectations (`gt` against the *same* duration is false);
-     and one step-06 assertion was text-only ("a million characters parses") where most types must refuse it.
-  2. **A "style flag" on a value is a smell.** `longText` first carried `{ kind: 'text', style: 'block' }` from
-     `toYaml` so the writer would not have to guess. It broke `parse(toYaml(v))` (the round-trip, which is
-     the contract) and it was redundant: block-vs-quoted is a function of the value. Derived in the writer.
-  3. **A failure must carry the input it was *given*.** The hostile assertions check `result.raw` identity, so
-     a type that unwraps an array and then reports the element's failure with the element as `raw` is caught.
-  4. **`expect(0).toBe(-0)` and other identity traps**: the suite compares signs, not values, and asserts
-     antisymmetry as `forward + backward === 0` rather than `=== -backward`.
-  5. **`parse` and `parsePlain` are allowed different whitespace policies** — frontmatter is authored text
-     (preserved), a pasted cell is machine text (trimmed, NFC) — so the round-trip table asserts the plain
-     form is a **fixpoint** (stable from the first cycle on) rather than equal to the original. The frontmatter
-     round-trip stays exact.
-  6. **`no-console` and `no-global-this` are both enforced**, and `noInlineConfig` means they cannot be
-     waived: a test cannot print a summary line. The count lives in the test's own name and the numbers are
-     asserted, so the runner's output still carries the evidence.
-
-- Half-finished: nothing. All sixteen storable types are registered and proven; the two file-metadata ids are
-  resolved as read-only descriptors by `schema/propertySchema.ts`, as designed in step 06.
+- Findings worth keeping (things the docs did not say, or said differently):
+  1. **`prompts/step-08` cites `docs/01` §filters, §the query string, §sort and §grouping, and a table of
+     `(expr, row, expected)` "from `docs/01`". `docs/01` has none of them** — it is 117 lines and has no
+     query-string section, no operator table and no grammar. The prompt's own bullet list and the old README's
+     table are therefore what the parser is built against, and `query-table.test.ts` *is* the missing table,
+     written out. Recommend adding §filters/§the query string to `docs/01`, or moving the DSL's spec into
+     `docs/02` §Query where the AST already lives.
+  2. **`docs/02` §Query's sketched union and function signatures are out of date** (`children`/`child`/`value`,
+     `parseQueryString(input, schema)`, `evaluate(expr, row, schema)`, `toQueryString(expr)`). This build uses
+     the step's closed union and a `QueryContext`, which carries resolved fields rather than a schema.
+  3. **A select column sorts alphabetically, not by its option order.** `singleSelect.compare` is the shared
+     text comparator, so a Status column sorts `Doing, Done, Todo`; the old build sorted by the option's index
+     in the column's list. Neither is wrong, but a select *is* an ordered vocabulary, and step 18's filter
+     builder will show that order. Recommend deciding before the column-sort UI ships: either read
+     `fieldOptions.options` in `singleSelect.compare`, or document alphabetical sorting as the contract.
+  4. **Every type sorts its empty cell last when ascending** (`compareNullableNumbers` and
+     `compareNullableText` both answer +1 for absent, and the list type follows). Asserted, since it is the
+     kind of rule that silently drifts.
+  5. **The lexer needed one merge rule to be able to read what the serialiser writes**: an operator followed
+     by a quoted value in operand mode is one token. Without it `When:>"2026-01-01"` was unreadable — found by
+     the fixture table, not by a human.
 
 - Open questions for the human:
-  1. (unchanged, and now blocking step 08) **Confirm the filter-operator list** (`is, isNot, contains,
-     notContains, startsWith, endsWith, isEmpty, isNotEmpty, gt, gte, lt, lte`) before the query parser
-     consumes it and the filter builder renders it. `docs/01` has no operator table; the set is derived from
-     `docs/02` §Query.
-  2. (now concrete) **`@standard-schema/spec` as a types-only devDependency, or keep the local structural
-     declaration and the generic `validateFieldOptions`?** Six types take options and are validated without
-     the package; the question is whether the options editor (step 18) wants a schema.
-  3. **`docs/04` does not contain the §cell-rendering section `prompts/step-07` cites.** Should `docs/04`
-     gain one (it is the design-commitment document), or does cell rendering belong to `docs/01` §Grid?
-  4. **`attachment`: write the `[[link]]` form for in-vault files (as `docs/03` allows) or keep writing the
-     plain path (current)?** Plain paths survive a rename without being rewritten; links render.
-  5. (carried from step 04) Should the layout guard emit a warning (current choice) or fail the run until
-     step 21?
-  6. (carried from step 04) Dependabot: the `obsidian` ignore covers `version-update:semver-major` only, so
-     minor and patch bumps are still proposed.
-  7. (carried from step 02, unchanged) `docs/09` line 33's description template contains a banned brand word
-     while line 79 forbids it; the three proposed plugin descriptions still await a pick; whether the
-     internal-only files keep whole-file brand-gate permissions.
+  1. **Should `docs/02` §Query (and `docs/01`) be updated to the implemented union, grammar and context?**
+     The code is ahead of the architecture document in three places now (finding 1 and 2).
+  2. **Should a select column sort by its option order?** (finding 3 — affects step 18's filter builder and
+     the column-sort UI.)
+  3. (unchanged) **`@standard-schema/spec` as a types-only devDependency, or keep the local structural
+     declaration and `validateFieldOptions`?**
+  4. (unchanged) **`docs/04` still has no §cell-rendering section**, which `prompts/step-07` cites.
+  5. (unchanged) **`attachment`: write `[[link]]` or the plain vault path?** (current: plain path.)
+  6. (unchanged) Layout guard: warning (current) or failing until step 21? Dependabot keeps proposing
+     `obsidian` minor bumps. `docs/09` line 33 still contains a banned word in its description template;
+     the three candidate plugin descriptions await a pick.
 
-- Next step: `prompts/step-08-query-and-pipeline.md` (M1 — the query AST, the DSL parser, the comparator and
-  the pipeline), built on the `filterOps`/`matches`/`compare`/`groupKey` contract the sixteen types now
-  declare.
+- Next step: `prompts/step-09-ops-undo-and-selection.md` (M1 — ops, inverse ops for undo, selection ranges
+  and the clipboard matrix), after which the `src/core/**` coverage floor is the real floor and M1 closes.
 
-- Files touched this step: `src/core/types.ts`, `src/core/format/{numbers,iso,digits,text,validation}.ts`,
-  `src/core/fieldTypes/{number,currency,percent,checkbox,date,datetime,duration,longText,url,email,phone,
-  singleSelect,multiSelect,rating,attachment,index}.ts`, `tests/unit/{field-contract.suite.ts,
-  field-contract.all.test.ts,field-roundtrip.test.ts,registry.test.ts}`, `PROGRESS.md`. Nothing outside
-  `src/core/**`, `tests/unit/**` and `PROGRESS.md`, as the fence requires.
+- Files touched this step: new — `src/core/query/{ast,parse,serialize,evaluate}.ts`,
+  `src/core/view/pipeline.ts`, `tests/unit/{query-table,query-legacy,pipeline,query-document}.test.ts`;
+  changed — `src/core/schema/propertySchema.ts` (`ResolvedField.definition`), `PROGRESS.md`. Nothing outside
+  `src/core/**`, `tests/unit/**` and `PROGRESS.md`. `query-document.test.ts` is a fourth test file beyond the
+  step's three: it covers the stored-document path (encode/decode of untrusted `.base` JSON), which is what
+  took `src/core/query` from 80 % to 91 % statements.
 
-- Earlier steps: 06 the field contract, the schema and the registry (the closed value model,
-  `FieldDescriptor` exactly as `docs/02` writes it, one `text` type, the registry that replaces every
-  `switch (field.type)`, `resolveField` with the read-only rules, and the shared contract suite; 115 tests);
-  01 toolchain and gate (802 B / 532 B bundle, `bun run check` exit 0); 02 manifest and legal
-  (`brand:gate`, `manifest:check`, `minAppVersion` 1.13.0 as the tested floor); 03 plugin shell (Bases view
-  registration, two commands, settings tab, status bar item, `release-assets` and `version-bump`; 16 tests);
-  04 CI and release (the `gate` job, the self-retiring layout guard, the tag-driven release with three
-  assets; verified green on GitHub as run 37338515889); 05 fakes, boundaries and coverage (the fake vault,
-  clock and transport; the boundary lint proven by a runtime test; 44 tests). Forced amendments are recorded
-  in `prompts/README.md` under "Amendments applied during execution".
+- Earlier steps: 07 the fifteen remaining field types, the shared format helpers and the registry-wide suites
+  (16 types registered, 181-case round-trip table, 500 tests; two real bugs found — an unanchored duration
+  reader and a display form richer than its value); 06 the field contract, the schema and the registry (the
+  closed value model, `FieldDescriptor` exactly as `docs/02` writes it, the shared contract suite; 115
+  tests); 05 fakes, boundaries and coverage; 04 CI and release; 03 the plugin shell; 02 manifest and legal;
+  01 toolchain and gate. Forced amendments are recorded in `prompts/README.md` under "Amendments applied
+  during execution".

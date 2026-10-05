@@ -48,6 +48,12 @@ export type PropertyDefinition = {
 
 /** A resolved column: the descriptor to use, whether the column can be written, and what was decided. */
 export type ResolvedField = {
+	/**
+	 * The column this resolution is about: its prefixed id, its name and its source. The query layer needs
+	 * it (a filter names a column, and the evaluator must find one), and so does every message that has to
+	 * say *which* column it is about, which is why it travels with the resolution instead of beside it.
+	 */
+	readonly definition: PropertyDefinition;
 	readonly descriptor: FieldDescriptor;
 	/** True when the grid must render the cell disabled and the write queue must refuse an edit. */
 	readonly readOnly: boolean;
@@ -484,6 +490,7 @@ export function resolveField(
 			'read-only: the value is file metadata, so it is never stored in frontmatter (P11)',
 		);
 		return {
+			definition: property,
 			descriptor: fileTime,
 			readOnly: true,
 			reasons,
@@ -502,6 +509,7 @@ export function resolveField(
 		const found = lookup(declared);
 		if (found !== undefined) {
 			return {
+				definition: property,
 				descriptor: found,
 				readOnly: readOnlyBySource || !found.editable,
 				reasons,
@@ -522,6 +530,7 @@ export function resolveField(
 	// registry, so a caller-injected lookup that knows nothing still resolves to something renderable.
 	const fallback = lookup('text') ?? textField;
 	return {
+		definition: property,
 		descriptor: fallback,
 		readOnly: readOnlyBySource,
 		reasons,
