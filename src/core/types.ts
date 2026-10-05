@@ -19,7 +19,12 @@ export type YamlScalar = string | number | boolean | null;
 /** A YAML-safe list of scalars. `undefined` is never a member: YAML has no such value. */
 export type YamlList = readonly YamlScalar[];
 
-/** Exactly what `toYaml` may return. `null` means "write nothing" — the key is deleted. */
+/**
+ * Exactly what `toYaml` may return: a scalar, a flat list of scalars, or `null` for "write nothing" (the
+ * write queue deletes the key). Never an object and never `undefined` — a value from a cell has one
+ * machine-readable spelling, and the `longText` block-scalar style is derived from the text itself by the
+ * serializer rather than carried on the value.
+ */
 export type YamlValue = YamlScalar | YamlList;
 
 /** A property id is a Bases id, prefixed by its source: `file.name`, `note.Status`, `formula.Total`. */
@@ -109,14 +114,21 @@ export type FilterOpId =
 	| 'lt'
 	| 'lte';
 
-/** The outcome of parsing untrusted input: either a canonical value, or a reason and the input. */
+/**
+ * The outcome of parsing untrusted input: either a canonical value, or a reason and the input.
+ *
+ * A successful parse may still carry a `warning` — a value that was accepted but deserves mention: a
+ * malformed-but-tolerated url, a select label that is not in the option list yet, a rating that had to be
+ * clamped, a two-part duration whose reading was a judgement call. Warnings are not failures, and the
+ * caller decides whether to show them (the import preview does; a cell edit usually does not).
+ */
 export type Parsed<T> =
-	| { readonly ok: true; readonly value: T }
+	| { readonly ok: true; readonly value: T; readonly warning?: string }
 	| { readonly ok: false; readonly error: string; readonly raw: unknown };
 
-/** Wraps a canonical value as a successful parse. */
-export function parsed<T>(value: T): Parsed<T> {
-	return { ok: true, value };
+/** Wraps a canonical value as a successful parse. Pass `warning` when the value needed a judgement call. */
+export function parsed<T>(value: T, warning?: string): Parsed<T> {
+	return warning === undefined ? { ok: true, value } : { ok: true, value, warning };
 }
 
 /** Builds a failed parse. The raw input travels with it, so a preview can show what was rejected. */
