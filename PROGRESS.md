@@ -1,93 +1,136 @@
 # PROGRESS
 
-- Milestone: M0 — Foundation (complete)                        Branch: main
-- Last completed step: **step 04 — CI and release.** CI is now the referee: `.github/workflows/ci.yml`
-  (the gate on every push, pull request and manual dispatch), `.github/workflows/release.yml` (a bare
-  `x.y.z` tag produces a GitHub release with exactly three assets) and `.github/dependabot.yml`.
+- Milestone: M0 — Foundation (complete) · M1 — Core domain (starting)             Branch: main
+- Last completed step: **step 05 — fakes, boundaries, coverage.** The test substrate the data layer will
+  lean on exists and lies as little as possible: `tests/fakes/vault.ts` (an in-memory `App` with a write
+  log), `tests/fakes/clock.ts` (time moves only when a test says so), `tests/fakes/transport.ts` (a
+  fetch-like recorder that throws when nothing is queued). The architectural boundary is now a **lint
+  error proven by a test that writes real violations at runtime**, not a convention.
 
 - Verified (commands run, observed results):
-  - **The `gate` job's steps, run locally in the workflow's exact order**, each ending green:
-    `bun install --frozen-lockfile` → "Checked 478 installs across 511 packages (no changes)";
-    `bun run typecheck` → silent; `bun run lint` → 0 errors, 1 warning (the deferred declarative-settings
-    advisory below); `bun run format:check` → "All matched files use Prettier code style!";
-    `bun run test` → 16 passed (3 files); `bun run build` → silent; `bun run size` →
-    `main.js raw 3905 B / gzip 1843 B`, `!important` clean, `bundle-size: OK`. Sequence exit 0.
-  - **YAML validation**: `actionlint` and `act` are not available in this environment, so all three files
-    were parsed with PyYAML (already installed — no new dependency, so the js-yaml question did not
-    arise): `ci.yml`, `release.yml` and `dependabot.yml` all parse. (PyYAML prints the `on:` key as
-    `True`, which is YAML 1.1 treating `on` as a boolean; GitHub Actions reads it as the key `on`.)
-  - **The written guard behaves as documented**: running the `harness` step with `GITHUB_OUTPUT` and
-    `GITHUB_STEP_SUMMARY` set produced `present=false` plus the annotation
-    `::warning title=Layout gate not running::…` and a job summary reading "### Layout gate not running".
-  - **A red gate fails CI**: a deliberate type error (`src/type-error.ts`, a string assigned to a number)
-    made `bun run typecheck` exit 2 with `error TS2322`; the file was deleted and typecheck returned to
-    green. Nothing in the workflow turns a failure into a pass: there is no `continue-on-error`, no
-    `|| true`, and no `if: success()`.
-  - **Release simulation**: `TAG=0.1.0 bun scripts/release-assets.ts --allow-dirty` produced
-    `dist/0.1.0/` holding exactly `main.js` (3905 B), `manifest.json` (359 B), `styles.css` (101 B).
-  - Running the sequence locally **found two real problems before CI did**: `format:check` failed on the
-    three new YAML files (now formatted by Prettier), and `prefer-create-el` fired on the test double's
-    `createDiv` implementation (now refactored so the stub builds children through a helper).
+  - `bun run check` — **exit 0**, with the suite grown from 16 tests / 3 files to **44 tests / 5 files**:
+    `boundaries.test.ts` 12, `fakes-contract.test.ts` 16, `plugin-smoke.test.ts` 7,
+    `bases-registration.test.ts` 5, `settings-tab.test.ts` 4. Bundle unchanged at
+    `main.js raw 3905 B / gzip 1843 B`, `!important` clean, `bundle-size: OK`, `manifest:check: OK`,
+    brand gate clean (note: 0 violations), Prettier clean.
+  - **The boundary rule demonstrably bites.** A scratch file
+    `src/core/scratch-boundary.ts` containing `import { Plugin } from "obsidian";` produced, from
+    `bun run lint`:
+    `1:1  error  'obsidian' import is restricted from being used. src/core must stay pure: it may not
+    import the Obsidian API  no-restricted-imports` → **exit 1**. The file was deleted and lint returned
+    to exit 0 with only the deferred settings warning. The same proof now runs on every gate, for eleven
+    file/rule combinations, in `tests/unit/boundaries.test.ts` (each probe asserts `severity === 2`, which
+    is the API's equivalent of the CLI's non-zero exit).
+  - **The four vault behaviours, each with its test** (`tests/unit/fakes-contract.test.ts`):
+    (a) *frontmatter is replaced wholesale* — a note containing `title: x  # keep me` and a block-style
+    list is rewritten to exactly `---\ntitle: "y"\n---\nBody text.\n`; the comment is gone because the
+    block is regenerated from the object;
+    (b) *untouched keys survive* — a callback that sets only `status` leaves `title` and `owner` in place;
+    (c) *`delete fm.key` removes it* — `'status' in after === false`, and the text contains no `status`
+    line, because `undefined` is not a YAML value;
+    (d) *a throwing callback writes nothing* — the promise rejects with the callback's error, the note
+    text is byte-identical to before, and `writeCount()` is 0.
+    Also asserted: the write log records `{path, before, after, at}` with copies (a later write cannot
+    rewrite history); `vault.modify` **rejects** with the message pointing at
+    `fileManager.processFrontMatter`; `create` on an existing path throws; `resolvePath` resolves exact
+    path → basename (case-insensitive) → shallowest match; the metadata cache serves what a test sets and
+    falls back to note frontmatter; the clock runs due timers in due order, `runTimers()` fires everything
+    pending, `clearTimer` cancels, and a thousand busy iterations move `now()` by 0; the transport throws
+    on an unqueued request without recording a call, records method/headers/body/`at`/outcome, and
+    rejects with `TransportTimeoutError` / `TransportNetworkError` while the clock stays put.
+  - **Coverage.** Standing report (`bunx vitest run --coverage`, product code only):
+    `All files 100% / 100% / 100% / 100%` over `TablifyPlaceholderView.ts`, `keyBindings.ts`,
+    `TablifySettingTab.ts`. Fakes measured on demand with a throwaway config (the standing gate excludes
+    `tests/**` as the step requires): `All files 92.63% stmts / 85.18% branch / 90.24% funcs`;
+    `clock.ts 100%`, `transport.ts 97.14%` (uncovered 116–117, the unqueued-throw's second branch),
+    `vault.ts 88.59%` (uncovered: the `parse()` fallbacks for a malformed block, and the duplicate/orphan
+    guard paths).
+  - **Step 04's first assumption is now closed.** The workflows have executed on GitHub: pushing step 04
+    as `2770c95` started run
+    [37338515889](https://github.com/258044aamm-Dev/Tablify/actions/runs/37338515889); the `gate` job
+    concluded **success** with every step green (`setup-bun`, cached `bun install --frozen-lockfile`,
+    typecheck, lint, format:check, test, build, size) and the four layout steps `skipped` by the guard,
+    exactly as designed — the annotation-plus-summary path instead of a red badge.
 
-- **The approach chosen for the not-yet-existing layout spec, and why.** The Playwright harness arrives in
-  step 21, so `bun run test:layout` cannot pass today. Three options existed: (a) run it unconditionally
-  and live with a red CI until step 21; (b) `continue-on-error` / `|| true`; (c) a visible, self-retiring
-  guard. (a) trains everyone to ignore a red badge, and a permanently red CI is how a suite gets deleted
-  later; (b) is exactly the silent skip the step forbids. So the workflow implements (c):
-  a `Check whether the layout harness exists yet` step sets `present=true|false`, and the Playwright
-  install, the layout run and the report upload are guarded on it. When the harness is absent the run
-  carries a GitHub **warning annotation** and a **job summary** saying the layout gate is not running and
-  why — impossible to overlook, and it retires itself the moment `playwright.config.ts` and `harness/`
-  exist, with no workflow edit needed to start passing.
-  `package.json` gained `test:layout` (`playwright test`) so the reference is valid now and fails loudly
-  rather than doing nothing.
-  **Close-out for step 21:** delete the `harness` step and the three `if:` conditions in `ci.yml` so the
-  layout suite runs unconditionally. That instruction is also written as a comment in the workflow itself,
-  next to the guard.
+- **A silent hole this step found before it could ship.** `no-restricted-imports` is **not merged** across
+  ESLint flat-config objects: when two objects match the same file, the later object's option *replaces*
+  the earlier one's wholesale. The first version of this step added one block banning
+  `prototype/**` imports for `src/**`, `tests/**` and `scripts/**` — and because that block matched
+  `src/core/**` too and sat later in the array, it erased the core's purity rule that step 01 had added.
+  It was caught by probing the resolved config (`eslint.calculateConfigForFile` showed only the prototype
+  pattern for a core file) and by a CLI probe returning exit 0 where an error was expected. The fix is
+  structural: exactly one boundary block per file set, and every restriction that applies to that set is
+  composed by a `restrict()` helper that always appends the reference-material ban. The reason it cannot
+  silently regress is `tests/unit/boundaries.test.ts`, which writes the violations to disk and lints them;
+  a loosened pattern or a newly-added overlapping block turns that suite red.
 
 - Assumed / not verified (each with how to verify):
-  1. **The workflows have never executed on GitHub.** Everything above is a local simulation of the step
-     list plus a YAML parse. Verify by pushing a commit and reading the run in the Actions tab (or
-     `gh run watch`). The first push after this step should show the `gate` job green and the layout
-     annotation present.
-  2. `oven-sh/setup-bun@v2` with `bun-version: 1.4.2` — the version string format is taken from the
-     action's documented input; unverified in a real run.
-  3. Dependabot's `bun` ecosystem support: configured as the step specifies, but no Dependabot run has
-     been observed. Verify by watching for the first weekly PR, or by choosing "Check for updates" in the
-     Insights → Dependency graph tab.
-  4. No provenance attestation. `docs/05` lists it as optional and it would need a third-party action
-     pinned to a commit SHA, which cannot be fetched and verified from this environment; skipping is
-     deliberate, not an oversight.
+  1. **The fake's YAML handling is a model, not a parser.** `parse()` understands flat `key: <JSON>` lines
+     only, so behaviour (a) is proven structurally (the block is regenerated from the object) but the
+     fidelity of a *real* round-trip — aliases, multi-line strings, dates, comments in Obsidian's own YAML
+     serialiser — rests on step 10's real-vault spike. The fakes were written to keep `core/` and the tests
+     free of the `obsidian` package, so this cannot be closed here.
+  2. **`processFrontMatter`'s callback is modelled as synchronous and `void`-returning**, matching
+     `obsidian.d.ts:2954` (`(frontmatter: any) => void`). The parameter type is deliberately
+     `Record<string, unknown>` rather than upstream's `any`, because `any` is banned here. A generic
+     parameter would read better but cannot be written without a cast the lint fence forbids: the callback
+     receives a cloned `Record<string, unknown>`, which is not assignable to the narrower `T` a caller
+     asked for. Consequence to respect until step 10 proves otherwise: an adapter must never return a
+     promise from the callback.
+  3. `vault.create` / `read` / `modify` / `delete` are `Promise`-returning in the fake, matching
+     `obsidian.d.ts` (7386 / 7412 / 7467 / 7441) rather than being convenient synchronous stubs, so a
+     forgotten `await` in an adapter is at least visible in the types. Only the seeding helpers
+     (`seedNote`, `createNote`, `raw`) are synchronous, and tests use those.
+  4. `resolvePath` models Obsidian's link resolution with three documented rules (exact path, then
+     case-insensitive basename, ambiguity by shallowest then alphabetical) and **not** the parts the
+     `.tabula` importer needs: `#heading`, `^block`, `[[Note|alias]]` and frontmatter aliases. Step 13
+     owns those.
+  5. The fake transport proves no test can reach the network *through it*; it cannot prove an adapter will
+     not call the global `fetch` directly. That audit belongs to step 25, where the sync client is written,
+     and the boundary rule for `src/sync/**` (dynamic-import only) is the second half of the answer.
+  6. `src/core/**`'s coverage floor (85/85/85/75) is a **no-op while `src/core/` is empty** — verified:
+     the coverage run on an empty `core/` reports no `core` rows and exits 0. It is not a hole: the
+     threshold is a ratio over the files the glob matches, so the first file committed under `src/core/`
+     is measured immediately. The floor becomes real in step 09.
+  7. `tests/**` is exempted from `obsidianmd/no-nodejs-modules` (a test runner is the workstation, not
+     Obsidian) and from `obsidianmd/ui/sentence-case` (the rule reported `fm.title = 'y'` as UI copy).
+     Both exemptions are written in `eslint.config.mts` with their reason, and both stay on for every
+     shipped file.
 
 - Findings worth keeping:
-  1. `node scripts/release-assets.ts` (as written in the step and in `docs/05`) cannot work: Node does not
-     execute TypeScript. Both the local run and `release.yml` use `bun scripts/release-assets.ts`, which is
-     the convention step 01 established for `scripts/*.ts`. `docs/05` is not touched, per the fence.
-  2. Release notes are extracted from `CHANGELOG.md` by tag, and an empty or missing section is a hard
-     failure — the previous project published "Test Release" placeholders, which is what this prevents.
-  3. The release job uses the preinstalled `gh` CLI with `GITHUB_TOKEN`, so no third-party release action
-     is needed and nothing has to be pinned to a SHA.
-  4. The one standing lint warning (`obsidianmd/settings-tab/prefer-setting-definitions`) is unchanged and
-     still belongs to step 14, which owns the settings schema.
+  1. Vitest's **default** coverage excludes hide any file under a `tests/` directory, so measuring
+     `tests/fakes/**` needed an explicit `exclude: []`; without it the report prints an empty table with
+     `All files 0%` and no rows, which looks like "no coverage" rather than "not measured".
+  2. `mergeConfig` concatenates arrays, so a throwaway config cannot narrow `coverage.include` by merging
+     the base config — it has to be a standalone config. (Both traps cost a run each; recorded so the next
+     person does not pay again.)
+  3. ESLint's Node API and the CLI agree on these rules, so `tests/unit/boundaries.test.ts` is a faithful
+     proxy for `bun run lint` — confirmed by running both against the same probe and comparing exit
+     semantics.
+  4. The boundary probes create directories when they do not exist and remove them again afterwards *only
+     while empty* (`rmdir`, ENOTEMPTY ignored), so the suite leaves a clean tree and cannot delete real
+     modules.
 
-- Half-finished: nothing. `dist/` is git-ignored; `main.js` remains a build artefact only.
+- Half-finished: nothing. The fakes are complete for their declared slice; anything beyond it is a new
+  behaviour, not a missing one.
 
-- Open questions for the human:
+- Open questions for the human (carried from step 04 — both still unanswered and both still live):
   1. Should the layout guard emit a warning (current choice) or fail the run until step 21? A failing run
      would be a stronger signal but leaves CI red for the rest of M0–M2.
-  2. Dependabot: the `obsidian` ignore covers `version-update:semver-major` only, so minor and patch
-     bumps are still proposed. If every `obsidian` bump should be human-gated, say so and the ignore list
+  2. Dependabot: the `obsidian` ignore covers `version-update:semver-major` only, so minor and patch bumps
+     are still proposed. If every `obsidian` bump should be human-gated, say so and the ignore list
      changes.
 
-- Next step: `prompts/step-05-fakes-boundaries-coverage.md` (M1 — core domain, no Obsidian and no React:
-  `src/core/**` plus the fakes, the boundary lint rule in action, and coverage enforced).
+- Next step: `prompts/step-06-*.md` (M1 — the core domain begins: field types, schema and the value model,
+  still with no Obsidian and no React in `src/core/**`).
 
-- Files touched this step: `.github/workflows/ci.yml`, `.github/workflows/release.yml`,
-  `.github/dependabot.yml`, `package.json` (adds `test:layout`), `tests/mocks/obsidian.ts`,
-  `PROGRESS.md`.
+- Files touched this step: `tests/fakes/vault.ts`, `tests/fakes/clock.ts`, `tests/fakes/transport.ts`,
+  `tests/unit/fakes-contract.test.ts`, `tests/unit/boundaries.test.ts`, `eslint.config.mts`,
+  `vitest.config.ts`, `PROGRESS.md`.
 
 - Earlier steps: 01 toolchain and gate (802 B / 532 B bundle, `bun run check` exit 0); 02 manifest and
   legal (`brand:gate`, `manifest:check`, `minAppVersion` 1.13.0 as the tested floor); 03 plugin shell
   (Bases view registration, two commands, settings tab, status bar item, `release-assets` and
-  `version-bump`; 16 tests). Forced amendments are recorded in `prompts/README.md` under "Amendments
-  applied during execution".
+  `version-bump`; 16 tests); 04 CI and release (the `gate` job, the self-retiring layout guard, the
+  tag-driven release with three assets; verified green on GitHub as run 37338515889). Forced amendments
+  are recorded in `prompts/README.md` under "Amendments applied during execution".
