@@ -135,6 +135,24 @@ reading the whole conversation. Template (the agent fills it in; you only read i
 - Files touched this step: <paths>
 ```
 
+## Amendments applied during execution
+
+Recorded while executing the pack, so a later session is not misled by the step text. Each one was
+forced by a tool, not chosen for convenience; the full reasoning is in `PROGRESS.md`.
+
+- **`manifest.json` exists from step 01.** `eslint-plugin-obsidianmd` reads it when the ESLint config
+  loads and aborts the entire lint run without it. Step 02 amends it rather than creating it.
+- **`obsidian` is types-only** (`"main": ""` in its `package.json`), so no test can import it at runtime.
+  Vitest resolves `obsidian` to `tests/mocks/obsidian.ts`; TypeScript keeps using the real
+  `obsidian.d.ts`. Use the double for anything the tests assert on.
+- **The root `package.json` is ESM.** `tools/` and `prototype/` are CommonJS and each carries a
+  one-line `package.json` (`{"type": "commonjs"}`) to keep the prototype's contrast gate, smoke suite
+  and interaction audit running. Never remove those two files.
+- **Two scoped lint overrides** are deliberate and commented in `eslint.config.mts`:
+  `obsidianmd/no-nodejs-modules` off for Node-only build tooling, `@typescript-eslint/unbound-method`
+  off inside `tests/**`. Keep the fence (no `any`, no `as`, no `@ts-ignore`, no non-null assertions,
+  no inline disables) on for everything that ships.
+
 ## Error protocol
 
 | situation | do this |

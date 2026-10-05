@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Build output. main.js is a build artefact: it is attached to GitHub releases only,
+# never committed. The same is true of main.js.map and the release assets.
+main.js
+main.js.map
+dist/
+
+# Test artifacts
+coverage/
+playwright-report/
+test-results/
+
+# Local configuration
+*.local
+data.json
+
+# OS noise
+.DS_Store
+Thumbs.db

@@ -1,0 +1,10 @@
+{
+	"id": "tablify",
+	"name": "Tablify",
+	"version": "0.1.0",
+	"minAppVersion": "1.13.0",
+	"description": "A spreadsheet-grade grid view for Obsidian Bases: range selection, block clipboard, fill, bulk edits and CSV/XLSX round-trips.",
+	"author": "258044aamm-Dev",
+	"authorUrl": "https://github.com/258044aamm-Dev",
+	"isDesktopOnly": false
+}

@@ -1,0 +1,15 @@
+# Prose in this repository is wrapped by hand for review; Prettier must not reflow it.
+*.md
+*.mdx
+
+# Read-only reference material: never formatted, never edited.
+prototype/**
+
+# Build artefacts, caches and lockfiles.
+main.js
+coverage/**
+playwright-report/**
+dist/**
+pnpm-lock.yaml
+bun.lock
+package-lock.json
