@@ -2,12 +2,137 @@
 
 - Milestone: M0 — Foundation (complete) · M1 — Core domain (complete) · **M2 — Adapters (in progress)**
   Branch: main
-- Last completed step: **step 11 — the `RowSource` port, the write queue and the optimistic overlay.** The
-  layer that makes editing a note-backed grid safe: coalescing per file+property, one `processFrontMatter`
-  call per file per flush, a promise chain per file so two writers never overlap, a 250 ms debounce with a
-  `flush()` that bypasses it, per-file failure reporting, and an overlay that holds pending values only.
+- Last completed step: **step 12 — `BasesSource`, the real Bases view, and note creation.** Rows and values
+  come from a real Bases view (keyed by `entry.file.path`), edits go out through step 11's queue, and the
+  optimistic overlay is what the grid reads in between. The whole **data path is ASSUMED**: there is no real
+  vault here, and the step's real-vault observation is not produced (see the step-12 block below).
 
-- Verified (commands run, observed results):
+- Last completed step before that: **step 11 — the `RowSource` port, the write queue and the optimistic
+  overlay.** The layer that makes editing a note-backed grid safe: coalescing per file+property, one
+  `processFrontMatter` call per file per flush, a promise chain per file so two writers never overlap, a
+  250 ms debounce with a `flush()` that bypasses it, per-file failure reporting, and an overlay that holds
+  pending values only.
+
+---
+
+**Step 12 — `BasesSource`, the real Bases view, and note creation.**
+
+- Verified (`bun run check` — raw): `tsc --noEmit` clean; `eslint .` → **0 errors, 1 warning** (step 04's
+  settings tab does not implement `getSettingDefinitions()`; step 14 replaces it); `brand-gate: OK — 59
+  permitted match(es), 0 violations`; `manifest:check: OK`; `All matched files use Prettier code style!`;
+  **868 tests across 21 files** (was 836 / 19); `bundle-size: OK` — `main.js raw 52661 bytes (51.43 KB)`,
+  `gzip 16525 bytes (16.14 KB)`, `styles.css !important check: clean`. Coverage: all files **92.15 / 91.43**;
+  `src/adapters` 97.77 / 96.00 (`optimistic.ts` 100/100, `writeQueue.ts` 97.41/95.74),
+  `adapters/bases/BasesSource.ts` **85.17 / 84.11**, `adapters/notes/createNote.ts` **92.30 / 90.14**,
+  `plugin/TablifyView.ts` 54.18 (its DOM body is step 17's, and it is a placeholder by design).
+
+- The five acceptance assertions, from `tests/unit/bases-source.test.ts` (18 tests; the fixture host is a
+  stand-in for `BasesView` and the fake vault, never a real one):
+  1. **Rows keyed by path survive a reorder and a re-creation**: after the host replaces its entries wholesale
+     and adds a row, `getRows()` is `['Notes/B.md','Notes/A.md','Notes/C.md']` and the new row's value reads
+     `'Gamma'`; after the host drops `B`, `getRows()` is `['Notes/A.md']` and `getValue('Notes/B.md','note.Name')`
+     is `null` — the disappeared row does not resurrect, because nothing is keyed by index.
+  2. **One cell op ⇒ exactly one queued write and one overlay entry**: `result.written === 1`,
+     `queue.pending() === 1`, `overlay.size() === 1`, `overlay.get('Notes/A.md','Name') === 'Alpha two'`, and
+     `getValue('Notes/A.md','note.Name')` returns the typed value *before* the write lands;
+     `clock.pending() === 1` (the 250 ms debounce) and `vault.writeCount() === 0` at that moment. After
+     `clock.advance(250)` + `flush()`: the writer was called **once**, the vault holds `Name: 'Alpha two'`, and
+     `overlay.size() === 0`.
+  3. **A read-only column refuses, typed**: `ok === false`, `written === 0`,
+     `refused[0] = { reason: 'readonly-column', propertyId: 'file.mtime', message: 'mtime is read-only (…) }`,
+     no timer queued and `vault.writeCount() === 0`. A column that is not in the view refuses too, naming it.
+  4. **`subscribe` fires once per frame for ten rapid updates**: ten host updates leave `first === 0` and
+     `frames.length === 1`; running that one frame gives `first === 1`, and the snapshot holds the **last**
+     value (`'Alpha 9'`). A listener that unsubscribed is not called (`second === 0`).
+  5. **The QueueSpy**: the source is constructed with one injected `processFrontMatter`, and a single cell op
+     produces **zero** spy calls before the debounce and **exactly one** after it, with the fake vault
+     recording exactly one write. The source holds no vault reference at all (asserted on its own keys), so a
+     direct write is not possible — not merely not done.
+
+- **A real defect the fixture caught, fixed in the adapter (not in the test).** `apply` was enqueuing the
+  **Bases property id** (`note.Name`) where the write queue treats its `propertyId` as the **frontmatter key**,
+  so the first write would have created a `note.Name:` key and left `Name:` alone — on a real vault, silently.
+  `translate()` now enqueues `field.definition.name` (the frontmatter key: `docs/03` §write rules 4 — a rename
+  in the `.base` changes the label, never the key on disk), while refusals and the overlay keep the Bases id and
+  `getValue()` maps back through the column's own name. Asserted directly:
+  `Object.keys(frontmatterOf('Notes/A.md')) === ['Name','Status']`.
+
+- **ASSUMED — the entire data path.** No real vault exists in this environment, so nothing here has been
+  observed against Obsidian: the fixture host is a stand-in for `BasesView`, not evidence about it. The step's
+  real-vault observation (the placeholder's row/field counts, three formatted values, and one property's
+  frontmatter before/after) is **not produced**, and no fixture is offered as a substitute. `DEV-NOTES.md`
+  carries the exact click-path for whoever runs it, including the temporary `spike-set-cell` command — which
+  must be deleted in the same commit that adds it, which is why it is not in this commit.
+
+- The `.base` sidecar **can** store what `docs/03` §view config lists, checked in `obsidian.d.ts @1.13.1`
+  before any view-config code was written, because the step's STOP clause asks:
+  `BasesViewConfig.get(key)` / `set(key, value)` / `getAsPropertyId` / `getEvaluatedFormula` (`@since 1.10.0`),
+  `getOrder()`, `getSort()`, `getDisplayName()`. **No STOP was needed.** Two related facts:
+  `BasesView.config.set` is the documented "store configuration data for the view" path (it travels with the
+  `.base`), and `@since 1.13.0` adds a **declarative** settings surface (`PluginSettingTab.getSettingDefinitions()`,
+  which `eslint-plugin-obsidianmd` already nags about) — step 14 should adopt it, or say why not.
+
+- Interpretations worth recording:
+  1. **`order()` reads `data.properties`** ("visible properties defined by the user", `@1.10.0`) and falls back
+     to `config.getOrder()` when a view has no explicit order yet, so a fresh view shows columns instead of an
+     empty header. Both are the `.base` view config per `docs/03`.
+  2. **The external-change subscription is the app's own `metadataCache.on('changed')`**, filtered to paths
+     currently in the row set and released with `offref()` in `dispose()`. The step's STOP clause asked what to
+     do if frame coalescing needs a `window` listener: this is the answer — the emitter is owned by the app,
+     there is no global listener to leak, and `onDataUpdated` remains the primary trigger. The default frame
+     scheduler uses `window.requestAnimationFrame` inside a window and a microtask hop outside one (a node
+     test), documented at the constant; every test that cares injects its own `schedule`.
+  3. **`createNote`'s filename rule**, following `docs/03` §row creation: expand the template; an **empty or
+     blank** template is the documented fallback (`Row <n>`); a template that could not be filled (a
+     placeholder key the row has no value for) gets one second chance — the leading column's value — then
+     `Row <n>`; whatever wins is sanitised, and an empty result is `Row <n>`.
+  4. **Collisions append `" 2"`, `" 3"`, …** per `docs/03` line 99, and the count is reported
+     (`collisions`, `renamed`). `prompts/step-12` item 5 illustrates the same case as `Project plan (1)`; the
+     doc is the spec, the parenthesised form is not implemented, and this is reported as a prompt/doc
+     divergence for a decision rather than quietly split down the middle.
+  5. **The manual path runs only for `mode: 'direct'`** (a specific folder, or a bulk import), because
+     `createFileForView` opens the new-note **menu** per call (`@since 1.10.2`, step 10's finding) — 412 modals
+     is not a feature. `CreateNoteResult.via` reports which path ran, so a failure is always attributable.
+  6. **The port gained `dispose()`** (`src/adapters/RowSource.ts`): the step's item 1 requires the source to
+     release everything, and the port is what a caller holds. One method, with the reason in its doc comment.
+  7. **The view's factory is the composition root**: `main.ts` builds the environment (clock, timezone,
+     locale) once, registers `view.dispose()` with `Component.register`, and the view keeps the container the
+     factory was handed — `BasesView` still declares no `containerEl` (step 10's finding).
+
+- Findings worth keeping (the docs did not say, or said differently):
+  1. **`docs/02` §Rows become notes** should state that the sanctioned `createFileForView` path opens a menu
+     and is therefore **single-row only**; bulk creation (paste, import, migration) must use
+     `vault.create` + `processFrontMatter`. `docs/03` §Import needs the same line. *(reported, not applied —
+     doc edits await approval, as the step asks)*
+  2. Step 10's three proposed corrections are unchanged and still unapplied (no `containerEl` on `BasesView`;
+     no public Obsidian version; the `GroupedData`/`data.properties` reading). They are listed in
+     `spike/bases-path/FINDINGS.md` with the exact replacement sentences.
+
+- Assumed / not verified (step 12):
+  1. The real-vault observation itself (above). Everything about the real `BasesView` beyond the declaration
+     text is unverified, including whether `data.properties` is already in the user's column order.
+  2. `BasesViewConfig.set`'s on-disk format (a string in the `.base` view section) is assumed from `docs/03`
+     §`fieldOptions shape`; the spike never wrote one.
+  3. A metadata change caused by the plugin's **own** write is untested here. Frame coalescing bounds it to one
+     repaint, and the queue's `settle` removes the overlay value before the frame runs — but a real vault is
+     where a self-notify loop would show up.
+  4. `frontmatterBody` is a deliberate one-line-per-key writer, not a YAML library: ten quoting cases are
+     asserted and nested structures are out of scope by design (`docs/03` §write rules 6 — no objects in
+     frontmatter).
+  5. `plugin/TablifyView.ts` is at 54 % coverage on purpose: its DOM body is replaced in step 17, and the
+     interesting part (`summarize`) is a pure function.
+
+- Files touched this step: new — `src/adapters/bases/BasesSource.ts`, `src/adapters/notes/createNote.ts`,
+  `src/plugin/TablifyView.ts`, `src/plugin/DEV-NOTES.md`, `tests/unit/bases-source.test.ts`,
+  `tests/unit/create-note.test.ts`; changed — `src/adapters/RowSource.ts` (`dispose()` on the port),
+  `src/plugin/main.ts` (constructs the view; exports `pluginEnvironment()`), `styles.css` (three lines for the
+  placeholder), `tests/mocks/obsidian.ts` (`BasesView` gains `app`/`config`/`data`/`allProperties`, `Plugin`
+  gains `register`), `tests/unit/bases-registration.test.ts` (the two placeholder assertions, now about the
+  real view), `PROGRESS.md`; **deleted** — `src/plugin/TablifyPlaceholderView.ts`, replaced by the real view.
+
+---
+
+- Verified — **step 11** (commands run, observed results):
   - `bun run check` — **exit 0**: typecheck, lint (0 errors; the one pre-existing settings-tab warning),
     `brand-gate: OK — 59 permitted match(es), 0 violations`, `manifest:check: OK`, Prettier clean, tests,
     build, `bundle-size: OK`. **835 tests across 19 files** (was 817 / 18).
@@ -200,11 +325,14 @@
      `obsidian` minor bumps. `docs/09` line 33 still contains a banned word in its description template; the
      three candidate plugin descriptions await a pick.
 
-- Next step: `prompts/step-12-basessource-and-note-creation.md` — `BasesSource` (rows and values from a real
-  Bases view, writes through this queue), the minimal `TablifyView` placeholder that shows real data, and the
-  note-creation service. Its real-vault evidence is gated on the step-10 spike run; the fake-vault half is not.
+- Next step: `prompts/step-13-tabula-adapter-and-migration.md` — the `.tabula` reader (`v1` and `v2` detected
+  from content, never throwing, tolerant of BOM/CRLF/unknown types), the dry-run report as data, and
+  `migrateMutation` as ordinary ops so a whole migration is one undo step. Seven committed fixtures under
+  `tests/fixtures/tabula/`. Known blocker: the fork clone (`258044aamm-Dev/airtable-tabula`) is needed for the
+  on-disk shapes and is not in the workspace after the sandbox recycle — it needs re-cloning or the shapes
+  come from the table recorded in this file.
 
-- Files touched this step: new — `src/adapters/{RowSource,writeQueue,optimistic}.ts`,
+- Files touched in **step 11**: new — `src/adapters/{RowSource,writeQueue,optimistic}.ts`,
   `tests/unit/write-queue.test.ts`; changed — `PROGRESS.md`. Nothing outside `src/adapters/**`,
   `tests/**` and `PROGRESS.md`.
 - Earlier step 10 files: new — `spike/bases-path/{manifest.json,main.ts,write-test.ts,tsconfig.json,build.mjs,README.md,FINDINGS.md}`;

@@ -95,9 +95,58 @@ export type ViewRegistration = {
 	options?: (config: unknown) => unknown[];
 };
 
+/**
+ * The double for `BasesViewConfig` (obsidian.d.ts @1.10.0). It stores what a test sets and answers the
+ * readers the plugin uses: `get`, `getOrder`, `getSort`, `getDisplayName` and `set`. A view's own
+ * settings travel in the `.base` file through `set`, so the double has to keep them.
+ */
+export type BasesViewConfigStub = {
+	readonly values: Map<string, unknown>;
+	get(key: string): unknown;
+	getAsPropertyId(key: string): string | null;
+	getOrder(): string[];
+	getSort(): { property: string; direction: string }[];
+	getDisplayName(propertyId: string): string;
+	set(key: string, value: unknown): void;
+};
+
+export function createConfigStub(order: string[] = []): BasesViewConfigStub {
+	const values = new Map<string, unknown>();
+	return {
+		values,
+		get: (key) => values.get(key),
+		getAsPropertyId: (key) =>
+			typeof values.get(key) === 'string' ? String(values.get(key)) : null,
+		// `config.getOrder()` is the config's own column list; a test sets it when it wants columns.
+		getOrder: () => order,
+		getSort: () => [],
+		// `getDisplayName` always answers in the real API; the double says "no rename" with the bare name.
+		getDisplayName: (propertyId) =>
+			propertyId.includes('.') ? propertyId.slice(propertyId.indexOf('.') + 1) : propertyId,
+		set: (key, value) => {
+			values.set(key, value);
+		},
+	};
+}
+
 export class BasesView {
 	readonly type = '';
 	containerEl: ElementStub = elementStub();
+	/**
+	 * `BasesView.app` (obsidian.d.ts @1.10.0). Only the members plugin code touches while constructing a
+	 * view: the metadata cache. It has no `on` method here, which is what the view's own
+	 * `typeof … === 'function'` guard exists for — the real app always has one, a double need not.
+	 */
+	app: { readonly metadataCache: Record<string, unknown> } = { metadataCache: {} };
+	/** `BasesView.config` (@1.10.0). */
+	config: BasesViewConfigStub = createConfigStub();
+	/** `BasesView.data` (@1.10.0) — replaced wholesale by Obsidian, exactly as this double is. */
+	data: { readonly data: unknown[]; readonly properties: string[] } = {
+		data: [],
+		properties: [],
+	};
+	/** `BasesView.allProperties` (@1.10.0). */
+	allProperties: string[] = [];
 
 	onDataUpdated(): void {
 		// The view renders here; the double records nothing because tests assert on the container.
@@ -182,6 +231,16 @@ export class Plugin {
 	readonly statusBarItems: ElementStub[] = [];
 	readonly settingTabs: PluginSettingTab[] = [];
 	readonly registeredViews: { id: string; registration: ViewRegistration }[] = [];
+	/**
+	 * `Component.register(callback)` (obsidian.d.ts @0.9.7): a teardown the plugin hands to Obsidian. The
+	 * real app calls these on unload, so the double does too — a test may then assert that what a factory
+	 * registered is not left running, which is the whole reason the factory registers anything.
+	 */
+	readonly cleanups: (() => void)[] = [];
+
+	register(callback: () => void): void {
+		this.cleanups.push(callback);
+	}
 
 	addCommand(command: { id: string; name: string; callback: () => void }): {
 		id: string;
@@ -212,6 +271,11 @@ export class Plugin {
 	 * test can assert that nothing survives `onunload()` — otherwise that assertion would be vacuous.
 	 */
 	onunload(): void {
+		// Obsidian runs what the plugin registered, then drops it. In that order, so a teardown that reads
+		// something the plugin owns still sees it.
+		for (const cleanup of this.cleanups.splice(0, this.cleanups.length)) {
+			cleanup();
+		}
 		this.commands.length = 0;
 		this.statusBarItems.length = 0;
 		this.settingTabs.length = 0;

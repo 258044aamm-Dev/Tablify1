@@ -43,12 +43,12 @@ describe('Bases view registration', () => {
 
 		expect(view.containerEl).toBe(containerEl);
 		expect(view.type).toBe(TABLIFY_VIEW_TYPE);
+		// One host element is mounted inside the container; the grid owns the rest of the DOM later.
 		expect(containerEl.children).toHaveLength(1);
-		expect(containerEl.children[0]?.text).toContain('not wired to data yet');
-		expect(containerEl.children[0]?.classes).toContain('tablify-placeholder');
+		expect(containerEl.children[0]?.classes).toContain('tablify-view-host');
 	});
 
-	it('the placeholder view stays inert when Bases reports data', () => {
+	it('renders a truthful empty summary when Bases reports an empty dataset', () => {
 		const registration = firstRegistration(loadPlugin());
 		const containerEl = elementStub();
 		const view = registration.factory({}, containerEl);
@@ -56,7 +56,12 @@ describe('Bases view registration', () => {
 		expect(() => {
 			view.onDataUpdated();
 		}).not.toThrow();
+		// The container still holds exactly one host element, and the host states what it actually has.
 		expect(containerEl.children).toHaveLength(1);
+		const host = containerEl.children[0];
+		expect(host?.children[0]?.classes).toContain('tablify-placeholder-status');
+		expect(host?.children[0]?.text).toContain('0 rows × 0 columns');
+		expect(host?.children.slice(1)).toHaveLength(0);
 	});
 
 	it('unload leaves no registered view, no commands and no status bar item', () => {

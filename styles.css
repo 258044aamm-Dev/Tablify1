@@ -1,1 +1,14 @@
 /* Tablify stylesheet. The real design system (tokens, grid, dialogs) arrives with the grid step. */
+
+/* The step-12 placeholder: enough to be readable, deliberately not the grid. It is replaced in step 17,
+   and it is the only reason this file has a rule at all before the design system lands. */
+.tablify-view-host {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 4px;
+	font-size: 12px;
+}
+.tablify-placeholder-status {
+	font-weight: 600;
+}

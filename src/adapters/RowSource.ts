@@ -89,6 +89,13 @@ export interface RowSource {
 
 	/** Resolves when every queued write has hit disk. Called on blur, view close and undo. */
 	flush(): Promise<void>;
+
+	/**
+	 * Releases everything the source holds: subscriptions, timers, queued writes. Called when the view
+	 * closes. The port needs it because the alternative — a source that keeps a vault listener alive after
+	 * its pane is gone — is the exact bug class `docs/02` §error handling bans.
+	 */
+	dispose(): void;
 }
 
 /** An empty result, for the paths that have nothing to report. */

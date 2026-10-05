@@ -1,6 +1,6 @@
 import { Modal, Notice, Plugin } from 'obsidian';
 
-import { TablifyPlaceholderView } from './TablifyPlaceholderView';
+import { TablifyView } from './TablifyView';
 import { KEY_BINDINGS } from './help/keyBindings';
 import { TablifySettingTab } from './settings/TablifySettingTab';
 
@@ -35,6 +35,27 @@ export class KeyboardHelpModal extends Modal {
 }
 
 /**
+ * The environment every column context is built from. The timezone is the machine's, which is what a person
+ * expects a date to render in; the locale is the app's, and the core keeps machine-readable strings
+ * locale-independent on its own (`localDayKey` forces `en-CA`).
+ *
+ * The `navigator` guard lives here, in the composition root, rather than in the view: Obsidian always has a
+ * `navigator`, and this plugin's unit project runs in node, which does not. One guard at the edge is cheaper
+ * than a view that cannot be constructed in a test.
+ */
+export function pluginEnvironment(): {
+	readonly now: () => number;
+	readonly timezone: string;
+	readonly locale: string;
+} {
+	return {
+		now: () => Date.now(),
+		timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+		locale: typeof navigator === 'undefined' ? 'en' : navigator.language,
+	};
+}
+
+/**
  * Tablify's plugin entry point. It owns exactly four things — a Bases view type, two commands, a
  * settings tab and a status bar item — and no product logic yet.
  */
@@ -47,8 +68,20 @@ export default class TablifyPlugin extends Plugin {
 		const registered = this.registerBasesView(TABLIFY_VIEW_TYPE, {
 			name: TABLIFY_VIEW_NAME,
 			icon: TABLIFY_VIEW_ICON,
-			factory: (controller, containerEl) =>
-				new TablifyPlaceholderView(controller, containerEl, TABLIFY_VIEW_TYPE),
+			factory: (controller, containerEl) => {
+				const view = new TablifyView(
+					controller,
+					containerEl,
+					TABLIFY_VIEW_TYPE,
+					pluginEnvironment(),
+				);
+				// The view owns a write queue and a subscription; both are released when it is disposed.
+				// `Component.register` ties the teardown to this plugin's lifetime instead of `window`.
+				this.register(() => {
+					view.dispose();
+				});
+				return view;
+			},
 		});
 		if (!registered) {
 			// Notice(message: string | DocumentFragment): obsidian.d.ts, @since 0.9.7.
