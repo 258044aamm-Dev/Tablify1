@@ -208,13 +208,18 @@ function locateAtLine(
 ): { line: number; column: number; excerpt: string } {
 	const lines = text.split('\n');
 	const index = Math.max(0, Math.min(line - 1, lines.length - 1));
-	let excerpt = trimToLimit((lines[index] ?? '').trim());
-	if (excerpt === '') {
-		for (let above = index - 1; above >= 0; above -= 1) {
-			excerpt = trimToLimit((lines[above] ?? '').trim());
-			if (excerpt !== '') {
-				break;
-			}
+	const excerpt = trimToLimit((lines[index] ?? '').trim());
+	if (excerpt !== '') {
+		return { line, column, excerpt };
+	}
+	// The engine pointed at a line with nothing on it — a truncated document ends at a blank line, so the
+	// syntax error is reported one line past the text. Point at the last line that has content instead, and
+	// report *that* line's number: the answer is then the same whatever parsed the JSON, and it is a line a
+	// person can go and look at.
+	for (let above = index - 1; above >= 0; above -= 1) {
+		const candidate = trimToLimit((lines[above] ?? '').trim());
+		if (candidate !== '') {
+			return { line: above + 1, column: 1, excerpt: candidate };
 		}
 	}
 	return { line, column, excerpt };

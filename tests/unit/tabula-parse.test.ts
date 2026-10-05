@@ -11,7 +11,7 @@
  * normalizer's bugs along with it.
  */
 import { readFileSync, readdirSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { parseTabulaFile } from '../../src/adapters/tabulaFile/parse';
 import { orphanSelections } from '../../src/adapters/tabulaFile/model';
@@ -264,6 +264,30 @@ describe('what it refuses', () => {
 		expect(error.line).toBe(9);
 		// And the excerpt is never empty: an error with no text next to it is not a report a person can act on.
 		expect(error.excerpt.length).toBeGreaterThan(0);
+	});
+
+	it('reports the same line for a truncated file whichever engine parsed the JSON', () => {
+		// V8 names a position and a line/column pair; Bun names neither. The reader's answer must not depend
+		// on that, so this asserts the rule directly: an engine that points one line *past* the text (which is
+		// what V8 does for a truncated document — it stops at the last byte, where there is nothing) is
+		// answered with the last line that has content, and the same line number either way.
+		const text = textOf('truncated');
+		const spy = vi.spyOn(JSON, 'parse').mockImplementationOnce(() => {
+			throw new SyntaxError(
+				"Expected ',' or '}' after property value in JSON at position 269 (line 10 column 1)",
+			);
+		});
+		try {
+			const result = parseTabulaFile(text, 'truncated.tabula');
+			expect(result.ok).toBe(false);
+			if (result.ok) {
+				return;
+			}
+			expect(result.error.line).toBe(errorOf('truncated').line);
+			expect(result.error.excerpt).toContain('the file stops here');
+		} finally {
+			spy.mockRestore();
+		}
 	});
 
 	it('refuses an empty file rather than inventing an empty table', () => {

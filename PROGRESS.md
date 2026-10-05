@@ -29,21 +29,34 @@
   step-04 settings tab does not implement `getSettingDefinitions()`; step 14 replaces it);
   `brand-gate: OK — 60 permitted match(es), 0 violations` (one more permitted match: the new fixtures name the
   legacy format in prose, not a brand); `manifest:check: OK`; `All matched files use Prettier code style!`;
-  **911 tests across 23 files** (was 868 / 21: +25 in `tests/unit/tabula-parse.test.ts`, +18 in
+  **912 tests across 23 files** (was 868 / 21: +26 in `tests/unit/tabula-parse.test.ts`, +18 in
   `tests/unit/tabula-migrate.test.ts`); `bundle-size: OK` — `main.js raw 52747 bytes (51.51 KB)`,
   `gzip 16555 bytes (16.17 KB)`, `styles.css !important check: clean`. Coverage: all files **91.46 / 90.21**
   (funcs 96.22); `core/migrate` **93.81** (`dryRun.ts` 94.82, `apply.ts` 92.02),
   `adapters/tabulaFile` **82.77** (`model.ts` 83.41, `parse.ts` 82.53), `src/core/**` unchanged at 85+/85+.
+
+- **The first CI run of this step failed, and it was the most useful thing that happened to it.**
+  Run `37364334832` (on `c97e79f`) failed at `bun run test`: `tests/unit/tabula-parse.test.ts` →
+  `refuses a truncated file … expected 10 to be 9`. The reader had fixed the runtime-dependence in the branch
+  that has **no** engine position (Bun says `Expected '}'` with no position) and left the engine's own
+  position untouched in the branch that has one — and the CI runner's engine reports
+  `… in JSON at position 269 (line 10 column 1)`, pointing a truncated document at the last byte of the input,
+  which is one line past the text. `locateAtLine` now answers a position that lands on a blank line with the
+  **last line that has content, and that line's number**, so both engines report line 9 with the same excerpt.
+  The rule is pinned by a test that injects a V8-shaped message (`line 10 column 1`) through a one-shot
+  `JSON.parse` spy, so the local suite now catches exactly what CI caught — the fix is verified twice without a
+  third push. The step-13 evidence above is from the gate **after** that fix.
 
 - The acceptance assertions, by requirement:
   1. **It never throws.** Every refusal is a `TabulaResult` with `TabulaError { path, line?, column?, message,
      excerpt ≤ 120 }`; the engine's own `SyntaxError` travels as `cause` and nothing asserted depends on its
      wording. `truncated.tabula` (a deliberate half-written JSON file) refuses with
      `the file is not valid JSON — it stops before the document ends, so it is truncated or only partly saved`
-     at **line 9 with a non-empty excerpt on both runtimes**: V8 reports the position at the last byte of the
+     at **line 9 with a non-empty excerpt on both engines**: V8 reports the position at the last byte of the
      input (where there is no text) and Bun reports no position at all, so a position that lands on nothing is
-     answered with the file's last line that has content (`locateFrom` → `locateEnd`). The snapshot pins the
-     message and the excerpt; the assertion pins the line.
+     answered with the file's last line that has content (`locateAtLine`/`locateFrom` → `locateEnd`). The
+     snapshot pins the message and the excerpt; the assertions pin the line, once for each engine's message
+     shape.
   2. **Version from content.** `version === 2 && Array.isArray(tables)` is v2, `fields && rows` is v1, a
      `tables` array with no `version` is read as the v2 envelope (with a `missing-version` warning), and
      `version > 2` refuses rather than guessing.
