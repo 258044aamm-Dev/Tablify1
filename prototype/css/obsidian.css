@@ -1,0 +1,275 @@
+/* ============================================================================
+   obsidian.css — the SIMULATED Obsidian shell for the prototype.
+   This file is not plugin code: it fakes the app chrome (window, tab strip,
+   modals, settings, legacy file view) and the theme variables the plugin is
+   only allowed to READ. Mirrors docs/04 tier 1.
+   ========================================================================== */
+
+:root, .theme-light {
+  --background-primary: #ffffff;
+  --background-primary-alt: #fcfcfc;
+  --background-secondary: #f4f4f5;
+  --background-secondary-alt: #ebebec;
+  --background-modifier-border: #e2e2e4;
+  --background-modifier-hover: rgba(0, 0, 0, 0.045);
+  --background-modifier-active-hover: rgba(0, 0, 0, 0.075);
+  --background-modifier-border-focus: #b9b9bd;
+  --background-modifier-form-field: #ffffff;
+  --text-normal: #2e3338;
+  --text-muted: #6b6f76;
+  --text-faint: #9a9ea5;
+  --text-on-accent: #ffffff;
+  --text-accent: #8a452c;
+  --text-error: #b8453c;
+  --text-success: #3f8f5c;
+  --interactive-normal: #f0f0f1;
+  --interactive-hover: #e6e6e8;
+  --interactive-accent: #9c4a2f;
+  --radius-s: 4px;
+  --radius-m: 8px;
+  --font-ui-smaller: 11px;
+  --font-ui-small: 12px;
+  --font-ui-medium: 13px;
+  --font-text: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+  --font-monospace: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --layer-shadow: 0 2px 6px rgba(20, 14, 10, 0.10), 0 12px 32px rgba(20, 14, 10, 0.14);
+  --overlay-bg: rgba(30, 25, 22, 0.42);
+}
+.theme-dark {
+  --background-primary: #1e1e20;
+  --background-primary-alt: #232326;
+  --background-secondary: #26262a;
+  --background-secondary-alt: #2c2c31;
+  --background-modifier-border: #38383d;
+  --background-modifier-hover: rgba(255, 255, 255, 0.05);
+  --background-modifier-active-hover: rgba(255, 255, 255, 0.08);
+  --background-modifier-border-focus: #4d4d54;
+  --background-modifier-form-field: #1a1a1c;
+  --text-normal: #dcddde;
+  --text-muted: #a1a3a8;
+  --text-faint: #767980;
+  --text-on-accent: #221a16;
+  --text-accent: #e0916d;
+  --text-error: #d4574d;
+  --text-success: #4fa46b;
+  --interactive-normal: #333338;
+  --interactive-hover: #3d3d43;
+  --interactive-accent: #e0916d;
+  --layer-shadow: 0 2px 6px rgba(0, 0, 0, 0.45), 0 14px 34px rgba(0, 0, 0, 0.4);
+  --overlay-bg: rgba(0, 0, 0, 0.55);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-family: var(--font-text);
+  font-size: var(--font-ui-medium);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+
+/* ── harness bar (prototype-only) ───────────────────────────────────────── */
+.harness {
+  flex: none; display: flex; align-items: center; gap: 10px;
+  padding: 7px 12px; background: #241f1c; color: #f2ece7;
+  font-size: var(--font-ui-small); border-bottom: 1px solid var(--background-modifier-border);
+  overflow-x: auto; white-space: nowrap;
+}
+.harness-brand { font-weight: 700; letter-spacing: 0.02em; }
+.harness-note { opacity: 0.68; }
+.harness-sp { flex: 1; }
+.harness-group { display: flex; align-items: center; gap: 5px; }
+.harness-label { opacity: 0.66; }
+.harness-btn {
+  font: inherit; padding: 3px 9px; border-radius: var(--radius-s); cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.22); background: transparent; color: inherit;
+}
+.harness-btn:hover { background: rgba(255,255,255,0.12); }
+.harness-btn.is-on { background: #f2ece7; color: #241f1c; border-color: transparent; font-weight: 600; }
+
+/* ── workspace / window ─────────────────────────────────────────────────── */
+.workspace { flex: 1; display: flex; min-height: 0; padding: 12px; gap: 10px; }
+.window {
+  flex: 1; min-width: 0; display: flex; flex-direction: column;
+  background: var(--background-primary); border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m); overflow: hidden; box-shadow: var(--layer-shadow);
+}
+.tabstrip {
+  flex: none; display: flex; align-items: center; gap: 6px;
+  background: var(--background-secondary); border-bottom: 1px solid var(--background-modifier-border);
+  padding: 6px 8px 0; overflow-x: auto;
+}
+.tab {
+  display: flex; align-items: center; gap: 7px; padding: 6px 12px; cursor: pointer;
+  border-radius: var(--radius-s) var(--radius-s) 0 0; background: transparent;
+  border: 1px solid transparent; border-bottom: 0; color: var(--text-muted);
+  font-size: var(--font-ui-small); white-space: nowrap;
+}
+.tab:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.tab.is-active {
+  background: var(--background-primary); color: var(--text-normal);
+  border-color: var(--background-modifier-border); border-bottom-color: var(--background-primary);
+}
+.tab-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--interactive-accent); }
+.tab-close { opacity: 0.45; font-size: 13px; }
+.tab-close:hover { opacity: 1; }
+.bases-bar {
+  flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--background-primary); font-size: var(--font-ui-small); color: var(--text-muted);
+}
+.view-pill { padding: 2px 9px; border-radius: 999px; background: var(--background-secondary-alt); color: var(--text-normal); font-weight: 600; }
+.view-host { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.screen { position: absolute; inset: 0; display: none; }
+.screen.is-active { display: block; }
+
+/* ── modal (Obsidian-style) ─────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 200; background: var(--tablify-overlay);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+  /* modal motion (Stage 2): occasional surface, so one short transition. A modal
+     stays centred — it does not slide in from a trigger — so the movement is a
+     small scale + lift, never a translate across the screen. */
+  transition: opacity var(--tablify-dur-modal) var(--tablify-ease-out);
+}
+@starting-style { .modal-overlay { opacity: 0; } }
+.modal-overlay.is-closing {
+  opacity: 0; pointer-events: none;
+  transition-duration: var(--tablify-dur-modal-out);
+}
+.modal {
+  display: flex; flex-direction: column; width: 100%; max-width: var(--modal-w, 520px);
+  max-height: calc(100vh - 40px); overflow: hidden;
+  background: var(--tablify-surface-raised); color: var(--tablify-text);
+  border: 1px solid var(--tablify-line); border-radius: var(--radius-m);
+  box-shadow: var(--tablify-shadow-2);
+  transition:
+    opacity var(--tablify-dur-modal) var(--tablify-ease-out),
+    transform var(--tablify-dur-modal) var(--tablify-ease-out);
+}
+@starting-style {
+  .modal { opacity: 0; transform: scale(var(--tablify-enter-scale-lg)) translateY(4px); }
+}
+.modal-overlay.is-closing .modal {
+  opacity: 0; transform: scale(var(--tablify-enter-scale-lg));
+  transition-duration: var(--tablify-dur-modal-out);
+}
+.modal.is-wide { --modal-w: 860px; }
+.modal.is-xl { --modal-w: 1040px; }
+.modal-head {
+  flex: none; display: flex; align-items: center; gap: 8px; padding: 12px 16px;
+  border-bottom: 1px solid var(--tablify-line);
+}
+.modal-title { font-size: 15px; font-weight: 600; margin: 0; flex: 1; }
+.modal-x { cursor: pointer; color: var(--tablify-text-muted); font-size: 18px; line-height: 1; padding: 2px 6px; border-radius: var(--radius-s); }
+.modal-x:hover { background: var(--tablify-surface-sunken); color: var(--tablify-text); }
+.modal-body { flex: 1; overflow: auto; padding: 16px; }
+.modal-foot {
+  flex: none; display: flex; align-items: center; gap: 8px; padding: 12px 16px;
+  border-top: 1px solid var(--tablify-line);
+}
+.modal-foot .sp { flex: 1; }
+
+/* ── Obsidian controls ──────────────────────────────────────────────────── */
+.ob-btn {
+  font: inherit; font-size: var(--font-ui-small); padding: 5px 12px; cursor: pointer;
+  border-radius: var(--radius-s); border: 1px solid var(--background-modifier-border);
+  background: var(--interactive-normal); color: var(--text-normal);
+}
+.ob-btn:hover { background: var(--interactive-hover); }
+.ob-btn.is-primary { background: var(--interactive-accent); color: var(--text-on-accent); border-color: transparent; font-weight: 600; }
+.ob-btn.is-danger { color: var(--text-error); border-color: var(--text-error); }
+.ob-btn.is-danger:hover { background: var(--text-error); color: var(--background-primary); }
+.ob-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.ob-input, .ob-select, .ob-textarea {
+  font: inherit; font-size: var(--font-ui-small); padding: 5px 8px; width: 100%;
+  color: var(--text-normal); background: var(--background-modifier-form-field);
+  border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s);
+}
+.ob-input:focus, .ob-select:focus, .ob-textarea:focus { border-color: var(--background-modifier-border-focus); }
+.ob-textarea { min-height: 84px; resize: vertical; font-family: var(--font-text); }
+.ob-check { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; font-size: var(--font-ui-small); }
+.ob-field { margin-bottom: 12px; }
+.ob-field-label { display: block; margin-bottom: 5px; font-size: var(--font-ui-smaller); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.ob-hint { font-size: var(--font-ui-smaller); color: var(--text-muted); }
+.ob-cols { display: flex; gap: 10px; }
+.ob-cols > * { flex: 1; }
+.ob-divider { height: 1px; margin: 14px 0; background: var(--background-modifier-border); }
+.ob-tag {
+  display: inline-flex; align-items: center; gap: 5px; padding: 1px 7px; border-radius: 999px;
+  font-size: var(--font-ui-smaller); background: var(--background-secondary-alt); color: var(--text-muted);
+}
+.ob-banner {
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px; font-size: var(--font-ui-small);
+  background: var(--background-secondary); border-bottom: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+}
+.ob-banner.is-warn { background: color-mix(in srgb, var(--text-error) 12%, var(--background-primary)); color: var(--text-normal); }
+
+/* ── settings tab ───────────────────────────────────────────────────────── */
+.settings-wrap { position: absolute; inset: 0; overflow: auto; background: var(--background-primary); }
+.settings-inner { max-width: 760px; margin: 0 auto; padding: 22px 20px 60px; }
+.settings-h { font-size: 17px; font-weight: 700; margin: 0 0 4px; }
+.settings-sub { color: var(--text-muted); font-size: var(--font-ui-small); margin-bottom: 20px; }
+.set-group { border-top: 1px solid var(--background-modifier-border); padding: 16px 0; }
+.set-group-title { font-size: var(--font-ui-smaller); text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 12px; }
+.set-row { display: flex; align-items: flex-start; gap: 16px; padding: 9px 0; }
+.set-row-main { flex: 1; min-width: 0; }
+.set-row-name { font-size: var(--font-ui-medium); }
+.set-row-desc { color: var(--text-muted); font-size: var(--font-ui-smaller); margin-top: 2px; }
+.set-row-ctl { flex: none; width: 230px; }
+.set-row-ctl.is-narrow { width: 130px; }
+.set-inline { display: flex; align-items: center; gap: 8px; }
+.set-secret { display: flex; gap: 6px; }
+.set-secret input { font-family: var(--font-monospace); font-size: var(--font-ui-smaller); }
+.set-note {
+  margin-top: 10px; padding: 9px 11px; border-radius: var(--radius-s); font-size: var(--font-ui-smaller);
+  background: var(--background-secondary); color: var(--text-muted); border-left: 3px solid var(--interactive-accent);
+}
+
+/* ── legacy .tabula view ────────────────────────────────────────────────── */
+.legacy-wrap { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.legacy-scroll { flex: 1; overflow: auto; padding: 0 0 40px; }
+.legacy-table { margin: var(--legacy-gap, 100px) 12px 0; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); overflow: hidden; background: var(--background-primary); }
+.legacy-table:first-child { margin-top: 12px; }
+.legacy-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--background-secondary); border-bottom: 1px solid var(--background-modifier-border); font-size: var(--font-ui-small); font-weight: 600; }
+.legacy-head .sp { flex: 1; }
+.legacy-grid { width: max-content; min-width: 100%; }
+.legacy-row { display: flex; }
+.legacy-cell { padding: 5px 10px; border-right: 1px solid var(--background-modifier-border); border-bottom: 1px solid var(--background-modifier-border); font-size: var(--font-ui-small); white-space: nowrap; min-width: 120px; }
+.legacy-cell.is-head { background: var(--background-secondary); color: var(--text-muted); font-weight: 600; font-size: var(--font-ui-smaller); text-transform: uppercase; letter-spacing: 0.03em; }
+.legacy-topscroller { flex: none; overflow-x: auto; overflow-y: hidden; height: 14px; background: var(--background-secondary); border-bottom: 1px solid var(--background-modifier-border); }
+.legacy-topspacer { height: 1px; }
+
+/* ── toast + announce ───────────────────────────────────────────────────── */
+.toast-stack { position: fixed; right: 16px; bottom: 16px; z-index: 300; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.toast {
+  padding: 9px 14px; border-radius: var(--radius-m); font-size: var(--font-ui-small);
+  background: var(--tablify-toast-bg); color: var(--tablify-toast-fg); box-shadow: var(--tablify-shadow-2);
+  max-width: 420px;
+  /* the fade the JS always pretended to do: enter 260 ms, leave 180 ms */
+  transition:
+    opacity var(--tablify-dur-toast) var(--tablify-ease-out),
+    transform var(--tablify-dur-toast) var(--tablify-ease-out);
+}
+@starting-style { .toast { opacity: 0; transform: translateY(8px); } }
+.toast.is-leaving {
+  opacity: 0; transform: translateY(4px);
+  transition-duration: var(--tablify-dur-toast-out);
+}
+.toast.is-error { background: var(--text-error); color: #fff; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* ── host layout used by index.html ─────────────────────────────────────── */
+.screen.is-active { display: flex; flex-direction: column; }
+.screen-host { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+
+/* the phone squeeze: 389 px is where the old plugin fell apart, so it is a
+   first-class toggle in this prototype rather than a media query nobody tests */
+.workspace.is-phone .window { max-width: 389px; margin: 0 auto; }
+
+/* the legacy screen scrolls as one document; each table scrolls sideways */
+.legacy-wrap { overflow-y: auto; }
+.legacy-scroll { flex: none; overflow-x: auto; overflow-y: hidden; padding: 0; }
+.legacy-gap { flex: none; }

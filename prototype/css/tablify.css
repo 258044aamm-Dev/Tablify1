@@ -1,0 +1,312 @@
+/* ============================================================================
+   tablify.css — the PLUGIN's own styles: tier 2 brand tokens + tier 3
+   components. Rules honoured (docs/04):
+     · no !important    · selectors max 2 levels    · literals only in tokens
+     · .tablify-root is position:absolute; inset:0 and there is ONE scroller
+   ========================================================================== */
+/* Hover rules are wrapped in `@media (hover: hover) and (pointer: fine)` in
+   place — never hoisted — so cascade order is byte-for-byte what it was, while
+   a touch device (which reports `hover: none`) never gets a stuck hover state. */
+
+.tablify-root {
+  /* every colour token now lives in css/tokens.css (identity → semantic →
+     mapping). This block keeps only geometry and the two wiring rules. */
+  --row-h: 40px;
+  --header-h: 40px;
+  position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden;
+  background: var(--tablify-surface); color: var(--tablify-text);
+  font-family: var(--font-text); font-size: var(--font-ui-medium);
+}
+/* the dark palette lives in css/tokens.css as :root.theme-dark, so it reaches
+   portalled surfaces too — the grid is no longer the only thing that darkens. */
+
+/* ── chrome ─────────────────────────────────────────────────────────────── */
+.tablify-toolbar {
+  flex: none; display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  /* scrolls sideways instead of hiding buttons: at 389 px the right-hand end of
+     the toolbar used to be clipped and unreachable */
+  overflow-x: auto; overflow-y: hidden; white-space: nowrap;
+  scrollbar-width: thin; overscroll-behavior-x: contain;
+  scroll-padding-inline: 8px;
+}
+.tablify-toolbar::-webkit-scrollbar { height: 6px; }
+.tablify-toolbar::-webkit-scrollbar-thumb { background: var(--background-modifier-border-focus); border-radius: 999px; }
+.tablify-toolbar.is-wrapped { flex-wrap: wrap; white-space: normal; }
+.tablify-search { flex: none; width: 170px; padding: 5px 8px; font: inherit; font-size: var(--font-ui-small); color: var(--text-normal); background: var(--background-modifier-form-field); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s); }
+.tablify-search:focus { border-color: var(--tablify-focus-ring); box-shadow: 0 0 0 2px var(--tablify-accent-subtle); }
+.tablify-btn { font: inherit; font-size: var(--font-ui-small); padding: 5px 9px; cursor: pointer; white-space: nowrap; color: var(--text-normal); background: var(--interactive-normal); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s); }
+@media (hover: hover) and (pointer: fine) { .tablify-btn:hover { background: var(--interactive-hover); } }
+.tablify-btn.is-on { background: var(--tablify-accent); color: var(--tablify-accent-text); border-color: transparent; font-weight: 600; }
+.tablify-btn.is-ghost { background: transparent; border-color: transparent; color: var(--text-muted); }
+@media (hover: hover) and (pointer: fine) { .tablify-btn.is-ghost:hover { background: var(--background-modifier-hover); color: var(--text-normal); } }
+.tablify-seg { display: flex; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s); overflow: hidden; }
+.tablify-seg .tablify-btn { border: 0; border-radius: 0; background: transparent; }
+.tablify-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 999px; font-size: var(--font-ui-small); cursor: pointer; background: var(--tablify-accent-subtle); color: var(--text-normal); border: 1px solid transparent; }
+@media (hover: hover) and (pointer: fine) { .tablify-chip:hover { border-color: var(--tablify-accent); } }
+.tablify-chip-x { color: var(--text-muted); font-weight: 700; }
+.tablify-spacer { flex: 1; }
+.tablify-badge { padding: 1px 6px; border-radius: 999px; font-size: var(--font-ui-smaller); background: var(--tablify-accent); color: var(--tablify-accent-text); font-weight: 700; }
+
+.tablify-bars { flex: none; border-bottom: 1px solid var(--background-modifier-border); background: var(--background-primary-alt); }
+.tablify-bar { display: flex; align-items: center; gap: 6px; padding: 6px 8px; flex-wrap: wrap; font-size: var(--font-ui-small); }
+.tablify-bar + .tablify-bar { border-top: 1px solid var(--background-modifier-border); }
+.tablify-bar-label { color: var(--text-faint); font-size: var(--font-ui-smaller); text-transform: uppercase; letter-spacing: 0.05em; }
+.tablify-cond { display: flex; align-items: center; gap: 4px; padding: 3px; border-radius: var(--radius-s); background: var(--background-secondary); }
+.tablify-cond.is-match { background: transparent; padding: 0; gap: 4px; }
+.tablify-mini { font: inherit; font-size: var(--font-ui-smaller); padding: 3px 6px; max-width: 190px; color: var(--text-normal); background: var(--background-modifier-form-field); border: 1px solid var(--background-modifier-border); border-radius: 3px; }
+.tablify-mini.is-num { width: 76px; }
+.tablify-query { flex: 1; min-width: 220px; font-family: var(--font-monospace); font-size: var(--font-ui-smaller); padding: 5px 8px; color: var(--text-normal); background: var(--background-modifier-form-field); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s); }
+.tablify-query.is-error { border-color: var(--tablify-danger); }
+.tablify-err { color: var(--tablify-danger); font-size: var(--font-ui-smaller); }
+.tablify-sortlevel { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px; border-radius: 999px; background: var(--background-secondary); }
+.tablify-drag { cursor: grab; color: var(--text-faint); }
+.tablify-x { cursor: pointer; color: var(--text-faint); font-weight: 700; }
+@media (hover: hover) and (pointer: fine) { .tablify-x:hover { color: var(--tablify-danger); } }
+
+/* ── the grid ───────────────────────────────────────────────────────────── */
+.tablify-grid-area { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; }
+.tablify-scroller { position: absolute; inset: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: none; -ms-overflow-style: none; }
+.tablify-scroller::-webkit-scrollbar { width: 0; height: 0; }
+.tablify-layer { position: absolute; top: 0; left: 0; will-change: transform; }
+.tablify-rows { width: max-content; min-width: 100%; }
+.tablify-header { z-index: 3; }
+.tablify-frozen { z-index: 2; background: var(--background-primary); }
+.tablify-corner { z-index: 4; }
+.tablify-statusbar { flex: none; display: flex; align-items: center; gap: 12px; padding: 4px 10px; border-top: 1px solid var(--background-modifier-border); background: var(--background-secondary); color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.tablify-save { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.tablify-save-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--tablify-ok); }
+
+.hcell { height: var(--header-h); display: flex; align-items: center; gap: 6px; padding: 0 10px; flex: none; position: relative; border-right: 1px solid var(--background-modifier-border); border-bottom: 1px solid var(--background-modifier-border); background: var(--background-secondary); color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; cursor: pointer; user-select: none; overflow: hidden; }
+@media (hover: hover) and (pointer: fine) { .hcell:hover { background: var(--background-modifier-hover); color: var(--text-normal); } }
+.hcell.is-sorted { color: var(--tablify-accent); }
+.hcell.is-drop-before { box-shadow: inset 3px 0 0 var(--tablify-accent); }
+.hcell.is-drop-after { box-shadow: inset -3px 0 0 var(--tablify-accent); }
+.hcell.is-dragging { opacity: 0.45; }
+.hcell-name { overflow: hidden; text-overflow: ellipsis; }
+.hcell-type { color: var(--text-faint); font-size: 9px; }
+.hcell-caret { margin-left: auto; opacity: 0.55; font-size: 9px; }
+.hcell-resize { position: absolute; top: 0; right: -3px; width: 7px; height: 100%; cursor: col-resize; z-index: 5; }
+@media (hover: hover) and (pointer: fine) { .hcell-resize:hover { background: var(--tablify-accent-subtle); } }
+
+.grid-row { display: flex; height: var(--row-h); }
+@media (hover: hover) and (pointer: fine) { .grid-row:hover .cell { background: var(--background-modifier-hover); } }
+.grid-row.is-checked .cell { background: var(--background-modifier-active-hover); }
+.cell { display: flex; align-items: center; gap: 6px; flex: none; padding: 0 10px; border-right: 1px solid var(--background-modifier-border); border-bottom: 1px solid var(--background-modifier-border); font-size: var(--font-ui-medium); overflow: hidden; white-space: nowrap; cursor: cell; user-select: none; }
+.cell-text { overflow: hidden; text-overflow: ellipsis; }
+.cell.is-number { justify-content: flex-end; font-family: var(--font-monospace); font-size: var(--font-ui-small); color: var(--tablify-number); }
+.cell.is-readonly { cursor: default; color: var(--text-muted); background: var(--background-primary-alt); }
+.cell.is-empty .cell-text { color: var(--text-faint); }
+.cell.in-range { background: var(--tablify-accent-subtle); }
+.cell.is-active { box-shadow: inset 0 0 0 2px var(--tablify-focus-ring); z-index: 1; }
+.cell.in-range.is-active { background: var(--background-primary); }
+.cell.is-flagged { box-shadow: inset 0 0 0 2px var(--tablify-danger); }
+.cell-wrap { display: flex; align-items: center; gap: 6px; width: 100%; overflow: hidden; }
+.gutter { display: flex; align-items: center; gap: 6px; flex: none; padding: 0 8px 0 10px; border-right: 1px solid var(--background-modifier-border); border-bottom: 1px solid var(--background-modifier-border); background: var(--background-secondary); color: var(--text-faint); font-size: var(--font-ui-smaller); font-family: var(--font-monospace); user-select: none; }
+@media (hover: hover) and (pointer: fine) { .grid-row:hover .gutter { background: var(--background-secondary-alt); } }
+.gutter-handle { cursor: grab; opacity: 0.5; font-size: 10px; }
+@media (hover: hover) and (pointer: fine) { .gutter-handle:hover { opacity: 1; } }
+.checkbox { appearance: none; width: 15px; height: 15px; flex: none; position: relative; border: 1.5px solid var(--background-modifier-border-focus); border-radius: 3px; background: var(--background-primary); cursor: pointer; }
+.checkbox:checked { background: var(--tablify-accent); border-color: var(--tablify-accent); }
+.checkbox:checked::after { content: ""; position: absolute; left: 4px; top: 0.5px; width: 4px; height: 8px; border: solid var(--tablify-accent-text); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.linkish { color: var(--text-accent); text-decoration: underline dotted; text-underline-offset: 2px; }
+.pill { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 999px; font-size: var(--font-ui-smaller); font-weight: 600; white-space: nowrap; background: color-mix(in srgb, var(--pill-hue) 16%, transparent); border: 1px solid color-mix(in srgb, var(--pill-hue) 32%, transparent); color: var(--text-normal); }
+.pill-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--pill-hue); flex: none; }
+.pill--gray   { --pill-hue: #8b8b8b; }
+.pill--blue   { --pill-hue: #4a76c4; }
+.pill--green  { --pill-hue: #3f8f5c; }
+.pill--yellow { --pill-hue: #b7912b; }
+.pill--orange { --pill-hue: #c4703a; }
+.pill--red    { --pill-hue: #b8453c; }
+.pill--pink   { --pill-hue: #b3548f; }
+.pill--purple { --pill-hue: #7c5cc4; }
+.pill--cyan   { --pill-hue: #3d8f9c; }
+.stars { letter-spacing: 1px; color: var(--tablify-star); font-size: 12px; }
+.stars-empty { color: var(--text-faint); }
+.bar { flex: 1; min-width: 30px; height: 5px; border-radius: 999px; background: var(--background-modifier-border); overflow: hidden; }
+.bar-fill { height: 100%; background: var(--tablify-accent); }
+.filechip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; border-radius: var(--radius-s); background: var(--background-secondary); border: 1px solid var(--background-modifier-border); font-size: var(--font-ui-smaller); color: var(--text-muted); }
+.group-bar { display: flex; align-items: center; gap: 8px; height: var(--row-h); padding: 0 12px; width: max-content; min-width: 100%; background: var(--background-secondary); border-bottom: 1px solid var(--background-modifier-border); font-size: var(--font-ui-small); font-weight: 600; cursor: pointer; }
+.group-bar-frozen { display: flex; align-items: center; gap: 8px; height: var(--row-h); padding: 0 12px; background: var(--background-secondary); border-right: 1px solid var(--background-modifier-border); border-bottom: 1px solid var(--background-modifier-border); font-size: var(--font-ui-small); font-weight: 600; }
+.group-count { color: var(--text-faint); font-weight: 400; }
+.tablify-addrow { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px; border: 0; border-bottom: 1px solid var(--background-modifier-border); background: var(--background-primary); color: var(--text-faint); font: inherit; font-size: var(--font-ui-small); cursor: pointer; text-align: left; }
+@media (hover: hover) and (pointer: fine) { .tablify-addrow:hover { background: var(--background-modifier-hover); color: var(--text-normal); } }
+.tablify-empty { padding: 34px 20px; text-align: center; color: var(--text-faint); font-size: var(--font-ui-small); }
+.tablify-empty-title { color: var(--text-normal); font-size: var(--font-ui-medium); font-weight: 600; margin-bottom: 6px; }
+.skeleton { height: var(--row-h); display: flex; align-items: center; gap: 10px; padding: 0 12px; border-bottom: 1px solid var(--background-modifier-border); }
+.skeleton-bar { height: 9px; border-radius: 999px; background: var(--background-modifier-hover); }
+.row-drag-ghost { position: fixed; z-index: 120; padding: 4px 10px; border-radius: var(--radius-s); background: var(--tablify-accent); color: var(--tablify-accent-text); font-size: var(--font-ui-smaller); pointer-events: none; }
+
+/* ── editors ────────────────────────────────────────────────────────────── */
+.cell-editor { width: 100%; padding: 2px 5px; font: inherit; font-size: var(--font-ui-medium); color: var(--text-normal); background: var(--background-primary); border: 1px solid var(--tablify-focus-ring); border-radius: 3px;
+  /* no ring here on purpose: the cell around the editor already shows the exact
+     same clay ring, and a second one 2 px inside would just double it up. */
+  outline: none; }
+.editor-anchor { position: fixed; z-index: 120; padding: 2px; background: var(--background-primary); border: 1px solid var(--tablify-focus-ring); border-radius: 3px; box-shadow: var(--layer-shadow); }
+.pop { position: fixed; z-index: 250; min-width: 200px; max-height: 280px; overflow: auto; padding: 5px; background: var(--tablify-surface-raised); color: var(--tablify-text); border: 1px solid var(--tablify-line); border-radius: var(--radius-m); box-shadow: var(--tablify-shadow-2); }
+.pop-search { width: 100%; margin-bottom: 4px; }
+.pop-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--radius-s); font-size: var(--font-ui-small); cursor: pointer; }
+@media (hover: hover) and (pointer: fine) { .pop-item:hover { background: var(--tablify-surface-sunken); } }
+.pop-item.is-picked { background: var(--tablify-accent-subtle); }
+.pop-item-tick { margin-left: auto; color: var(--tablify-accent); font-weight: 700; }
+.pop-create { color: var(--tablify-accent); font-weight: 600; }
+.pop-label { padding: 6px 8px 2px; color: var(--text-faint); font-size: var(--font-ui-smaller); text-transform: uppercase; letter-spacing: 0.04em; }
+.menu { position: fixed; z-index: 260; min-width: 220px; padding: 5px; background: var(--tablify-surface-raised); color: var(--tablify-text); border: 1px solid var(--tablify-line); border-radius: var(--radius-m); box-shadow: var(--tablify-shadow-2); font-size: var(--font-ui-small); }
+.menu-item { display: flex; align-items: center; gap: 10px; padding: 6px 9px; border-radius: var(--radius-s); cursor: pointer; }
+@media (hover: hover) and (pointer: fine) { .menu-item:hover { background: var(--tablify-surface-sunken); } }
+.menu-item.is-disabled { opacity: 0.45; cursor: default; }
+@media (hover: hover) and (pointer: fine) { .menu-item.is-disabled:hover { background: transparent; } }
+@media (hover: hover) and (pointer: fine) { .menu-item.is-danger:hover { background: var(--tablify-danger); color: var(--background-primary); } }
+.menu-key { margin-left: auto; color: var(--text-faint); font-size: var(--font-ui-smaller); }
+.menu-sep { height: 1px; margin: 4px 6px; background: var(--tablify-line); }
+.menu-label { padding: 6px 9px 3px; color: var(--text-faint); font-size: var(--font-ui-smaller); text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* ── dialog internals ───────────────────────────────────────────────────── */
+.dlg-table { width: 100%; border-collapse: collapse; font-size: var(--font-ui-small); }
+.dlg-table th { text-align: left; padding: 6px 8px; background: var(--background-secondary); color: var(--text-muted); font-size: var(--font-ui-smaller); text-transform: uppercase; letter-spacing: 0.03em; position: sticky; top: 0; z-index: 1; }
+.dlg-table td { padding: 5px 8px; border-top: 1px solid var(--background-modifier-border); vertical-align: top; }
+.dlg-table tr.is-changed td { background: color-mix(in srgb, var(--tablify-pending) 12%, transparent); }
+.dlg-table tr.is-conflict td { background: color-mix(in srgb, var(--tablify-danger) 12%, transparent); }
+.dlg-scroll { max-height: 340px; overflow: auto; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s); }
+.dlg-preview { max-height: 300px; overflow: auto; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s); }
+.dlg-preview td, .dlg-preview th { padding: 3px 8px; border-right: 1px solid var(--background-modifier-border); border-bottom: 1px solid var(--background-modifier-border); font-size: var(--font-ui-smaller); white-space: nowrap; }
+.dlg-preview th { background: var(--background-secondary); position: sticky; top: 0; }
+.dlg-stats { display: flex; gap: 18px; flex-wrap: wrap; margin: 12px 0; }
+.dlg-stat { min-width: 92px; }
+.dlg-stat-num { font-size: 20px; font-weight: 700; font-family: var(--font-monospace); }
+.dlg-stat-lbl { font-size: var(--font-ui-smaller); color: var(--text-muted); }
+.dlg-warn { display: flex; gap: 10px; padding: 10px 12px; border-radius: var(--radius-s); font-size: var(--font-ui-small); background: color-mix(in srgb, var(--tablify-pending) 14%, transparent); border-left: 3px solid var(--tablify-pending); margin: 12px 0; }
+.dlg-danger { display: flex; gap: 10px; padding: 10px 12px; border-radius: var(--radius-s); font-size: var(--font-ui-small); background: color-mix(in srgb, var(--tablify-danger) 12%, transparent); border-left: 3px solid var(--tablify-danger); margin: 12px 0; }
+.dlg-choices { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+.dlg-choice { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); cursor: pointer; }
+@media (hover: hover) and (pointer: fine) { .dlg-choice:hover { border-color: var(--tablify-accent); background: var(--tablify-accent-subtle); } }
+.dlg-choice.is-picked { border-color: var(--tablify-accent); background: var(--tablify-accent-subtle); }
+.dlg-choice-name { font-weight: 600; font-size: var(--font-ui-small); }
+.dlg-choice-desc { color: var(--text-muted); font-size: var(--font-ui-smaller); margin-top: 2px; }
+.dlg-conflict-row { padding: 10px 0; border-top: 1px solid var(--background-modifier-border); }
+.dlg-conflict-head { display: flex; align-items: center; gap: 8px; font-size: var(--font-ui-small); font-weight: 600; margin-bottom: 8px; }
+.dlg-field-diff { display: grid; grid-template-columns: 150px 1fr 1fr; gap: 6px 10px; align-items: center; font-size: var(--font-ui-small); }
+.dlg-side { padding: 5px 8px; border-radius: var(--radius-s); border: 1px solid var(--background-modifier-border); cursor: pointer; font-family: var(--font-monospace); font-size: var(--font-ui-smaller); }
+@media (hover: hover) and (pointer: fine) { .dlg-side:hover { border-color: var(--tablify-accent); } }
+.dlg-side.is-picked { border-color: var(--tablify-accent); background: var(--tablify-accent-subtle); font-weight: 700; }
+.dlg-mono { font-family: var(--font-monospace); font-size: var(--font-ui-smaller); }
+.opt-row { display: grid; grid-template-columns: 22px 1fr 130px 76px 30px; gap: 8px; align-items: center; padding: 4px 0; }
+.opt-swatch { width: 16px; height: 16px; border-radius: 50%; }
+.kbd-grid { display: grid; grid-template-columns: 160px 1fr; gap: 6px 14px; font-size: var(--font-ui-small); }
+.kbd { font-family: var(--font-monospace); font-size: var(--font-ui-smaller); padding: 1px 6px; border: 1px solid var(--background-modifier-border); border-bottom-width: 2px; border-radius: 4px; background: var(--background-secondary); }
+.mig-list { max-height: 260px; overflow: auto; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s); font-size: var(--font-ui-smaller); }
+.mig-item { display: flex; gap: 8px; padding: 4px 8px; border-bottom: 1px solid var(--background-modifier-border); }
+.mig-item code { font-family: var(--font-monospace); color: var(--text-muted); }
+.progress { height: 6px; border-radius: 999px; background: var(--background-modifier-border); overflow: hidden; margin: 12px 0; }
+.progress-fill { height: 100%; background: var(--tablify-accent); }
+.sync-state { display: grid; grid-template-columns: 150px 1fr; gap: 6px 12px; font-size: var(--font-ui-small); }
+.sync-state dt { color: var(--text-muted); font-size: var(--font-ui-smaller); text-transform: uppercase; letter-spacing: 0.03em; }
+.sync-state dd { margin: 0; font-family: var(--font-monospace); font-size: var(--font-ui-smaller); }
+
+/* mobile rules from docs/04: 16px editors so iOS never zooms; compact toolbar */
+@media (max-width: 560px) {
+  .tablify-root input, .tablify-root select, .tablify-root textarea { font-size: 16px; }
+  .tablify-search { width: 104px; }
+  .tablify-statusbar { font-size: 10px; gap: 8px; }
+}
+.tablify-root.is-touch .cell { padding: 0 8px; }
+.tablify-root.is-touch .hcell-resize { width: 14px; right: -6px; }
+.tablify-root.is-touch .gutter-handle { font-size: 13px; opacity: 0.8; }
+
+/* ── docked scrollbars ───────────────────────────────────────────────────────
+   The lanes paint over the scroller, so the browser's own scrollbars would sit
+   underneath them: invisible on some platforms, unclickable on the rest. These
+   two are drawn by the grid, live above every lane, and are always draggable.
+   The geometry that reserves their space lives in grid.js (BAR), so lanes never
+   slide under them.                                                            */
+.tablify-hbar, .tablify-vbar {
+  position: absolute; z-index: 7; touch-action: none;
+  background: var(--background-secondary-alt);
+}
+.tablify-hthumb, .tablify-vthumb {
+  position: absolute; border-radius: 999px;
+  background: var(--background-modifier-border-focus); opacity: 0.6;
+}
+/* the minimum applies along the axis only — a cross-axis minimum would push the
+   thumb out of its 14px track and make it impossible to grab */
+.tablify-hthumb { top: 3px; bottom: 3px; min-width: 36px; }
+.tablify-vthumb { left: 3px; right: 3px; min-height: 36px; }
+@media (hover: hover) and (pointer: fine) { .tablify-hbar:hover .tablify-hthumb, .tablify-vbar:hover .tablify-vthumb { opacity: 0.9; } }
+.tablify-hbar.is-dragging .tablify-hthumb, .tablify-vbar.is-dragging .tablify-vthumb {
+  opacity: 1; background: var(--tablify-accent);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Motion — Stage 2, and the rule is frequency, not taste.
+
+   Cells, rows, headers, the toolbar and the status bar are on screen thousands
+   of times a day: they get NO motion, ever. Press feedback is for every control
+   the pointer touches. Menus are opened dozens of times an hour and must feel
+   instant, so they are not animated at all. Popovers and modals are occasional:
+   they get one short, interruptible transition. Anything seen 100+ times a day
+   animating is a bug in this file.
+   =========================================================================== */
+
+/* ── press feedback + colour easing ─────────────────────────────────────── */
+.tablify-btn, .tablify-icon, .menu-item, .pop-item, .ob-btn, .modal-x, .harness-btn {
+  transition:
+    transform var(--tablify-dur-press) var(--tablify-ease-out),
+    background-color var(--tablify-dur-hover) var(--tablify-ease-hover),
+    color var(--tablify-dur-hover) var(--tablify-ease-hover),
+    border-color var(--tablify-dur-hover) var(--tablify-ease-hover);
+}
+.tablify-btn:active, .tablify-icon:active, .menu-item:active, .pop-item:active,
+.ob-btn:active, .modal-x:active, .harness-btn:active {
+  transform: scale(var(--tablify-enter-scale));
+}
+
+/* ── popovers: occasional, so one transition, entering from the cell ─────── */
+.pop {
+  transition:
+    opacity var(--tablify-dur-popover) var(--tablify-ease-out),
+    transform var(--tablify-dur-popover) var(--tablify-ease-out);
+}
+@starting-style {
+  .pop { opacity: 0; transform: scale(var(--tablify-enter-scale)); }
+}
+
+/* Reduced motion: the movement goes, the colour stays (per the skill: fewer and
+   gentler, never a blanket disable of the whole design system). */
+@media (prefers-reduced-motion: reduce) {
+  .tablify-btn:active, .tablify-icon:active, .menu-item:active, .pop-item:active,
+  .ob-btn:active, .modal-x:active, .harness-btn:active { transform: none; }
+  @starting-style { .pop { transform: none; } }
+}
+
+/* ── Advanced settings → Content: the group label ───────────────────────── */
+.set-subgroup {
+  margin: var(--tablify-sp-4) 0 var(--tablify-sp-1);
+  color: var(--tablify-text-muted);
+  font-size: var(--tablify-fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* ── the summary row ─────────────────────────────────────────────────────
+   Same two-lane geometry as the header and the rows (frozen part + a lane the
+   scroll handler translates), so the totals stay under the columns they
+   describe without a second scrolling model. */
+.tablify-summary {
+  position: relative; flex: none; height: 28px; overflow: hidden;
+  background: var(--tablify-surface-sunken);
+  border-top: 1px solid var(--tablify-line);
+  color: var(--tablify-text-muted);
+  font-size: var(--tablify-fs-s);
+  font-variant-numeric: tabular-nums;
+}
+.summary-frozen, .summary-lane { position: absolute; top: 0; bottom: 0; display: flex; overflow: hidden; }
+.summary-frozen { left: 0; }
+.summary-frozen.has-pin { border-right: 1px solid var(--tablify-line); }
+.summary-lane { will-change: transform; }
+.summary-gutter, .summary-cell {
+  display: flex; align-items: center; flex: none;
+  padding: 0 8px; white-space: nowrap; overflow: hidden;
+}
+.summary-gutter { color: var(--tablify-text-muted); font-weight: 600; }
+.summary-cell.is-num { justify-content: flex-end; color: var(--tablify-number); }

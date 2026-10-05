@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en" data-tablify-theme="identity">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tablify — interactive prototype</title>
+<meta name="description" content="Working prototype of the Tablify plugin: grid, filters, sorts, grouping, blocks, import/export, sync review and the legacy .tabula bridge. Self-contained, no network calls.">
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/obsidian.css">
+<link rel="stylesheet" href="css/tablify.css">
+</head>
+<body>
+
+<!-- ══ the harness: a stand-in for the Obsidian host ══════════════════════
+     Nothing in this bar is part of the plugin. It exists so the plugin can be
+     driven through light/dark, desktop/phone, touch, big tables and every
+     dialog without a vault.                                                    -->
+<div class="harness" id="harness">
+  <span class="harness-brand">Tablify · prototype</span>
+  <span class="harness-note">simulated host — everything below the tabs is the plugin</span>
+  <span class="harness-sp"></span>
+  <div class="harness-group" id="harness-screens"></div>
+  <div class="harness-group" id="harness-host"></div>
+  <div class="harness-group" id="harness-theme"></div>
+  <div class="harness-group" id="harness-surfaces"></div>
+  <div class="harness-group" id="harness-demo"></div>
+</div>
+
+<!-- ══ the simulated Obsidian window ══════════════════════════════════════ -->
+<div class="workspace" id="workspace">
+  <div class="window" id="window">
+
+    <div class="tabstrip" id="tabstrip"></div>
+    <div class="bases-bar" id="bases-bar"></div>
+
+    <div class="view-host" id="view-host">
+
+      <!-- screen 1: the plugin — a Bases view -->
+      <section class="screen is-active" id="screen-grid">
+        <div class="screen-host" id="editor-host"></div>
+      </section>
+
+      <!-- screen 2: a legacy .tabula file, opened read-only -->
+      <section class="screen" id="screen-legacy">
+        <div class="screen-host" id="legacy-host"></div>
+      </section>
+
+      <!-- screen 3: the plugin's settings tab -->
+      <section class="screen" id="screen-settings">
+        <div class="screen-host" id="settings-host"></div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<!-- host containers the plugin draws into -->
+<div id="modal-host"></div>
+<div id="menu-host"></div>
+<div class="toast-stack" id="toast-host"></div>
+<div class="sr-only" id="live" aria-live="polite"></div>
+
+<!-- ══ scripts: load order matters, one namespace (window.TF) ═════════════ -->
+<script src="js/data.js"></script>
+<script src="js/query.js"></script>
+<script src="js/io.js"></script>
+<script src="js/store.js"></script>
+<script src="js/sync.js"></script>
+<script src="js/grid.js"></script>
+<script src="js/dialogs.js"></script>
+<script src="js/legacy.js"></script>
+<script src="js/settings.js"></script>
+<script src="js/harness.js"></script>
+</body>
+</html>

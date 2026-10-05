@@ -1,0 +1,233 @@
+/* ============================================================================
+   tokens.css — Tablify's design tokens. "Parchment Ledger".
+
+   THREE LAYERS, one switch:
+     1. IDENTITY   raw values of the look (parchment, ink, clay, sand, …)
+     2. SEMANTIC   what components are allowed to ask for (surface, line, text,
+                   accent, focus, selection, status)
+     3. MAPPING    each semantic token resolves to either an identity value or a
+                   host Obsidian variable. The switch is one attribute on <html>:
+
+                     <html data-tablify-theme="identity">   ← the default look
+                     <html data-tablify-theme="host">       ← "follow my theme"
+
+   The legacy `--tablify-*` names that components already use (accent, focus-ring,
+   ink, number, star, ok, pending, danger, toast) are re-exported here from the
+   semantic layer, so no component had to change to be re-themed.
+
+   Rules honoured: no !important, literals only in this file, and every selector
+   here is a token definition or a plugin-owned surface — nothing host-side is
+   restyled.
+   ========================================================================== */
+
+:root {
+  /* ── 1. identity: light ─────────────────────────────────────────────────── */
+  --tablify-ink:        #2b2320;   /* warm brown-black: text, and the dark surface */
+  --tablify-ink-muted:  #6f6259;
+  --tablify-parchment:  #faf6f0;
+  --tablify-raised:     #fffdf9;
+  --tablify-sunken:     #f3ece3;
+  --tablify-sand:       #e6dccd;   /* hairline rules (decorative) */
+  --tablify-sand-deep:  #8f7d6c;   /* structural rules, ≥3:1 on parchment */
+  --tablify-clay:       #a4472a;   /* the accent: caret, selection, primary */
+  --tablify-clay-hover: #8d3a21;
+  --tablify-clay-wash:  #f7ece6;
+  --tablify-clay-ink:   #ffffff;   /* text on clay */
+  --tablify-brown:      #7a4a33;   /* numeric cells */
+  --tablify-gold:       #b8791f;   /* rating stars (icon, needs 3:1) */
+  --tablify-green:      #3f6f4a;
+  --tablify-amber:      #8a5a12;
+  --tablify-red:        #9c3020;
+
+  /* ── 2. semantic (identity mode) ────────────────────────────────────────── */
+  --tablify-surface:        var(--tablify-parchment);
+  --tablify-surface-raised: var(--tablify-raised);
+  --tablify-surface-sunken: var(--tablify-sunken);
+  --tablify-line:           var(--tablify-sand);
+  --tablify-line-strong:    var(--tablify-sand-deep);
+  --tablify-text:           var(--tablify-ink);
+  --tablify-text-muted:     var(--tablify-ink-muted);
+  --tablify-selection:      rgba(164, 71, 42, 0.13);
+  --tablify-overlay:        rgba(43, 35, 32, 0.42);
+  --tablify-focus:          var(--tablify-clay);
+  --tablify-focus-w:        2px;
+  --tablify-positive:       var(--tablify-green);
+  --tablify-warning:        var(--tablify-amber);
+  --tablify-negative:       var(--tablify-red);
+
+  /* ── legacy names components already use (aliases, not new values) ─────── */
+  --tablify-accent:        var(--tablify-clay);
+  --tablify-accent-hover:  var(--tablify-clay-hover);
+  --tablify-accent-subtle: var(--tablify-clay-wash);
+  --tablify-accent-text:   var(--tablify-clay-ink);
+  --tablify-focus-ring:    var(--tablify-focus);
+  --tablify-number:        var(--tablify-brown);
+  --tablify-star:          var(--tablify-gold);
+  --tablify-ok:            var(--tablify-green);
+  --tablify-pending:       var(--tablify-amber);
+  --tablify-danger:        var(--tablify-red);
+  --tablify-toast-bg:      var(--tablify-ink);
+  --tablify-toast-fg:      var(--tablify-raised);
+
+  /* ── 3. motion (Emil's frequency table, expressed as tokens) ───────────── */
+  --tablify-ease-out:       cubic-bezier(0.23, 1, 0.32, 1);
+  --tablify-ease-in-out:    cubic-bezier(0.77, 0, 0.175, 1);
+  --tablify-ease-drawer:    cubic-bezier(0.32, 0.72, 0, 1);
+  --tablify-ease-hover:     ease;
+  --tablify-dur-press:      140ms;
+  --tablify-dur-hover:      120ms;
+  --tablify-dur-popover:    160ms;
+  --tablify-dur-popover-out: 120ms;
+  --tablify-dur-modal:      240ms;
+  --tablify-dur-modal-out:  160ms;
+  --tablify-dur-sheet:      300ms;
+  --tablify-dur-sheet-out:  220ms;
+  --tablify-dur-toast:      260ms;
+  --tablify-dur-toast-out:  180ms;
+  --tablify-dur-fade:       200ms;
+  --tablify-enter-scale:    0.97;   /* nothing may scale in from 0 */
+  --tablify-enter-scale-lg: 0.98;   /* modals */
+  --tablify-sheet-from:     100%;   /* translateY distance for bottom sheets */
+
+  /* ── space, radius, elevation, type ────────────────────────────────────── */
+  --tablify-sp-1: 4px;  --tablify-sp-2: 6px;  --tablify-sp-3: 8px;
+  --tablify-sp-4: 12px; --tablify-sp-5: 16px; --tablify-sp-6: 20px;
+  --tablify-sp-7: 24px; --tablify-sp-8: 32px;
+  --tablify-radius-s: 3px; --tablify-radius-m: 6px; --tablify-radius-l: 10px;
+  --tablify-shadow-1: 0 1px 2px rgba(43, 35, 32, 0.06), 0 6px 20px rgba(43, 35, 32, 0.10);
+  --tablify-shadow-2: 0 2px 6px rgba(43, 35, 32, 0.10), 0 14px 34px rgba(43, 35, 32, 0.16);
+  --tablify-fs-xs: 11px; --tablify-fs-s: 12px; --tablify-fs-m: 13px;
+  --tablify-fs-l: 15px;  --tablify-fs-xl: 20px; --tablify-fs-display: 28px;
+  --tablify-font-display: var(--font-text);   /* one embedded face lands here */
+  --tablify-tap: 44px;
+}
+
+/* ── 1b. identity: dark (warm charcoal, never pure black) ─────────────────── */
+:root.theme-dark {
+  --tablify-ink:        #ece3d8;
+  --tablify-ink-muted:  #b3a698;
+  --tablify-parchment:  #1c1917;
+  --tablify-raised:     #24201d;
+  --tablify-sunken:     #171412;
+  --tablify-sand:       #3a332e;
+  --tablify-sand-deep:  #7d6f61;
+  --tablify-clay:       #d97a54;
+  --tablify-clay-hover: #e69373;
+  --tablify-clay-wash:  #35251e;
+  --tablify-clay-ink:   #1c1917;
+  --tablify-brown:      #dcb49c;
+  --tablify-gold:       #d8a94f;
+  --tablify-green:      #7fb98d;
+  --tablify-amber:      #d9a441;
+  --tablify-red:        #e0736a;
+  --tablify-selection:  rgba(217, 122, 84, 0.20);
+  --tablify-overlay:    rgba(0, 0, 0, 0.58);
+  --tablify-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.40), 0 6px 20px rgba(0, 0, 0, 0.34);
+  --tablify-shadow-2: 0 2px 6px rgba(0, 0, 0, 0.45), 0 14px 34px rgba(0, 0, 0, 0.40);
+}
+
+/* ── 3b. the switch: "follow my Obsidian theme" ───────────────────────────── */
+:root[data-tablify-theme="host"] {
+  --tablify-surface:        var(--background-primary);
+  --tablify-surface-raised: var(--background-secondary);
+  --tablify-surface-sunken: var(--background-secondary);
+  --tablify-line:           var(--background-modifier-border);
+  --tablify-line-strong:    var(--background-modifier-border-focus);
+  --tablify-text:           var(--text-normal);
+  --tablify-text-muted:     var(--text-muted);
+  --tablify-selection:      var(--background-modifier-active-hover);
+  --tablify-focus:          var(--interactive-accent);
+  --tablify-overlay:        var(--overlay-bg);
+  --tablify-accent:         var(--interactive-accent);
+  --tablify-accent-hover:   var(--interactive-hover);
+  --tablify-accent-subtle:  var(--background-modifier-hover);
+  --tablify-accent-text:    var(--text-on-accent);
+  --tablify-number:         var(--text-muted);
+  --tablify-star:           var(--text-accent);
+  --tablify-ok:             var(--text-success);
+  --tablify-pending:        var(--text-accent);
+  --tablify-danger:         var(--text-error);
+  --tablify-toast-bg:       var(--background-primary);
+  --tablify-toast-fg:       var(--text-normal);
+  --tablify-positive:       var(--text-success);
+  --tablify-warning:        var(--text-accent);
+  --tablify-negative:       var(--text-error);
+}
+
+/* ============================================================================
+   Focus: one ring, everywhere, on the plugin's own surfaces.
+   `outline` (not box-shadow) so it survives clipping, zoom and forced-colors.
+   ========================================================================== */
+.tablify-root:focus-visible,
+.tablify-root :is(button, input, select, textarea, a[href], [tabindex]):focus-visible,
+.modal-overlay :is(button, input, select, textarea, a[href], [tabindex]):focus-visible,
+.menu .menu-item:focus-visible,
+.pop :is(.pop-item, input):focus-visible {
+  outline: var(--tablify-focus-w) solid var(--tablify-focus);
+  outline-offset: 2px;
+}
+
+/* ============================================================================
+   Reduced motion: durations are tokens, so this block only re-points them.
+   No !important is needed anywhere in this file.
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --tablify-dur-press: 0ms;
+    --tablify-dur-hover: 0ms;
+    --tablify-dur-popover: 0ms;
+    --tablify-dur-popover-out: 0ms;
+    --tablify-dur-modal: 0ms;
+    --tablify-dur-modal-out: 0ms;
+    --tablify-dur-sheet: 0ms;
+    --tablify-dur-sheet-out: 0ms;
+    --tablify-dur-toast: 0ms;
+    --tablify-dur-toast-out: 0ms;
+    --tablify-dur-fade: 0ms;
+    /* movement goes, opacity stays */
+    --tablify-enter-scale: 1;
+    --tablify-enter-scale-lg: 1;
+    --tablify-sheet-from: 0%;
+  }
+}
+
+/* More contrast, when asked for: structural lines and secondary text firm up. */
+@media (prefers-contrast: more) {
+  :root {
+    --tablify-line: var(--tablify-line-strong);
+    --tablify-text-muted: var(--tablify-ink);
+    --tablify-focus-w: 3px;
+  }
+}
+
+/* Forced colors: the ring must exist even where our colours are thrown away. */
+@media (forced-colors: active) {
+  .tablify-root :is(button, input, select, textarea, [tabindex]):focus-visible,
+  .modal-overlay :is(button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid Highlight;
+  }
+}
+
+/* ============================================================================
+   Contrast declarations — read by tools/contrast.js, which computes every pair
+   and fails the run if one drops below its threshold. Keep this list in sync
+   with the pairs the UI actually renders.
+   ========================================================================== */
+/* @contrast --tablify-text on --tablify-surface min 4.5 */
+/* @contrast --tablify-text-muted on --tablify-surface min 4.5 */
+/* @contrast --tablify-text on --tablify-surface-raised min 4.5 */
+/* @contrast --tablify-text-muted on --tablify-surface-raised min 4.5 */
+/* @contrast --tablify-clay on --tablify-surface min 3 */
+/* @contrast --tablify-clay-ink on --tablify-clay min 4.5 */
+/* @contrast --tablify-brown on --tablify-surface min 4.5 */
+/* @contrast --tablify-toast-fg on --tablify-toast-bg min 4.5 */
+/* @contrast --tablify-positive on --tablify-surface min 4.5 */
+/* @contrast --tablify-warning on --tablify-surface min 4.5 */
+/* @contrast --tablify-negative on --tablify-surface min 4.5 */
+/* @contrast --tablify-star on --tablify-surface min 3 */
+/* @contrast --tablify-line-strong on --tablify-surface min 3 */
+/* the summary row paints muted text and numerals on the sunken surface: */
+/* @contrast --tablify-text-muted on --tablify-surface-sunken min 4.5 */
+/* @contrast --tablify-number on --tablify-surface-sunken min 4.5 */
+/* the grid hairline is decorative structure, reported but not gated: */
+/* @contrast-info --tablify-line on --tablify-surface */

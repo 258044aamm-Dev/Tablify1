@@ -1,0 +1,35 @@
+# Style-audit notes — deferred until the freeze lifts
+
+A queue, not a plan: everything here changes how the prototype **looks**, so it waits for the unfreeze
+message. Each item names the cheapest place to do it.
+
+## Found while executing the frozen stages
+
+| # | item | where |
+| --- | --- | --- |
+| S1 | The `Content` subgroup label is styled exactly like the existing section labels, so "Advanced settings" and "Content" read as the same level. Needs a two-level system (section: larger, with a hairline above; group: current small-caps muted) | `prototype/css/tablify.css` → `.set-subgroup`, `.set-group-title` |
+| S2 | The settings screen has 19 rows of identical weight — no grouping rhythm, no sticky section header. A pass should give sections their own scroll anchors and consistent spacing | `prototype/js/settings.js`, `tablify.css` |
+| S3 | The summary row's `Σ`/`⌀` glyphs are text; they should come from the inline icon sprite with the numerals in the display face | `prototype/js/grid.js` → `aggregate()`, `css/tokens.css` |
+| S4 | Percent columns sum (a 0–1 fraction added up reads oddly); the real plugin takes aggregates from the `.base` `summaries` block, so decide the default there and mirror it here | `docs/` + `grid.js` |
+| S5 | The status bar, the summary row and the toolbar hairlines are three parallel rules; a single rhythm would read better | `tablify.css` |
+| S6 | The identity/host switch is in the harness bar only. The plugin needs it as a real Settings → Appearance row with the same semantics, and the docs need the row's wording | `settings.js`, `docs/` |
+
+## Carried from the approved plan (unchanged)
+
+- **Stage 3 — identity**: one OFL subset display face (≤ 40 KB woff2, numerals included), inline icon
+  sprite ≤ 12 KB taking over the `⋯ ✕ ✓ ▸` glyph duties *without renaming them*, the Tablify wordmark
+  (owned outright), `NOTICE` + licence file.
+- **Stage 4 — components**: cards, pills, table chrome, dialog surfaces and the settings rows to the new
+  language; the settings hierarchy item (S1/S2) lands here.
+- **Stage 5 — keyboard and accessibility**: the grid currently owns `Tab` unconditionally
+  (`grid.js` key handler), which is the one documented a11y gap left; roving `tabindex`, a focus
+  contract for every portalled surface, and the audit's focus checks extended to the settings tab.
+- **Stage 6 — mobile**: touch targets, long-press affordances, the 389 px squeeze, and the summary row
+  at phone width (it currently shows the gutter label inline, which needs a look).
+- **Stage 7 — polish**: the last 5 % (empty states, skeletons, the legacy screen's typography).
+
+## Rules that do not expire with the freeze
+
+- A design change is written as a decision with a rationale **before** it is drawn.
+- `tokens.css` stays the only file that owns a colour; a new surface declares its contrast pairs there.
+- Every visual change re-runs the four gates (smoke, audit, scroll, contrast) and quotes the numbers.
