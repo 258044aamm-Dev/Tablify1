@@ -1,30 +1,71 @@
 # PROGRESS
 
-- Milestone: M0 — Foundation (complete) · **M1 — Core domain (complete)** · M2 — Adapters (next)       Branch: main
-- Last completed step: **step 10 — the Bases spike.** A throwaway plugin under `spike/bases-path/` that prints
-  what the Bases API actually does, plus a findings report that separates what was **verified from the shipped
-  declarations** from what needs a **running Obsidian** (which this environment does not have).
-  **Step 11 is gated on the human reading that report** — it is the one part of the plan that cannot be
-  verified here.
+- Milestone: M0 — Foundation (complete) · M1 — Core domain (complete) · **M2 — Adapters (in progress)**
+  Branch: main
+- Last completed step: **step 11 — the `RowSource` port, the write queue and the optimistic overlay.** The
+  layer that makes editing a note-backed grid safe: coalescing per file+property, one `processFrontMatter`
+  call per file per flush, a promise chain per file so two writers never overlap, a 250 ms debounce with a
+  `flush()` that bypasses it, per-file failure reporting, and an overlay that holds pending values only.
 
 - Verified (commands run, observed results):
-  - `bun run check` — **exit 0**, unchanged by the spike: 817 tests / 18 files, `brand-gate: OK — 59 permitted
-    match(es), 0 violations`, `manifest:check: OK`, Prettier clean, `bundle-size: OK`.
-  - **`bun run check` provably ignores `spike/**`** (the step's acceptance asks for the proof, not the claim):
-    1. `bunx eslint spike/bases-path/main.ts` → `File ignored because of a matching ignore pattern` (the folder
-       is in `globalIgnores`), exit 0;
-    2. `bunx tsc --noEmit --listFilesOnly | grep -c spike/` → **0** (the root `include` is
-       `src/**`, `tests/**`, `scripts/**`, `vitest.config.ts`);
-    3. `bunx vitest list --project unit | grep -c spike` → **0** (no test file lives there);
-    4. the spike has its own project and its own build: `bunx tsc -p spike/bases-path` → **exit 0**, and
-       `bun spike/bases-path/build.mjs` → `main.js 6.1kb` in 4 ms. Its `main.js` is covered by the existing
-       `.gitignore`/`.prettierignore` `main.js` pattern, so the built artefact is never committed.
-  - **The declaration half of the spike is done**: `spike/bases-path/FINDINGS.md` carries a 22-row claim table,
-    16 rows `VERIFIED` against `node_modules/obsidian/obsidian.d.ts` **@ 1.13.1** with a line number as
-    evidence, 6 rows `PENDING-RUN`, and one `DIFFERENT` (finding 1 below).
-  - **The runtime half is not run** and says so: the console trace, the `processFrontMatter` before/after text
-    and the Obsidian version are `PENDING-RUN`, with the exact commands that produce them pasted into the
-    report's "How to finish this report" section.
+  - `bun run check` — **exit 0**: typecheck, lint (0 errors; the one pre-existing settings-tab warning),
+    `brand-gate: OK — 59 permitted match(es), 0 violations`, `manifest:check: OK`, Prettier clean, tests,
+    build, `bundle-size: OK`. **835 tests across 19 files** (was 817 / 18).
+  - **The brand gate caught a real violation in this step's own code**: a source comment in `writeQueue.ts`
+    named the remote-sync vendor, which is banned in product code (permissions exist only for internal docs).
+    Reworded to "the remote-sync client"; the gate is now clean. Recorded because it is the first time the
+    gate fired on product code, and it fired on prose, not on a value.
+  - **Coverage** (`bunx vitest run --coverage`): all files 93.24 / 91.65; `src/adapters` 85.55 / 92.64 —
+    `writeQueue.ts` 93.54 / 89.13, `optimistic.ts` 100 / 100, `RowSource.ts` (types + three helpers) covered
+    by the result-shape test.
+
+- The write queue's constants, and where each comes from:
+  1. **`DEBOUNCE_MS = 250`** — `docs/02` §write queue, verbatim: "debounce 250 ms, hard flush on blur / view
+     close / undo / import".
+  2. **`CONCURRENCY = 4`** — the docs say files "may proceed in parallel, bounded by a **documented**
+     concurrency limit" and never give the number. Decided here (one in-flight note write each; the vault's
+     writer is the bottleneck), exported as a constant, and reported as a gap.
+  3. **No retry** — the docs' retry/backoff belongs to the remote-sync client (`docs/02` §sync, `docs/06`
+     M3), not to note writes. A failed note write is reported to the caller and its overlay value is dropped,
+     so the grid shows the file's real content.
+
+- The five acceptance assertions (paste of the fake-vault results; the whole file is
+  `tests/unit/write-queue.test.ts`, 19 tests):
+  - **12 writes in a tick ⇒ exactly one `processFrontMatter` call**: `expect(vault.writes).toHaveLength(1)`
+    after `clock.advance(DEBOUNCE_MS)`; the write log holds one record whose `after` carries all twelve keys.
+  - **Two interleaved writers, nothing lost**: four writes alternating `FromOne`/`FromTwo`, coalesced to one
+    call, final frontmatter `{ FromOne: '2', FromTwo: 'b' }` — both writers' last intentions.
+  - **A failing callback drops only that property's overlay and other files still land**: `result.ok === false`,
+    `result.errors[0].path === 'Notes/Bad.md'`, `vault.writeCount('Notes/Bad.md') === 0`, and the good file
+    holds its value. The overlay hook test asserts the pending entry is gone afterwards.
+  - **`flush()` resolves after the last write**: a flush with a queued write returns `{ ok: true, written: 1,
+    files: ['Notes/A.md'] }`, `queue.pending() === 0`, `clock.pending() === 0`; a second flush writes nothing
+    and reports `written: 0`; failures are not reported twice.
+  - **Unknown keys and the body survive**: `raw()` before and after differ only in the `Name:` line — every
+    other line byte-identical — and unknown keys (`custom`, `tags`) are untouched. Clearing deletes the key
+    (asserted with `'Name' in frontmatter === false`), and the fake vault's `modify` — which throws — is
+    never reached.
+
+- Assumed / not verified:
+  1. **Concurrency 4** is my number, not the docs' (see above).
+  2. **Frontmatter comments are not modelled by the fake**, and Obsidian's `processFrontMatter` does not
+     promise to preserve them either (`docs/03` promises unknown *keys* survive, which is what is asserted).
+     The step-10 spike's write probe is the place a real comment is put through a real vault.
+  3. **Nothing here has touched a real vault.** The whole data path is ASSUMED until step 12 wires the adapter
+     and the spike's runtime rows land (see the step-10 report).
+  4. **The queue is view-scoped**: two views on the same note have independent chains, and cross-view ordering
+     is the vault writer's business. Stated in the module header; not tested, because two views need two
+     `App`s.
+
+- Findings worth keeping (things the docs did not say, or said differently):
+  1. **`docs/02` §the port's `RowSource` has no capability flags** beyond `writable`, while the step prompt
+     asks for `readonly`, `canCreateRows` and `canDeleteRows`. All four exist on the port (`readonly` is the
+     prompt's spelling of `!writable`), and the doc is the one that should gain the extra three: a grid that
+     cannot create rows must not show an "add row" affordance.
+  2. **`PropertySchema` was never defined in the docs.** The port declares it as `{ fields: ResolvedField[] }`,
+     reusing the type the rest of the core speaks, rather than inventing a second column shape.
+  3. **The doc's `flush(): Promise<void>` is implemented as `Promise<FlushResult>`** — a flush that cannot say
+     what it wrote or what failed would force every caller to keep a parallel log.
 
 - What step 10 found (declaration-verified, and the reason it is worth reporting):
   1. **`BasesView` declares no `containerEl`.** The only container the API hands a Bases view is the second
@@ -159,14 +200,14 @@
      `obsidian` minor bumps. `docs/09` line 33 still contains a banned word in its description template; the
      three candidate plugin descriptions await a pick.
 
-- Next step: `prompts/step-11-rowsource-and-writequeue.md` — the `RowSource` port, the write queue (coalescing
-  per file+property, per-file serialisation, rollback, `flush()`), and the optimistic overlay. **It carries one
-  gate from step 10:** the spike's runtime rows (container size, `getOrder()`, `processFrontMatter`'s byte-level
-  behaviour, and the Obsidian version) are `PENDING-RUN`, so anything in step 11 that depends on a *verified*
-  runtime fact rather than a declared one is marked as an assumption until the human runs the spike. The queue
-  itself needs none of them — it is tested against `tests/fakes/vault.ts`.
+- Next step: `prompts/step-12-basessource-and-note-creation.md` — `BasesSource` (rows and values from a real
+  Bases view, writes through this queue), the minimal `TablifyView` placeholder that shows real data, and the
+  note-creation service. Its real-vault evidence is gated on the step-10 spike run; the fake-vault half is not.
 
-- Files touched this step: new — `spike/bases-path/{manifest.json,main.ts,write-test.ts,tsconfig.json,build.mjs,README.md,FINDINGS.md}`;
+- Files touched this step: new — `src/adapters/{RowSource,writeQueue,optimistic}.ts`,
+  `tests/unit/write-queue.test.ts`; changed — `PROGRESS.md`. Nothing outside `src/adapters/**`,
+  `tests/**` and `PROGRESS.md`.
+- Earlier step 10 files: new — `spike/bases-path/{manifest.json,main.ts,write-test.ts,tsconfig.json,build.mjs,README.md,FINDINGS.md}`;
   changed — `eslint.config.mts` (one line: `spike/**` in `globalIgnores`, which the prompt's own fence asks
   for), `PROGRESS.md`. Nothing in `src/`, `tests/` or `scripts/`. The spike is throwaway by design: the report
   ends with the instruction to delete the folder and fold the verified facts into `docs/02`.
