@@ -38,6 +38,9 @@ export default defineConfig(
 	// Reference material, build artefacts and caches are never linted.
 	globalIgnores([
 		'prototype/**',
+		// The Bases spike (step 10): a throwaway probe with its own tsconfig and build command, deliberately
+		// outside every project, and the only place in this repository where `console.log` is the point.
+		'spike/**',
 		'main.js',
 		'node_modules/**',
 		'coverage/**',

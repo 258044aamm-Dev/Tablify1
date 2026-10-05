@@ -1,38 +1,47 @@
 # PROGRESS
 
-- Milestone: M0 — Foundation (complete) · **M1 — Core domain (complete)**                          Branch: main
-- Last completed step: **step 09 — the operation model, undo/redo, ranges and the clipboard matrix.** Every
-  mutation the product performs is now a value with an inverse, undo is the inverse applied backwards, the
-  selection is an anchor and a focus, and a block of cells crosses the clipboard as TSV and as an HTML table.
-  M1's last piece: `src/core/**` is the coverage floor's real subject now.
+- Milestone: M0 — Foundation (complete) · **M1 — Core domain (complete)** · M2 — Adapters (next)       Branch: main
+- Last completed step: **step 10 — the Bases spike.** A throwaway plugin under `spike/bases-path/` that prints
+  what the Bases API actually does, plus a findings report that separates what was **verified from the shipped
+  declarations** from what needs a **running Obsidian** (which this environment does not have).
+  **Step 11 is gated on the human reading that report** — it is the one part of the plan that cannot be
+  verified here.
 
 - Verified (commands run, observed results):
-  - `bun run check` — **exit 0**: typecheck, lint (0 errors; the one pre-existing settings-tab warning),
-    `brand-gate: OK — 59 permitted match(es), 0 violations`, `manifest:check: OK`, Prettier clean, tests,
-    build, `bundle-size: OK`. **817 tests across 18 files** (was 746 / 14). New: `ops` 25, `ops-inverse`
-    8, `selection` 20, `clipboard` 18.
-  - **Coverage** (`bunx vitest run --coverage`, exit 0): all files 93.62 / 91.62 / 99.04 / 93.62.
-    `core/ops` **86.1 stmts / 87.61 branch** (apply 83.52, build 94.59, history 83.45, inverse 91.58,
-    types 100); `core/selection` **95.51 / 92.82** (clipboard 98.06, range 92.67). Above the `src/core/**`
-    floor (85/85/85/75).
-  - **The inverse property** — the test reports itself in its name, because `console` is forbidden here:
-    `holds 20 ops deep for all 100 sequences: 1919 ops applied, 81 skipped as impossible, 0 single-step
-    failures`, `undoes 100 whole sequences back to where they started, with 0 failures`, `redoes them to
-    where they ended, with 0 failures — undo then redo is the identity`, `generates every one of the 16 op
-    kinds and runs 100 clean rounds`. 100 sequences × 20 ops, mulberry32 seeded per sequence, so a failure is
-    reproducible from the seed; the whole analysis runs in ~50 ms (asserted under 2 s) and is run twice to
-    prove reproducibility.
-  - **The clipboard round trip** — `round-trips all 13 fixtures exactly` for TSV and the same line again for
-    HTML. The fixtures include a tab inside a cell, a newline inside a cell, a CR, a quote at the start of a
-    cell, doubled quotes, a formula-shaped cell, unicode + an emoji + a non-breaking space, ragged rows,
-    trailing empty cells, and an empty single cell. `fromHtml` is tested against **two payloads**: the
-    **captured** Google Sheets `text/html` (verbatim from the 2025 article cited in the test header — it
-    carries `<google-sheets-html-origin>`, a commented `<style>` block, a `<colgroup>` and a cell whose text
-    lives in two nested `<div>`s) and a **constructed** Excel payload marked ASSUMED (mso namespaces,
-    `class=xl65`, a conditional `<!--[if gte mso 9]>` comment) because no Excel exists in this environment.
-    `docs/07` §"What is deliberately not tested" already concedes real payloads vary per OS.
-  - **`structuredClone`** — `keeps ops plain enough for structuredClone (no closures, no class instances)`:
-    every one of the 16 sample ops clones deep-equal, `clone !== op`, and the clone applies identically.
+  - `bun run check` — **exit 0**, unchanged by the spike: 817 tests / 18 files, `brand-gate: OK — 59 permitted
+    match(es), 0 violations`, `manifest:check: OK`, Prettier clean, `bundle-size: OK`.
+  - **`bun run check` provably ignores `spike/**`** (the step's acceptance asks for the proof, not the claim):
+    1. `bunx eslint spike/bases-path/main.ts` → `File ignored because of a matching ignore pattern` (the folder
+       is in `globalIgnores`), exit 0;
+    2. `bunx tsc --noEmit --listFilesOnly | grep -c spike/` → **0** (the root `include` is
+       `src/**`, `tests/**`, `scripts/**`, `vitest.config.ts`);
+    3. `bunx vitest list --project unit | grep -c spike` → **0** (no test file lives there);
+    4. the spike has its own project and its own build: `bunx tsc -p spike/bases-path` → **exit 0**, and
+       `bun spike/bases-path/build.mjs` → `main.js 6.1kb` in 4 ms. Its `main.js` is covered by the existing
+       `.gitignore`/`.prettierignore` `main.js` pattern, so the built artefact is never committed.
+  - **The declaration half of the spike is done**: `spike/bases-path/FINDINGS.md` carries a 22-row claim table,
+    16 rows `VERIFIED` against `node_modules/obsidian/obsidian.d.ts` **@ 1.13.1** with a line number as
+    evidence, 6 rows `PENDING-RUN`, and one `DIFFERENT` (finding 1 below).
+  - **The runtime half is not run** and says so: the console trace, the `processFrontMatter` before/after text
+    and the Obsidian version are `PENDING-RUN`, with the exact commands that produce them pasted into the
+    report's "How to finish this report" section.
+
+- What step 10 found (declaration-verified, and the reason it is worth reporting):
+  1. **`BasesView` declares no `containerEl`.** The only container the API hands a Bases view is the second
+     argument of the `BasesViewFactory` (`obsidian.d.ts:1247`); the view class has no such member. Every layout
+     contract in `docs/04` assumes the view owns its container, so this belongs in `docs/02` — the exact
+     sentence is proposed in `FINDINGS.md`. Proposed correction, reported not absorbed.
+  2. **`createFileForView` opens a menu, not a file.** Its own doc comment reads "Display the new note menu for
+     a file with the provided filename" (`@since 1.10.2`). It is right for a "New row" button and wrong for the
+     412-note import, which needs `vault.create` + `processFrontMatter` — worth a line in `docs/03` §Import so
+     step 13 does not reach for the wrong tool.
+  3. **The public API exposes no Obsidian version.** There is no version member on `App` or `Vault`; the
+     spike's own command says so rather than guessing, and the report asks the human to read Settings ▸ About.
+  4. **`QueryController` is an empty class** (`obsidian.d.ts:5315`) — confirmed exactly as `docs/02` claims, so
+     all data must come from `BasesView.data`.
+  5. **`processFrontMatter` is `@since 1.4.4`, `BasesEntry` really has no write path** (`file` and `getValue`
+     are its only members, `685-702`), and `getSort()`'s own comment confirms the payload arrives presorted.
+     `docs/02`'s "load-bearing fact of the whole design" holds.
 
 - The op inventory (16 kinds, each with its inverse):
 
@@ -150,10 +159,17 @@
      `obsidian` minor bumps. `docs/09` line 33 still contains a banned word in its description template; the
      three candidate plugin descriptions await a pick.
 
-- Next step: `prompts/step-10-bases-spike.md` — the Bases data-path spike. **It is a stop-and-report step by
-  design** (write at most 50 lines, gather evidence, stop) and step 11 is gated on the human confirming its
-  findings, because it is the one part of the plan that cannot be verified from this environment: it needs a
-  real Obsidian vault and a real `.base` file.
+- Next step: `prompts/step-11-rowsource-and-writequeue.md` — the `RowSource` port, the write queue (coalescing
+  per file+property, per-file serialisation, rollback, `flush()`), and the optimistic overlay. **It carries one
+  gate from step 10:** the spike's runtime rows (container size, `getOrder()`, `processFrontMatter`'s byte-level
+  behaviour, and the Obsidian version) are `PENDING-RUN`, so anything in step 11 that depends on a *verified*
+  runtime fact rather than a declared one is marked as an assumption until the human runs the spike. The queue
+  itself needs none of them — it is tested against `tests/fakes/vault.ts`.
+
+- Files touched this step: new — `spike/bases-path/{manifest.json,main.ts,write-test.ts,tsconfig.json,build.mjs,README.md,FINDINGS.md}`;
+  changed — `eslint.config.mts` (one line: `spike/**` in `globalIgnores`, which the prompt's own fence asks
+  for), `PROGRESS.md`. Nothing in `src/`, `tests/` or `scripts/`. The spike is throwaway by design: the report
+  ends with the instruction to delete the folder and fold the verified facts into `docs/02`.
 
 - Files touched this step: new — `src/core/ops/{types,apply,inverse,build,history}.ts`,
   `src/core/selection/{range,clipboard}.ts`, `tests/unit/{ops-fixtures.ts,ops.test.ts,ops-inverse.property.test.ts,selection.test.ts,clipboard.test.ts}`;
