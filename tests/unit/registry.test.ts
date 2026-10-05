@@ -16,9 +16,11 @@ import {
 	isRegistryFrozen,
 	registerField,
 } from '../../src/core/fieldTypes';
+import { getField as lookupField } from '../../src/core/fieldTypes';
+import { checkboxField } from '../../src/core/fieldTypes/checkbox';
 import { textField } from '../../src/core/fieldTypes/text';
 import { resolveField } from '../../src/core/schema/propertySchema';
-import { makeContext } from './field-contract.suite';
+import { DOCS_03_TYPES, NEVER_STORED_FIELD_IDS, makeContext } from './field-contract.suite';
 
 const ctx = makeContext();
 
@@ -28,9 +30,13 @@ describe('the shipped registry', () => {
 		expect(isRegistryFrozen()).toBe(true);
 	});
 
-	it('holds exactly the types this build ships', () => {
-		expect(allFields().map((field) => field.id)).toEqual(['text']);
+	it('holds exactly the types this build ships, in the order docs/03 lists them', () => {
+		// The comparison the step asks for: the registered set, in order, equals `docs/03`'s mapping table.
+		// A missing type is then a failing test rather than a discovery made in production.
+		expect(allFields().map((field) => field.id)).toEqual([...DOCS_03_TYPES]);
+		expect(allFields()).toHaveLength(16);
 		expect(getField('text')).toBe(textField);
+		expect(getField('checkbox')).toBe(checkboxField);
 	});
 
 	it('refuses registration after freeze()', () => {
@@ -38,9 +44,12 @@ describe('the shipped registry', () => {
 		expect(() => registerField(textField)).toThrow(/frozen/);
 	});
 
-	it('has no descriptor for a type that is not registered yet', () => {
-		expect(getField('currency')).toBeUndefined();
-		expect(getField('checkbox')).toBeUndefined();
+	it('has no descriptor for the two file-metadata ids, which are resolved as read-only columns', () => {
+		// The registry is "what a note can store"; these two are read from the file (P11) and built by
+		// `schema/propertySchema.ts` instead, so they are deliberately absent here.
+		for (const id of NEVER_STORED_FIELD_IDS) {
+			expect(getField(id)).toBeUndefined();
+		}
 	});
 });
 
@@ -106,7 +115,9 @@ describe('defineField', () => {
 });
 
 describe('the fallback path', () => {
-	it('resolves a type this build does not implement to text, with the reason recorded', () => {
+	it('resolves a known-but-unregistered type to text, with the reason recorded', () => {
+		// Every id this build knows is registered now, so the branch is reached through a lookup that reports
+		// `currency` as missing — which is exactly the state a partial build (or a future type) is in.
 		const resolved = resolveField(
 			{
 				id: 'note.Status',
@@ -115,6 +126,7 @@ describe('the fallback path', () => {
 				fieldOptions: { type: 'currency' },
 			},
 			ctx,
+			(id) => (id === 'currency' ? undefined : lookupField(id)),
 		);
 		expect(resolved.descriptor.id).toBe('text');
 		expect(resolved.readOnly).toBe(false);

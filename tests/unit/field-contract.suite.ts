@@ -8,8 +8,48 @@
  * those are the properties the grid, the clipboard, the query engine and the write queue all depend on.
  */
 import { describe, expect, it } from 'vitest';
-import type { CellValue, FieldContext, FieldDescriptor, FilterOpId } from '../../src/core/types';
+import type {
+	CellValue,
+	FieldContext,
+	FieldDescriptor,
+	FieldTypeId,
+	FilterOpId,
+} from '../../src/core/types';
 import { createFakeClock } from '../fakes/clock';
+
+/**
+ * The mapping table of `docs/03`, in that table's own order — **the list this build is measured against**.
+ *
+ * It lives here, in the shared test support, because two suites assert against it for different reasons:
+ * `registry.test.ts` proves the registered set *equals* it, and `field-contract.all.test.ts` proves every one
+ * of those types has a fixture in the shared contract suite. One definition means a change to `docs/03` can
+ * never be reflected in only one of them.
+ */
+export const DOCS_03_TYPES: readonly FieldTypeId[] = [
+	'text',
+	'longText',
+	'number',
+	'checkbox',
+	'date',
+	'datetime',
+	'url',
+	'email',
+	'phone',
+	'singleSelect',
+	'multiSelect',
+	'rating',
+	'currency',
+	'percent',
+	'duration',
+	'attachment',
+];
+
+/**
+ * Ids that exist in the type vocabulary but must never be registered: neither is stored in a note.
+ * `createdTime`/`lastModifiedTime` are read from `file.ctime`/`file.mtime` (P11) and built as read-only
+ * descriptors by `schema/propertySchema.ts`, so a descriptor for them here would be a bug.
+ */
+export const NEVER_STORED_FIELD_IDS: readonly FieldTypeId[] = ['createdTime', 'lastModifiedTime'];
 
 /**
  * A commit-stable "now" for every fixture: 2025-09-24T06:26:40Z. Time-dependent formats (a date cell, a
@@ -299,17 +339,24 @@ export function runFieldContractSuite<TValue extends CellValue>(
 			}
 		});
 
-		it('handles a very long value in every operator without pathological work', () => {
+		// Step 06 wrote this for `text`, where a million characters is a valid value. A long string is *not*
+		// a valid value for most types (`number`, `date`, `rating`), so the generalised version asserts what
+		// is true of every type: a very long input neither throws nor makes an operator or a render
+		// pathological, whether it parses or is refused.
+		it('survives a very long input in every operator, parsed or refused', () => {
 			const long = field.parse(LONG_TEXT, ctx);
-			expect(long.ok).toBe(true);
+			expect(typeof long.ok).toBe('boolean');
 			if (!long.ok) {
-				return;
+				expect(long.error.length).toBeGreaterThan(0);
 			}
-			for (const op of field.filterOps) {
-				expect(typeof field.matches(long.value, op, LONG_TEXT, ctx)).toBe('boolean');
-				expect(typeof field.matches(long.value, op, '', ctx)).toBe('boolean');
+			const values = long.ok ? [...fixture.values, long.value] : fixture.values;
+			for (const value of values) {
+				expect(typeof field.formatDisplay(value, ctx)).toBe('string');
+				for (const op of field.filterOps) {
+					expect(typeof field.matches(value, op, LONG_TEXT, ctx)).toBe('boolean');
+					expect(typeof field.matches(value, op, '', ctx)).toBe('boolean');
+				}
 			}
-			expect(typeof field.formatDisplay(long.value, ctx)).toBe('string');
 		});
 	});
 }
