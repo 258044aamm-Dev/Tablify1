@@ -1,87 +1,93 @@
 # PROGRESS
 
-- Milestone: M0 — Foundation                                  Branch: main
-- Last completed step: **step 03 — plugin shell and build.** The plugin is a real plugin shell: a Bases
-  view type, two commands, a settings tab, a status bar item, the keyboard table as data, and two
-  release scripts (`release-assets`, `version-bump`). Still no product logic and no data access.
+- Milestone: M0 — Foundation (complete)                        Branch: main
+- Last completed step: **step 04 — CI and release.** CI is now the referee: `.github/workflows/ci.yml`
+  (the gate on every push, pull request and manual dispatch), `.github/workflows/release.yml` (a bare
+  `x.y.z` tag produces a GitHub release with exactly three assets) and `.github/dependabot.yml`.
 
 - Verified (commands run, observed results):
-  - `bun run check` → **exit 0**: `tsc --noEmit` silent; `eslint .` 0 errors / 1 warning (see below);
-    `brand:gate` OK (60 permitted, 0 violations); `manifest:check` OK; `prettier --check .` clean;
-    `vitest run` **16 passed (3 files)**; esbuild production; `bundle-size` OK.
-  - Bundle: `main.js raw 3905 bytes (3.81 KB)`, `gzip 1843 bytes (1.80 KB)`.
-    Step 01 was 802 B raw / 532 B gzip. The delta is the plugin shell itself: the registration payload
-    with its factory, two commands, the `KeyboardHelpModal`, the setting tab, the 15-row keyboard table
-    and the status bar item — all of it real code that now ships.
-  - `bun scripts/release-assets.ts --tag 0.1.0 --allow-dirty` → three assets (`main.js` 3905,
-    `manifest.json` 359, `styles.css` 101) copied to `dist/0.1.0/`, then
-    `dist/0.1.0/ contains exactly 3 files: main.js, manifest.json, styles.css`. Refusals, all exit 1 with
-    one clear line each: `--tag v0.1.0` ("must not have a v prefix"), `--tag 0.2.0` ("does not equal
-    manifest version 0.1.0"), no tag at all, and a dirty tree without `--allow-dirty`.
-  - `bun scripts/version-bump.ts patch` → `0.1.0 → 0.1.1`, all four files updated, `manifest:check` green
-    at the new version, and `version-bump.ts huge` refused with exit 1. The bump was then reverted
-    (`git checkout -- manifest.json package.json versions.json CHANGELOG.md`) because it was only a proof.
-  - Tests, by file: `tests/unit/plugin-smoke.test.ts` (7) — two commands, the version Notice, the help
-    modal opening, the unload contract; `tests/unit/bases-registration.test.ts` (5) — one registration,
-    the documented id/name/icon, the factory building into the container it is handed, an inert
-    `onDataUpdated`, and nothing left registered after unload; `tests/dom/settings-tab.test.ts` (4) — one
-    tab, a heading plus intro paragraph, no inputs, and no duplicate on re-display.
+  - **The `gate` job's steps, run locally in the workflow's exact order**, each ending green:
+    `bun install --frozen-lockfile` → "Checked 478 installs across 511 packages (no changes)";
+    `bun run typecheck` → silent; `bun run lint` → 0 errors, 1 warning (the deferred declarative-settings
+    advisory below); `bun run format:check` → "All matched files use Prettier code style!";
+    `bun run test` → 16 passed (3 files); `bun run build` → silent; `bun run size` →
+    `main.js raw 3905 B / gzip 1843 B`, `!important` clean, `bundle-size: OK`. Sequence exit 0.
+  - **YAML validation**: `actionlint` and `act` are not available in this environment, so all three files
+    were parsed with PyYAML (already installed — no new dependency, so the js-yaml question did not
+    arise): `ci.yml`, `release.yml` and `dependabot.yml` all parse. (PyYAML prints the `on:` key as
+    `True`, which is YAML 1.1 treating `on` as a boolean; GitHub Actions reads it as the key `on`.)
+  - **The written guard behaves as documented**: running the `harness` step with `GITHUB_OUTPUT` and
+    `GITHUB_STEP_SUMMARY` set produced `present=false` plus the annotation
+    `::warning title=Layout gate not running::…` and a job summary reading "### Layout gate not running".
+  - **A red gate fails CI**: a deliberate type error (`src/type-error.ts`, a string assigned to a number)
+    made `bun run typecheck` exit 2 with `error TS2322`; the file was deleted and typecheck returned to
+    green. Nothing in the workflow turns a failure into a pass: there is no `continue-on-error`, no
+    `|| true`, and no `if: success()`.
+  - **Release simulation**: `TAG=0.1.0 bun scripts/release-assets.ts --allow-dirty` produced
+    `dist/0.1.0/` holding exactly `main.js` (3905 B), `manifest.json` (359 B), `styles.css` (101 B).
+  - Running the sequence locally **found two real problems before CI did**: `format:check` failed on the
+    three new YAML files (now formatted by Prettier), and `prefer-create-el` fired on the test double's
+    `createDiv` implementation (now refactored so the stub builds children through a helper).
 
-- **Real-vault observation: ASSUMED — not performed.** This environment has no Obsidian installation, so
-  I cannot enable the plugin in a vault, press the command or open the settings tab. Do not read the
-  tests as a substitute; they prove the wiring against a double, not against the app. To verify on your
-  machine: `bun run build`, then symlink or copy the repo into
-  `<vault>/.obsidian/plugins/tablify/` (it needs `main.js`, `manifest.json`, `styles.css`), enable it in
-  Settings → Community plugins, and confirm in order: (1) the notice-free load, (2) command
-  “Show version” → Notice `Tablify 0.1.0`, (3) command “Open keyboard help” → the modal lists 15 bindings,
-  (4) the status bar shows an empty Tablify item, (5) Settings → Tablify shows the heading and the
-  pre-release paragraph, (6) a new Bases view offers “Tablify grid” with the `lucide-table-2` icon and
-  renders the placeholder text in a note.
+- **The approach chosen for the not-yet-existing layout spec, and why.** The Playwright harness arrives in
+  step 21, so `bun run test:layout` cannot pass today. Three options existed: (a) run it unconditionally
+  and live with a red CI until step 21; (b) `continue-on-error` / `|| true`; (c) a visible, self-retiring
+  guard. (a) trains everyone to ignore a red badge, and a permanently red CI is how a suite gets deleted
+  later; (b) is exactly the silent skip the step forbids. So the workflow implements (c):
+  a `Check whether the layout harness exists yet` step sets `present=true|false`, and the Playwright
+  install, the layout run and the report upload are guarded on it. When the harness is absent the run
+  carries a GitHub **warning annotation** and a **job summary** saying the layout gate is not running and
+  why — impossible to overlook, and it retires itself the moment `playwright.config.ts` and `harness/`
+  exist, with no workflow edit needed to start passing.
+  `package.json` gained `test:layout` (`playwright test`) so the reference is valid now and fails loudly
+  rather than doing nothing.
+  **Close-out for step 21:** delete the `harness` step and the three `if:` conditions in `ci.yml` so the
+  layout suite runs unconditionally. That instruction is also written as a comment in the workflow itself,
+  next to the guard.
 
 - Assumed / not verified (each with how to verify):
-  1. The real-vault checklist above.
-  2. Obsidian calls `BasesViewFactory(controller, containerEl)` exactly as typed (`QueryController` first,
-     `HTMLElement` second). The type is quoted in the source; the runtime order can only be confirmed in
-     the app, in the same session as item 1.
-  3. `registerBasesView` returning `false` when Bases is disabled: the notice branch is written but has
-     never been observed. Verify by disabling the Bases core plugin in a vault and reloading.
-  4. `bun scripts/release-assets.ts`: the prompt says `node scripts/release-assets.ts`, but Node cannot
-     execute TypeScript, so the script is run with `bun` (the convention step 01 set for `scripts/*.ts`).
-     Worth correcting in the prompt text.
+  1. **The workflows have never executed on GitHub.** Everything above is a local simulation of the step
+     list plus a YAML parse. Verify by pushing a commit and reading the run in the Actions tab (or
+     `gh run watch`). The first push after this step should show the `gate` job green and the layout
+     annotation present.
+  2. `oven-sh/setup-bun@v2` with `bun-version: 1.4.2` — the version string format is taken from the
+     action's documented input; unverified in a real run.
+  3. Dependabot's `bun` ecosystem support: configured as the step specifies, but no Dependabot run has
+     been observed. Verify by watching for the first weekly PR, or by choosing "Check for updates" in the
+     Insights → Dependency graph tab.
+  4. No provenance attestation. `docs/05` lists it as optional and it would need a third-party action
+     pinned to a commit SHA, which cannot be fetched and verified from this environment; skipping is
+     deliberate, not an oversight.
 
 - Findings worth keeping:
-  1. **`BasesView` has `protected constructor(controller: QueryController)` (@since 1.10.0)** — the step-01
-     note "no constructor of its own" was wrong, and the compiler caught it (`Expected 1 arguments, but
-     got 0`). The placeholder view now calls `super(controller)`.
-  2. **There is no `unregisterBasesView` in obsidian.d.ts @ 1.13.1.** A Bases view type is detached by
-     Obsidian when the plugin unloads, so `onunload()` calls `super.onunload()` and releases nothing by
-     hand — and the double mirrors that framework behaviour so the test's assertion is not vacuous.
-  3. **`obsidianmd/ui/sentence-case` lowercases product names**: it wanted "tablify" and "bases" in a
-     user-facing Notice. That is a false positive on proper nouns, so `eslint.config.mts` now configures
-     `brands: ['Tablify', 'Bases']` and `acronyms: ['CSV', 'TSV', 'XLSX', 'URL']` for `src/**`.
-  4. **One warning is deliberately left standing**: `obsidianmd/settings-tab/prefer-setting-definitions`
-     asks the tab to adopt the 1.13 declarative settings API. Adopting it changes how the tab renders, so
-     it belongs with the settings schema in step 14 — not now, and not as a way to silence a warning.
-  5. The linter also required `new Setting(containerEl).setName(..).setHeading()` instead of a raw `<h2>`
-     (an error, now fixed) and `createDiv` instead of `createEl('div', ..)` (a warning, now fixed).
+  1. `node scripts/release-assets.ts` (as written in the step and in `docs/05`) cannot work: Node does not
+     execute TypeScript. Both the local run and `release.yml` use `bun scripts/release-assets.ts`, which is
+     the convention step 01 established for `scripts/*.ts`. `docs/05` is not touched, per the fence.
+  2. Release notes are extracted from `CHANGELOG.md` by tag, and an empty or missing section is a hard
+     failure — the previous project published "Test Release" placeholders, which is what this prevents.
+  3. The release job uses the preinstalled `gh` CLI with `GITHUB_TOKEN`, so no third-party release action
+     is needed and nothing has to be pinned to a SHA.
+  4. The one standing lint warning (`obsidianmd/settings-tab/prefer-setting-definitions`) is unchanged and
+     still belongs to step 14, which owns the settings schema.
 
-- Half-finished: nothing. `TABLIFY_PLACEHOLDER_TEXT` is the only user-visible string the view renders.
+- Half-finished: nothing. `dist/` is git-ignored; `main.js` remains a build artefact only.
 
 - Open questions for the human:
-  1. Real-vault verification of the six-step checklist above — the only thing this step could not do.
-  2. Should `dist/0.1.0/` be produced locally at all, or only in CI? It is git-ignored either way; the
-     script exists so the release shape is asserted before a tag is pushed.
+  1. Should the layout guard emit a warning (current choice) or fail the run until step 21? A failing run
+     would be a stronger signal but leaves CI red for the rest of M0–M2.
+  2. Dependabot: the `obsidian` ignore covers `version-update:semver-major` only, so minor and patch
+     bumps are still proposed. If every `obsidian` bump should be human-gated, say so and the ignore list
+     changes.
 
-- Next step: `prompts/step-04-ci-and-release.md`.
+- Next step: `prompts/step-05-fakes-boundaries-coverage.md` (M1 — core domain, no Obsidian and no React:
+  `src/core/**` plus the fakes, the boundary lint rule in action, and coverage enforced).
 
-- Files touched this step: `src/plugin/main.ts`, `src/plugin/TablifyPlaceholderView.ts`,
-  `src/plugin/settings/TablifySettingTab.ts`, `src/plugin/help/keyBindings.ts`,
-  `scripts/release-assets.ts`, `scripts/version-bump.ts`, `tests/mocks/obsidian.ts`,
-  `tests/unit/plugin-smoke.test.ts`, `tests/unit/bases-registration.test.ts`,
-  `tests/dom/settings-tab.test.ts`, `eslint.config.mts`, `PROGRESS.md`.
+- Files touched this step: `.github/workflows/ci.yml`, `.github/workflows/release.yml`,
+  `.github/dependabot.yml`, `package.json` (adds `test:layout`), `tests/mocks/obsidian.ts`,
+  `PROGRESS.md`.
 
-- Earlier steps: 01 toolchain and gate (`bun run check` exit 0, 802 B / 532 B bundle);
-  02 manifest and legal (manifest/versions/changelog/licence/notice plus the `brand:gate` and
-  `manifest:check` gates — `minAppVersion` 1.13.0 is the tested floor, while the Bases API itself is
-  @since 1.10.0 with `createFileForView` @since 1.10.2). Forced amendments are recorded in
-  `prompts/README.md` under "Amendments applied during execution".
+- Earlier steps: 01 toolchain and gate (802 B / 532 B bundle, `bun run check` exit 0); 02 manifest and
+  legal (`brand:gate`, `manifest:check`, `minAppVersion` 1.13.0 as the tested floor); 03 plugin shell
+  (Bases view registration, two commands, settings tab, status bar item, `release-assets` and
+  `version-bump`; 16 tests). Forced amendments are recorded in `prompts/README.md` under "Amendments
+  applied during execution".

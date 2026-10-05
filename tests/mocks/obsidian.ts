@@ -41,6 +41,15 @@ export type ElementStub = {
 	empty(): void;
 };
 
+function buildChild(tag: string, options?: { cls?: string; text?: string }): ElementStub {
+	const child = elementStub(tag);
+	child.text = options?.text ?? '';
+	if (options?.cls !== undefined) {
+		child.classes.push(options.cls);
+	}
+	return child;
+}
+
 export function elementStub(tag = 'div'): ElementStub {
 	const el: ElementStub = {
 		tag,
@@ -49,16 +58,14 @@ export function elementStub(tag = 'div'): ElementStub {
 		children: [],
 		emptied: 0,
 		createEl(childTag, options) {
-			const child = elementStub(childTag);
-			child.text = options?.text ?? '';
-			if (options?.cls !== undefined) {
-				child.classes.push(options.cls);
-			}
+			const child = buildChild(childTag, options);
 			el.children.push(child);
 			return child;
 		},
 		createDiv(options) {
-			return el.createEl('div', options);
+			const child = buildChild('div', options);
+			el.children.push(child);
+			return child;
 		},
 		addClass(...classes) {
 			el.classes.push(...classes);

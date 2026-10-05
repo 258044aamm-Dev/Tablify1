@@ -1,0 +1,93 @@
+name: CI
+
+on:
+    push:
+    pull_request:
+    workflow_dispatch:
+
+concurrency:
+    # One run per ref: a new push cancels the run it supersedes, so the queue never grows stale.
+    group: ci-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    gate:
+        name: gate
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.4.2
+
+            # Keyed on bun.lock, so a dependency change invalidates it and nothing else does.
+            - name: Cache bun's install cache
+              uses: actions/cache@v4
+              with:
+                  path: ~/.bun/install/cache
+                  key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+                  restore-keys: |
+                      bun-${{ runner.os }}-
+
+            # --frozen-lockfile: CI must fail if the lockfile would change, never silently resolve new versions.
+            - run: bun install --frozen-lockfile
+
+            - run: bun run typecheck
+            - run: bun run lint
+            - run: bun run format:check
+            - run: bun run test
+            - run: bun run build
+            - run: bun run size
+
+            # ---------------------------------------------------------------------------------------------
+            # The layout harness arrives in step 21 (harness/, playwright.config.ts, the thirteen Tier-4
+            # assertions per viewport). Until those files exist there is nothing to run, and pretending
+            # otherwise would be worse than saying nothing. So the gap is announced in two places a human
+            # cannot miss — an `::warning::` annotation on the run and a line in the job summary — and it
+            # retires itself the moment the harness lands.
+            #
+            # Step 21 must delete this guard (the `harness_present` step and the two `if:` conditions below)
+            # so the layout suite runs unconditionally from then on.
+            # ---------------------------------------------------------------------------------------------
+            - name: Check whether the layout harness exists yet
+              id: harness
+              run: |
+                  if [ -f playwright.config.ts ] && [ -d harness ]; then
+                    echo "present=true" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "present=false" >> "$GITHUB_OUTPUT"
+                    echo "::warning title=Layout gate not running::The Playwright harness does not exist yet (step 21). The layout suite is NOT being skipped silently — this guard is temporary and step 21 removes it."
+                    {
+                      echo "### Layout gate not running"
+                      echo ""
+                      echo "The Playwright harness (\`playwright.config.ts\`, \`harness/\`) arrives in step 21."
+                      echo "The layout suite will run automatically once it exists; this guard is temporary."
+                    } >> "$GITHUB_STEP_SUMMARY"
+                  fi
+
+            # bun.lock pins @playwright/test, so this cache key changes exactly when Playwright does.
+            - name: Cache Playwright's browsers
+              if: steps.harness.outputs.present == 'true'
+              uses: actions/cache@v4
+              with:
+                  path: ~/.cache/ms-playwright
+                  key: playwright-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+                  restore-keys: |
+                      playwright-${{ runner.os }}-
+
+            - name: Install Chromium for the layout harness
+              if: steps.harness.outputs.present == 'true'
+              run: bunx playwright install --with-deps chromium
+
+            - name: Layout suite (thirteen assertions per viewport)
+              if: steps.harness.outputs.present == 'true'
+              run: bun run test:layout
+
+            - name: Upload the Playwright report
+              if: always() && steps.harness.outputs.present == 'true'
+              uses: actions/upload-artifact@v4
+              with:
+                  name: playwright-report
+                  path: playwright-report
+                  if-no-files-found: ignore

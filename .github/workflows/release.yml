@@ -1,0 +1,91 @@
+name: Release
+
+# Tags are versions, never `v`-prefixed: Obsidian matches the tag to manifest.json exactly. The glob
+# `[0-9]*.[0-9]*.[0-9]*` rejects `v0.1.0` outright; the format assertion below rejects anything a glob
+# cannot express (for example `0.1.0-beta`).
+on:
+    push:
+        tags:
+            - '[0-9]*.[0-9]*.[0-9]*'
+
+permissions:
+    contents: write
+
+concurrency:
+    group: release-${{ github.ref }}
+    cancel-in-progress: false
+
+jobs:
+    release:
+        name: release ${{ github.ref_name }}
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.4.2
+
+            - run: bun install --frozen-lockfile
+
+            - name: The tag is a bare x.y.z version
+              run: |
+                  if ! printf '%s' "$GITHUB_REF_NAME" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+                    echo "::error title=Bad tag::$GITHUB_REF_NAME is not a bare x.y.z version. Obsidian rejects a tag that is not exactly manifest.json's version."
+                    exit 1
+                  fi
+
+            # A release is never cut from a tree that does not build: the whole gate runs first, including the
+            # size budget and the brand and manifest gates.
+            - run: bun run check
+
+            # The script itself refuses a dirty tree, a `v` prefix, a missing tag, a tag that disagrees with
+            # manifest.json, and a dist directory that does not end up with exactly three files.
+            - name: Build the release assets
+              env:
+                  TAG: ${{ github.ref_name }}
+              run: bun scripts/release-assets.ts
+
+            - name: Exactly three assets, named exactly as Obsidian expects
+              run: |
+                  dir="dist/$GITHUB_REF_NAME"
+                  count=$(find "$dir" -maxdepth 1 -type f | wc -l | tr -d ' ')
+                  if [ "$count" != "3" ]; then
+                    echo "::error title=Wrong asset count::$dir holds $count files, expected exactly 3."
+                    ls -la "$dir"
+                    exit 1
+                  fi
+                  ls -la "$dir"
+
+            # Release notes come from CHANGELOG.md. An empty section is an error: publishing a placeholder is
+            # what the previous project did, and it is why this step exists.
+            - name: Extract the release notes from CHANGELOG.md
+              run: |
+                  awk -v ver="$GITHUB_REF_NAME" '
+                    $0 ~ "^## \\[" ver "\\]" { capture = 1; next }
+                    capture && /^## \[/ { exit }
+                    capture { print }
+                  ' CHANGELOG.md > /tmp/release-notes.md
+                  if [ ! -s /tmp/release-notes.md ] || ! grep -q '[^[:space:]]' /tmp/release-notes.md; then
+                    echo "::error title=Empty release notes::CHANGELOG.md has no section for $GITHUB_REF_NAME. Write the notes before tagging."
+                    exit 1
+                  fi
+                  cat /tmp/release-notes.md
+
+            # `gh` is preinstalled on GitHub's runners and authenticates with GITHUB_TOKEN, so no third-party
+            # release action is needed and nothing has to be pinned to a commit SHA.
+            - name: Publish the release with exactly three assets
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  dir="dist/$GITHUB_REF_NAME"
+                  if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+                    gh release upload "$GITHUB_REF_NAME" \
+                      "$dir/main.js" "$dir/manifest.json" "$dir/styles.css" --clobber
+                  else
+                    gh release create "$GITHUB_REF_NAME" \
+                      --title "$GITHUB_REF_NAME" \
+                      --notes-file /tmp/release-notes.md \
+                      "$dir/main.js" "$dir/manifest.json" "$dir/styles.css"
+                  fi
+                  gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name'

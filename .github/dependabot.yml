@@ -1,0 +1,21 @@
+version: 2
+
+updates:
+    - package-ecosystem: bun
+      directory: /
+      schedule:
+          interval: weekly
+      open-pull-requests-limit: 3
+      # One PR for everything, so the gate is run once and the review is one decision.
+      groups:
+          all-dependencies:
+              patterns:
+                  - '*'
+      # Dependabot never merges anything on its own; this ignore list is about what deserves a human's
+      # attention at all. `obsidian` moves the Bases API floor the plugin is written against
+      # (registerBasesView is @since 1.10.0, minAppVersion is 1.13.0), so a major bump is a deliberate
+      # decision with a real-vault test attached, not a patch PR to wave through.
+      ignore:
+          - dependency-name: obsidian
+            update-types:
+                - version-update:semver-major
