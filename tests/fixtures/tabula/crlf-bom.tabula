@@ -1,0 +1,13 @@
+﻿{
+	"version": 1,
+	"name": "Windows file",
+	"fields": [
+		{ "id": "f_name", "name": "Name", "type": "text" },
+		{ "id": "f_owner", "name": "Owner", "type": "text" }
+	],
+	"rows": [
+		{ "id": "r_1", "cells": { "f_name": "Alpha", "f_owner": "Dana" } },
+		{ "id": "r_2", "cells": { "f_name": "Beta", "f_owner": null } }
+	],
+	"view": { "rowHeight": "tall", "frozenPrimary": true }
+}

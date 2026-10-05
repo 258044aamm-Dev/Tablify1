@@ -1,0 +1,27 @@
+{
+	"version": 1,
+	"name": "Statuses drift",
+	"fields": [
+		{ "id": "f_name", "name": "Name", "type": "text" },
+		{
+			"id": "f_status",
+			"name": "Status",
+			"type": "singleSelect",
+			"options": [
+				{ "id": "o_todo", "name": "Todo", "color": "gray" },
+				{ "id": "o_done", "name": "Done", "color": "green" }
+			]
+		},
+		{
+			"id": "f_tags",
+			"name": "Tags",
+			"type": "multiSelect",
+			"options": [{ "id": "o_ship", "name": "ship", "color": "purple" }]
+		}
+	],
+	"rows": [
+		{ "id": "r_1", "cells": { "f_name": "Keeps a deleted option", "f_status": "o_archived", "f_tags": ["o_ship", "o_urgent"] } },
+		{ "id": "r_2", "cells": { "f_name": "Fine", "f_status": "o_done", "f_tags": ["o_ship"] } }
+	],
+	"view": { "rowHeight": "medium", "frozenPrimary": false }
+}

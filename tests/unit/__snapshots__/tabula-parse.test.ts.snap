@@ -1,0 +1,817 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the fixtures, parsed > parses crlf-bom.tabula 1`] = `
+{
+  "path": "crlf-bom.tabula",
+  "tables": [
+    {
+      "autoNumberNext": null,
+      "fields": [
+        {
+          "id": "f_name",
+          "legacyType": "text",
+          "max": null,
+          "name": "Name",
+          "options": [],
+          "symbol": null,
+          "unknown": false,
+        },
+        {
+          "id": "f_owner",
+          "legacyType": "text",
+          "max": null,
+          "name": "Owner",
+          "options": [],
+          "symbol": null,
+          "unknown": false,
+        },
+      ],
+      "id": "t_1",
+      "name": "Windows file",
+      "rows": [
+        {
+          "cells": {
+            "f_name": "Alpha",
+            "f_owner": "Dana",
+          },
+          "id": "r_1",
+        },
+        {
+          "cells": {
+            "f_name": "Beta",
+            "f_owner": null,
+          },
+          "id": "r_2",
+        },
+      ],
+      "sync": null,
+      "view": {
+        "columnWidths": {},
+        "filters": {
+          "conditions": [],
+          "logic": "and",
+        },
+        "frozenPrimary": true,
+        "groupBy": null,
+        "hiddenFieldIds": [],
+        "query": "",
+        "rowHeight": "tall",
+        "search": "",
+        "sorts": [],
+      },
+    },
+  ],
+  "version": 1,
+  "warnings": [],
+}
+`;
+
+exports[`the fixtures, parsed > parses empty.tabula 1`] = `
+{
+  "path": "empty.tabula",
+  "tables": [
+    {
+      "autoNumberNext": 1,
+      "fields": [
+        {
+          "id": "f_a",
+          "legacyType": "text",
+          "max": null,
+          "name": "A",
+          "options": [],
+          "symbol": null,
+          "unknown": false,
+        },
+        {
+          "id": "f_b",
+          "legacyType": "number",
+          "max": null,
+          "name": "B",
+          "options": [],
+          "symbol": null,
+          "unknown": false,
+        },
+      ],
+      "id": "t_1",
+      "name": "Empty table",
+      "rows": [],
+      "sync": null,
+      "view": {
+        "columnWidths": {},
+        "filters": {
+          "conditions": [],
+          "logic": "and",
+        },
+        "frozenPrimary": true,
+        "groupBy": null,
+        "hiddenFieldIds": [],
+        "query": "",
+        "rowHeight": "short",
+        "search": "",
+        "sorts": [],
+      },
+    },
+  ],
+  "version": 1,
+  "warnings": [],
+}
+`;
+
+exports[`the fixtures, parsed > parses orphan-options.tabula 1`] = `
+{
+  "path": "orphan-options.tabula",
+  "tables": [
+    {
+      "autoNumberNext": null,
+      "fields": [
+        {
+          "id": "f_name",
+          "legacyType": "text",
+          "max": null,
+          "name": "Name",
+          "options": [],
+          "symbol": null,
+          "unknown": false,
+        },
+        {
+          "id": "f_status",
+          "legacyType": "singleSelect",
+          "max": null,
+          "name": "Status",
+          "options": [
+            {
+              "color": "gray",
+              "id": "o_todo",
+              "name": "Todo",
+            },
+            {
+              "color": "green",
+              "id": "o_done",
+              "name": "Done",
+            },
+          ],
+          "symbol": null,
+          "unknown": false,
+        },
+        {
+          "id": "f_tags",
+          "legacyType": "multiSelect",
+          "max": null,
+          "name": "Tags",
+          "options": [
+            {
+              "color": "purple",
+              "id": "o_ship",
+              "name": "ship",
+            },
+          ],
+          "symbol": null,
+          "unknown": false,
+        },
+      ],
+      "id": "t_1",
+      "name": "Statuses drift",
+      "rows": [
+        {
+          "cells": {
+            "f_name": "Keeps a deleted option",
+            "f_status": "o_archived",
+            "f_tags": [
+              "o_ship",
+              "o_urgent",
+            ],
+          },
+          "id": "r_1",
+        },
+        {
+          "cells": {
+            "f_name": "Fine",
+            "f_status": "o_done",
+            "f_tags": [
+              "o_ship",
+            ],
+          },
+          "id": "r_2",
+        },
+      ],
+      "sync": null,
+      "view": {
+        "columnWidths": {},
+        "filters": {
+          "conditions": [],
+          "logic": "and",
+        },
+        "frozenPrimary": false,
+        "groupBy": null,
+        "hiddenFieldIds": [],
+        "query": "",
+        "rowHeight": "medium",
+        "search": "",
+        "sorts": [],
+      },
+    },
+  ],
+  "version": 1,
+  "warnings": [],
+}
+`;
+
+exports[`the fixtures, parsed > parses unknown-types.tabula 1`] = `
+{
+  "path": "unknown-types.tabula",
+  "tables": [
+    {
+      "autoNumberNext": 12,
+      "fields": [
+        {
+          "id": "f_name",
+          "legacyType": "text",
+          "max": null,
+          "name": "Name",
+          "options": [],
+          "symbol": null,
+          "unknown": false,
+        },
+        {
+          "id": "f_ref",
+          "legacyType": "lookup",
+          "max": null,
+          "name": "Lookup owner",
+          "options": [],
+          "symbol": null,
+          "unknown": true,
+        },
+        {
+          "id": "f_roll",
+          "legacyType": "rollup",
+          "max": null,
+          "name": "Rolled up",
+          "options": [],
+          "symbol": null,
+          "unknown": true,
+        },
+        {
+          "id": "f_num",
+          "legacyType": "autoNumber",
+          "max": null,
+          "name": "Number",
+          "options": [],
+          "symbol": null,
+          "unknown": false,
+        },
+        {
+          "id": "f_made",
+          "legacyType": "createdTime",
+          "max": null,
+          "name": "Created",
+          "options": [],
+          "symbol": null,
+          "unknown": false,
+        },
+        {
+          "id": "f_touched",
+          "legacyType": "lastModifiedTime",
+          "max": null,
+          "name": "Last modified",
+          "options": [],
+          "symbol": null,
+          "unknown": false,
+        },
+      ],
+      "id": "t_1",
+      "name": "Mixed types",
+      "rows": [
+        {
+          "cells": {
+            "f_made": "2024-10-01T08:00:00.000Z",
+            "f_name": "First",
+            "f_num": 1,
+            "f_ref": "Dana",
+            "f_roll": "3 tasks",
+            "f_touched": "2024-11-02T17:45:00.000Z",
+          },
+          "id": "r_1",
+        },
+        {
+          "cells": {
+            "f_name": "Second",
+            "f_num": 2,
+            "f_ref": null,
+            "f_roll": "0 tasks",
+          },
+          "id": "r_2",
+        },
+      ],
+      "sync": null,
+      "view": {
+        "columnWidths": {},
+        "filters": {
+          "conditions": [],
+          "logic": "and",
+        },
+        "frozenPrimary": false,
+        "groupBy": null,
+        "hiddenFieldIds": [],
+        "query": "",
+        "rowHeight": "medium",
+        "search": "",
+        "sorts": [],
+      },
+    },
+  ],
+  "version": 1,
+  "warnings": [
+    {
+      "code": "unknown-type",
+      "message": "the type “lookup” is not a legacy type this build knows; the column is kept as text",
+      "tableIndex": 0,
+      "where": "table 1 column “Lookup owner”",
+    },
+    {
+      "code": "unknown-type",
+      "message": "the type “rollup” is not a legacy type this build knows; the column is kept as text",
+      "tableIndex": 0,
+      "where": "table 1 column “Rolled up”",
+    },
+  ],
+}
+`;
+
+exports[`the fixtures, parsed > parses v1-simple.tabula 1`] = `
+{
+  "path": "v1-simple.tabula",
+  "tables": [
+    {
+      "autoNumberNext": 4,
+      "fields": [
+        {
+          "id": "f_title",
+          "legacyType": "text",
+          "max": null,
+          "name": "Title",
+          "options": [],
+          "symbol": null,
+          "unknown": false,
+        },
+        {
+          "id": "f_status",
+          "legacyType": "singleSelect",
+          "max": null,
+          "name": "Status",
+          "options": [
+            {
+              "color": "gray",
+              "id": "o_idea",
+              "name": "Idea",
+            },
+            {
+              "color": "blue",
+              "id": "o_draft",
+              "name": "Drafting",
+            },
+            {
+              "color": "green",
+              "id": "o_live",
+              "name": "Live",
+            },
+          ],
+          "symbol": null,
+          "unknown": false,
+        },
+        {
+          "id": "f_words",
+          "legacyType": "number",
+          "max": null,
+          "name": "Words",
+          "options": [],
+          "symbol": null,
+          "unknown": false,
+        },
+        {
+          "id": "f_due",
+          "legacyType": "date",
+          "max": null,
+          "name": "Due",
+          "options": [],
+          "symbol": null,
+          "unknown": false,
+        },
+        {
+          "id": "f_done",
+          "legacyType": "checkbox",
+          "max": null,
+          "name": "Done",
+          "options": [],
+          "symbol": null,
+          "unknown": false,
+        },
+      ],
+      "id": "t_1",
+      "name": "Content calendar",
+      "rows": [
+        {
+          "cells": {
+            "f_done": true,
+            "f_due": "2024-11-14",
+            "f_status": "o_live",
+            "f_title": "Quarterly report",
+            "f_words": 2400,
+          },
+          "id": "r_1",
+        },
+        {
+          "cells": {
+            "f_done": false,
+            "f_due": "2024-11-20",
+            "f_status": "o_draft",
+            "f_title": "Launch notes",
+            "f_words": 900,
+          },
+          "id": "r_2",
+        },
+        {
+          "cells": {
+            "f_done": false,
+            "f_due": null,
+            "f_status": "o_idea",
+            "f_title": "Ideas backlog",
+            "f_words": 0,
+          },
+          "id": "r_3",
+        },
+      ],
+      "sync": null,
+      "view": {
+        "columnWidths": {
+          "f_status": 140,
+          "f_title": 260,
+        },
+        "filters": {
+          "conditions": [
+            {
+              "fieldId": "f_status",
+              "operator": "isNot",
+              "value": "o_live",
+            },
+          ],
+          "logic": "and",
+        },
+        "frozenPrimary": false,
+        "groupBy": "f_status",
+        "hiddenFieldIds": [
+          "f_done",
+        ],
+        "query": "status:!live",
+        "rowHeight": "medium",
+        "search": "report",
+        "sorts": [
+          {
+            "direction": "asc",
+            "fieldId": "f_due",
+          },
+        ],
+      },
+    },
+  ],
+  "version": 1,
+  "warnings": [],
+}
+`;
+
+exports[`the fixtures, parsed > parses v2-three-tables.tabula 1`] = `
+{
+  "path": "v2-three-tables.tabula",
+  "tables": [
+    {
+      "autoNumberNext": 4,
+      "fields": [
+        {
+          "id": "f_name",
+          "legacyType": "text",
+          "max": null,
+          "name": "Project",
+          "options": [],
+          "symbol": null,
+          "unknown": false,
+        },
+        {
+          "id": "f_owner",
+          "legacyType": "singleSelect",
+          "max": null,
+          "name": "Owner",
+          "options": [
+            {
+              "color": "blue",
+              "id": "o_dana",
+              "name": "Dana",
+            },
+            {
+              "color": "orange",
+              "id": "o_ravi",
+              "name": "Ravi",
+            },
+          ],
+          "symbol": null,
+          "unknown": false,
+        },
+        {
+          "id": "f_budget",
+          "legacyType": "currency",
+          "max": null,
+          "name": "Budget",
+          "options": [],
+          "symbol": "$",
+          "unknown": false,
+        },
+        {
+          "id": "f_effort",
+          "legacyType": "duration",
+          "max": null,
+          "name": "Effort",
+          "options": [],
+          "symbol": null,
+          "unknown": false,
+        },
+        {
+          "id": "f_due",
+          "legacyType": "date",
+          "max": null,
+          "name": "Due",
+          "options": [],
+          "symbol": null,
+          "unknown": false,
+        },
+      ],
+      "id": "t_projects",
+      "name": "Projects",
+      "rows": [
+        {
+          "cells": {
+            "f_budget": 42000,
+            "f_due": "2025-01-15",
+            "f_effort": 7200,
+            "f_name": "Widening",
+            "f_owner": "o_dana",
+          },
+          "id": "r_p1",
+        },
+        {
+          "cells": {
+            "f_budget": 18500,
+            "f_due": "2025-02-01",
+            "f_effort": 5400,
+            "f_name": "Resurfacing",
+            "f_owner": "o_ravi",
+          },
+          "id": "r_p2",
+        },
+        {
+          "cells": {
+            "f_budget": null,
+            "f_due": "2025-03-10",
+            "f_effort": null,
+            "f_name": "Signage",
+            "f_owner": null,
+          },
+          "id": "r_p3",
+        },
+      ],
+      "sync": {
+        "baseId": "appExampleBase",
+        "baseName": "Roads",
+        "mappedFields": 2,
+        "mappedRecords": 2,
+        "tableId": "tblExampleProjects",
+        "tableName": "Projects",
+      },
+      "view": {
+        "columnWidths": {
+          "f_name": 220,
+        },
+        "filters": {
+          "conditions": [
+            {
+              "fieldId": "f_budget",
+              "operator": "gt",
+              "value": 10000,
+            },
+            {
+              "fieldId": "f_owner",
+              "operator": "isEmpty",
+              "value": null,
+            },
+          ],
+          "logic": "and",
+        },
+        "frozenPrimary": true,
+        "groupBy": "f_owner",
+        "hiddenFieldIds": [
+          "f_effort",
+        ],
+        "query": "",
+        "rowHeight": "medium",
+        "search": "",
+        "sorts": [
+          {
+            "direction": "asc",
+            "fieldId": "f_due",
+          },
+        ],
+      },
+    },
+    {
+      "autoNumberNext": null,
+      "fields": [
+        {
+          "id": "f_who",
+          "legacyType": "text",
+          "max": null,
+          "name": "Who",
+          "options": [],
+          "symbol": null,
+          "unknown": false,
+        },
+        {
+          "id": "f_mail",
+          "legacyType": "email",
+          "max": null,
+          "name": "Email",
+          "options": [],
+          "symbol": null,
+          "unknown": false,
+        },
+        {
+          "id": "f_phone",
+          "legacyType": "phone",
+          "max": null,
+          "name": "Phone",
+          "options": [],
+          "symbol": null,
+          "unknown": false,
+        },
+        {
+          "id": "f_start",
+          "legacyType": "datetime",
+          "max": null,
+          "name": "Started",
+          "options": [],
+          "symbol": null,
+          "unknown": false,
+        },
+        {
+          "id": "f_score",
+          "legacyType": "rating",
+          "max": 5,
+          "name": "Score",
+          "options": [],
+          "symbol": null,
+          "unknown": false,
+        },
+        {
+          "id": "f_tags",
+          "legacyType": "multiSelect",
+          "max": null,
+          "name": "Tags",
+          "options": [
+            {
+              "color": "cyan",
+              "id": "o_crew",
+              "name": "crew",
+            },
+          ],
+          "symbol": null,
+          "unknown": false,
+        },
+      ],
+      "id": "t_people",
+      "name": "People",
+      "rows": [
+        {
+          "cells": {
+            "f_mail": "dana@example.com",
+            "f_phone": "+81 3 1234 5678",
+            "f_score": 4,
+            "f_start": "2023-04-01T00:00:00.000Z",
+            "f_tags": [
+              "o_crew",
+            ],
+            "f_who": "Dana",
+          },
+          "id": "r_w1",
+        },
+        {
+          "cells": {
+            "f_mail": "ravi@example.com",
+            "f_score": 5,
+            "f_who": "Ravi",
+          },
+          "id": "r_w2",
+        },
+      ],
+      "sync": null,
+      "view": {
+        "columnWidths": {},
+        "filters": {
+          "conditions": [],
+          "logic": "and",
+        },
+        "frozenPrimary": false,
+        "groupBy": null,
+        "hiddenFieldIds": [],
+        "query": "",
+        "rowHeight": "tall",
+        "search": "",
+        "sorts": [],
+      },
+    },
+    {
+      "autoNumberNext": null,
+      "fields": [
+        {
+          "id": "f_label",
+          "legacyType": "longText",
+          "max": null,
+          "name": "Label",
+          "options": [],
+          "symbol": null,
+          "unknown": false,
+        },
+        {
+          "id": "f_link",
+          "legacyType": "url",
+          "max": null,
+          "name": "Link",
+          "options": [],
+          "symbol": null,
+          "unknown": false,
+        },
+        {
+          "id": "f_doc",
+          "legacyType": "attachment",
+          "max": null,
+          "name": "Doc",
+          "options": [],
+          "symbol": null,
+          "unknown": false,
+        },
+        {
+          "id": "f_share",
+          "legacyType": "percent",
+          "max": null,
+          "name": "Share",
+          "options": [],
+          "symbol": null,
+          "unknown": false,
+        },
+        {
+          "id": "f_legacy_num",
+          "legacyType": "autoNumber",
+          "max": null,
+          "name": "Number",
+          "options": [],
+          "symbol": null,
+          "unknown": false,
+        },
+      ],
+      "id": "t_files",
+      "name": "Files",
+      "rows": [
+        {
+          "cells": {
+            "f_doc": "Attachments/plan.pdf",
+            "f_label": "Site plan",
+            "f_legacy_num": 1,
+            "f_link": "https://example.com/plan",
+            "f_share": 25,
+          },
+          "id": "r_f1",
+        },
+      ],
+      "sync": null,
+      "view": {
+        "columnWidths": {},
+        "filters": {
+          "conditions": [],
+          "logic": "and",
+        },
+        "frozenPrimary": false,
+        "groupBy": null,
+        "hiddenFieldIds": [],
+        "query": "",
+        "rowHeight": "short",
+        "search": "",
+        "sorts": [],
+      },
+    },
+  ],
+  "version": 2,
+  "warnings": [],
+}
+`;
+
+exports[`what it refuses > refuses a truncated file with a sentence that says why, and a position to look at 1`] = `
+{
+  "excerpt": "{ "id": "r_1", "cells": { "f_name": "Half a row", "f_notes": "the file stops here"",
+  "message": "the file is not valid JSON — it stops before the document ends, so it is truncated or only partly saved",
+}
+`;

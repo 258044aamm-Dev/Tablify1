@@ -1,0 +1,387 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the dry run > reports a v1 file column by column 1`] = `
+{
+  "basePath": "Bases/Content calendar.base",
+  "filenameTemplate": "{{Name}}",
+  "path": "v1-simple.tabula",
+  "tables": [
+    {
+      "columns": [
+        "Title:text->text (kept)",
+        "Status:singleSelect->singleSelect (kept)",
+        "Words:number->number (kept)",
+        "Due:date->date (kept)",
+        "Done:checkbox->checkbox (kept)",
+      ],
+      "duplicateNames": 0,
+      "filenameSample": [
+        "Quarterly report",
+        "Launch notes",
+        "Ideas backlog",
+      ],
+      "missingPrimary": 0,
+      "notesToCreate": 3,
+      "orphans": [],
+      "primary": "Title",
+      "rows": 3,
+      "shapeProblems": 0,
+      "tableName": "Content calendar",
+      "view": {
+        "conditions": [
+          "note.Status isNot -> isNot",
+        ],
+        "dropped": [
+          "search (per-session in Bases, so it is not carried)",
+          "2 column width(s) (view sidecar)",
+          "query string “status:!live” (folded into the filter translation)",
+        ],
+        "groupBy": "note.Status",
+        "hiddenColumns": 1,
+        "sorts": 1,
+      },
+      "warnings": [],
+    },
+  ],
+  "totals": {
+    "columns": 5,
+    "droppedColumns": 0,
+    "metadataColumns": 0,
+    "notesToCreate": 3,
+    "orphanValues": 0,
+    "remappedColumns": 0,
+    "rows": 3,
+    "tables": 1,
+    "warnings": 0,
+  },
+  "version": 1,
+}
+`;
+
+exports[`the dry run > reports crlf-bom.tabula 1`] = `
+{
+  "basePath": "Bases/Windows file.base",
+  "filenameTemplate": "{{Name}}",
+  "path": "crlf-bom.tabula",
+  "tables": [
+    {
+      "columns": [
+        "Name:text->text (kept)",
+        "Owner:text->text (kept)",
+      ],
+      "duplicateNames": 0,
+      "filenameSample": [
+        "Alpha",
+        "Beta",
+      ],
+      "missingPrimary": 0,
+      "notesToCreate": 2,
+      "orphans": [],
+      "primary": "Name",
+      "rows": 2,
+      "shapeProblems": 0,
+      "tableName": "Windows file",
+      "view": {
+        "conditions": [],
+        "dropped": [
+          "row height “tall” (view sidecar)",
+          "pinned primary column (view sidecar)",
+        ],
+        "groupBy": null,
+        "hiddenColumns": 0,
+        "sorts": 0,
+      },
+      "warnings": [],
+    },
+  ],
+  "totals": {
+    "columns": 2,
+    "droppedColumns": 0,
+    "metadataColumns": 0,
+    "notesToCreate": 2,
+    "orphanValues": 0,
+    "remappedColumns": 0,
+    "rows": 2,
+    "tables": 1,
+    "warnings": 0,
+  },
+  "version": 1,
+}
+`;
+
+exports[`the dry run > reports empty.tabula 1`] = `
+{
+  "basePath": "Bases/Empty table.base",
+  "filenameTemplate": "{{Name}}",
+  "path": "empty.tabula",
+  "tables": [
+    {
+      "columns": [
+        "A:text->text (kept)",
+        "B:number->number (kept)",
+      ],
+      "duplicateNames": 0,
+      "filenameSample": [],
+      "missingPrimary": 0,
+      "notesToCreate": 0,
+      "orphans": [],
+      "primary": "A",
+      "rows": 0,
+      "shapeProblems": 0,
+      "tableName": "Empty table",
+      "view": {
+        "conditions": [],
+        "dropped": [
+          "row height “short” (view sidecar)",
+          "pinned primary column (view sidecar)",
+        ],
+        "groupBy": null,
+        "hiddenColumns": 0,
+        "sorts": 0,
+      },
+      "warnings": [],
+    },
+  ],
+  "totals": {
+    "columns": 2,
+    "droppedColumns": 0,
+    "metadataColumns": 0,
+    "notesToCreate": 0,
+    "orphanValues": 0,
+    "remappedColumns": 0,
+    "rows": 0,
+    "tables": 1,
+    "warnings": 0,
+  },
+  "version": 1,
+}
+`;
+
+exports[`the dry run > reports orphan-options.tabula 1`] = `
+{
+  "basePath": "Bases/Statuses drift.base",
+  "filenameTemplate": "{{Name}}",
+  "path": "orphan-options.tabula",
+  "tables": [
+    {
+      "columns": [
+        "Name:text->text (kept)",
+        "Status:singleSelect->singleSelect (kept)",
+        "Tags:multiSelect->multiSelect (kept)",
+      ],
+      "duplicateNames": 0,
+      "filenameSample": [
+        "Keeps a deleted option",
+        "Fine",
+      ],
+      "missingPrimary": 0,
+      "notesToCreate": 2,
+      "orphans": [
+        "f_status=o_archived",
+        "f_tags=o_urgent",
+      ],
+      "primary": "Name",
+      "rows": 2,
+      "shapeProblems": 0,
+      "tableName": "Statuses drift",
+      "view": {
+        "conditions": [],
+        "dropped": [],
+        "groupBy": null,
+        "hiddenColumns": 0,
+        "sorts": 0,
+      },
+      "warnings": [],
+    },
+  ],
+  "totals": {
+    "columns": 3,
+    "droppedColumns": 0,
+    "metadataColumns": 0,
+    "notesToCreate": 2,
+    "orphanValues": 2,
+    "remappedColumns": 0,
+    "rows": 2,
+    "tables": 1,
+    "warnings": 0,
+  },
+  "version": 1,
+}
+`;
+
+exports[`the dry run > reports unknown-types.tabula 1`] = `
+{
+  "basePath": "Bases/Mixed types.base",
+  "filenameTemplate": "{{Name}}",
+  "path": "unknown-types.tabula",
+  "tables": [
+    {
+      "columns": [
+        "Name:text->text (kept)",
+        "Lookup owner:lookup->text (remapped)",
+        "Rolled up:rollup->text (remapped)",
+        "Number:autoNumber->- (dropped)",
+        "Created:createdTime->createdTime (metadata)",
+        "Last modified:lastModifiedTime->lastModifiedTime (metadata)",
+      ],
+      "duplicateNames": 0,
+      "filenameSample": [
+        "First",
+        "Second",
+      ],
+      "missingPrimary": 0,
+      "notesToCreate": 2,
+      "orphans": [],
+      "primary": "Name",
+      "rows": 2,
+      "shapeProblems": 0,
+      "tableName": "Mixed types",
+      "view": {
+        "conditions": [],
+        "dropped": [
+          "auto-number counter (discarded with the autoNumber column)",
+        ],
+        "groupBy": null,
+        "hiddenColumns": 0,
+        "sorts": 0,
+      },
+      "warnings": [
+        "unknown-type",
+        "unknown-type",
+      ],
+    },
+  ],
+  "totals": {
+    "columns": 6,
+    "droppedColumns": 1,
+    "metadataColumns": 2,
+    "notesToCreate": 2,
+    "orphanValues": 0,
+    "remappedColumns": 2,
+    "rows": 2,
+    "tables": 1,
+    "warnings": 2,
+  },
+  "version": 1,
+}
+`;
+
+exports[`the dry run > reports v2-three-tables.tabula 1`] = `
+{
+  "basePath": "Bases/Projects.base",
+  "filenameTemplate": "{{Name}}",
+  "path": "v2-three-tables.tabula",
+  "tables": [
+    {
+      "columns": [
+        "Project:text->text (kept)",
+        "Owner:singleSelect->singleSelect (kept)",
+        "Budget:currency->currency (kept)",
+        "Effort:duration->duration (kept)",
+        "Due:date->date (kept)",
+      ],
+      "duplicateNames": 0,
+      "filenameSample": [
+        "Widening",
+        "Resurfacing",
+        "Signage",
+      ],
+      "missingPrimary": 0,
+      "notesToCreate": 3,
+      "orphans": [],
+      "primary": "Project",
+      "rows": 3,
+      "shapeProblems": 0,
+      "tableName": "Projects",
+      "view": {
+        "conditions": [
+          "note.Budget gt -> gt",
+          "note.Owner isEmpty -> isEmpty",
+        ],
+        "dropped": [
+          "1 column width(s) (view sidecar)",
+          "pinned primary column (view sidecar)",
+        ],
+        "groupBy": "note.Owner",
+        "hiddenColumns": 1,
+        "sorts": 1,
+      },
+      "warnings": [],
+    },
+    {
+      "columns": [
+        "Who:text->text (kept)",
+        "Email:email->email (kept)",
+        "Phone:phone->phone (kept)",
+        "Started:datetime->datetime (kept)",
+        "Score:rating->rating (kept)",
+        "Tags:multiSelect->multiSelect (kept)",
+      ],
+      "duplicateNames": 0,
+      "filenameSample": [
+        "Dana",
+        "Ravi",
+      ],
+      "missingPrimary": 0,
+      "notesToCreate": 2,
+      "orphans": [],
+      "primary": "Who",
+      "rows": 2,
+      "shapeProblems": 0,
+      "tableName": "People",
+      "view": {
+        "conditions": [],
+        "dropped": [
+          "row height “tall” (view sidecar)",
+        ],
+        "groupBy": null,
+        "hiddenColumns": 0,
+        "sorts": 0,
+      },
+      "warnings": [],
+    },
+    {
+      "columns": [
+        "Label:longText->longText (kept)",
+        "Link:url->url (kept)",
+        "Doc:attachment->attachment (kept)",
+        "Share:percent->percent (kept)",
+        "Number:autoNumber->- (dropped)",
+      ],
+      "duplicateNames": 0,
+      "filenameSample": [
+        "Site plan",
+      ],
+      "missingPrimary": 0,
+      "notesToCreate": 1,
+      "orphans": [],
+      "primary": "Label",
+      "rows": 1,
+      "shapeProblems": 0,
+      "tableName": "Files",
+      "view": {
+        "conditions": [],
+        "dropped": [
+          "row height “short” (view sidecar)",
+        ],
+        "groupBy": null,
+        "hiddenColumns": 0,
+        "sorts": 0,
+      },
+      "warnings": [],
+    },
+  ],
+  "totals": {
+    "columns": 16,
+    "droppedColumns": 1,
+    "metadataColumns": 0,
+    "notesToCreate": 6,
+    "orphanValues": 0,
+    "remappedColumns": 0,
+    "rows": 6,
+    "tables": 3,
+    "warnings": 0,
+  },
+  "version": 2,
+}
+`;

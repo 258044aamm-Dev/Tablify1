@@ -2,16 +2,180 @@
 
 - Milestone: M0 — Foundation (complete) · M1 — Core domain (complete) · **M2 — Adapters (in progress)**
   Branch: main
-- Last completed step: **step 12 — `BasesSource`, the real Bases view, and note creation.** Rows and values
-  come from a real Bases view (keyed by `entry.file.path`), edits go out through step 11's queue, and the
-  optimistic overlay is what the grid reads in between. The whole **data path is ASSUMED**: there is no real
-  vault here, and the step's real-vault observation is not produced (see the step-12 block below).
+- Last completed step: **step 13 — the `.tabula` reader, the dry run and the migration.** A legacy
+  `.tabula` file is read into a neutral, read-only model (v1 and v2 detected from content, tolerant of
+  BOM/CRLF/trailing space/zero rows/unknown types/orphaned option values, **never** throwing); the dry run
+  turns it into a report a dialog can show; the migration is ordinary ops — one `importBlock` per table, one
+  `setFieldOptions` per options column, one `setViewConfig` per view — so the whole thing is **one undo step**
+  and the `.tabula` bytes are untouched. Seven committed fixtures, 6 snapshots of the parse result and 6 of the
+  report.
 
-- Last completed step before that: **step 11 — the `RowSource` port, the write queue and the optimistic
+- Last completed step before that: **step 12 — `BasesSource`, the real Bases view, and note creation.** Rows
+  and values come from a real Bases view (keyed by `entry.file.path`), edits go out through step 11's queue,
+  and the optimistic overlay is what the grid reads in between. The whole **data path is ASSUMED**: there is no
+  real vault here, and the step's real-vault observation is not produced (see the step-12 block below).
+
+- Last completed step before that one: **step 11 — the `RowSource` port, the write queue and the optimistic
   overlay.** The layer that makes editing a note-backed grid safe: coalescing per file+property, one
   `processFrontMatter` call per file per flush, a promise chain per file so two writers never overlap, a
   250 ms debounce with a `flush()` that bypasses it, per-file failure reporting, and an overlay that holds
   pending values only.
+
+---
+
+**Step 13 — the `.tabula` reader, the dry run and the migration.**
+
+- Verified (`bun run check` — raw): `tsc --noEmit` clean; `eslint .` → **0 errors, 1 warning** (unchanged: the
+  step-04 settings tab does not implement `getSettingDefinitions()`; step 14 replaces it);
+  `brand-gate: OK — 60 permitted match(es), 0 violations` (one more permitted match: the new fixtures name the
+  legacy format in prose, not a brand); `manifest:check: OK`; `All matched files use Prettier code style!`;
+  **911 tests across 23 files** (was 868 / 21: +25 in `tests/unit/tabula-parse.test.ts`, +18 in
+  `tests/unit/tabula-migrate.test.ts`); `bundle-size: OK` — `main.js raw 52747 bytes (51.51 KB)`,
+  `gzip 16555 bytes (16.17 KB)`, `styles.css !important check: clean`. Coverage: all files **91.46 / 90.21**
+  (funcs 96.22); `core/migrate` **93.81** (`dryRun.ts` 94.82, `apply.ts` 92.02),
+  `adapters/tabulaFile` **82.77** (`model.ts` 83.41, `parse.ts` 82.53), `src/core/**` unchanged at 85+/85+.
+
+- The acceptance assertions, by requirement:
+  1. **It never throws.** Every refusal is a `TabulaResult` with `TabulaError { path, line?, column?, message,
+     excerpt ≤ 120 }`; the engine's own `SyntaxError` travels as `cause` and nothing asserted depends on its
+     wording. `truncated.tabula` (a deliberate half-written JSON file) refuses with
+     `the file is not valid JSON — it stops before the document ends, so it is truncated or only partly saved`
+     at **line 9 with a non-empty excerpt on both runtimes**: V8 reports the position at the last byte of the
+     input (where there is no text) and Bun reports no position at all, so a position that lands on nothing is
+     answered with the file's last line that has content (`locateFrom` → `locateEnd`). The snapshot pins the
+     message and the excerpt; the assertion pins the line.
+  2. **Version from content.** `version === 2 && Array.isArray(tables)` is v2, `fields && rows` is v1, a
+     `tables` array with no `version` is read as the v2 envelope (with a `missing-version` warning), and
+     `version > 2` refuses rather than guessing.
+  3. **Tolerance, each asserted on its own fixture or its own minimal document**: BOM + CRLF
+     (`crlf-bom.tabula` parses with **zero** warnings), trailing space, a table with zero rows (`empty.tabula`),
+     two unknown legacy types (`lookup`, `rollup` — **kept as text**, `unknown: true`, one `unknown-type`
+     warning each), orphaned select ids (`orphan-options.tabula` — the value is kept, the label is kept when it
+     exists, and `orphanSelections()` reports `r_1/f_status/o_archived` and `r_1/f_tags/o_urgent`), a v2 entry
+     with no table object (`skipped-table-entry`, the other tables still read), two tables claiming one id
+     (`duplicate-table-id`), a row with no `cells` object (`missing-row-cells`, the row survives as empty), a
+     cell whose column is not in the table (`extra-cell-column`, the value is dropped), and an unrecognised
+     sort direction (`unknown-sort-direction`, the sort is kept).
+  4. **Seven fixtures, each snapshot-tested.** `tests/unit/__snapshots__/tabula-parse.test.ts.snap` holds the
+     parse result of all six readable fixtures (820 lines); the seventh (`truncated.tabula`) is asserted as an
+     error. A test also asserts the fixture directory contains exactly those seven names, so a fixture cannot
+     be added without a test being added in the same commit.
+  5. **The dry run is data.** `dryRunMigration(doc, target)` is pure — no clock, no vault, no I/O — and its
+     report is snapshotted for the other five readable fixtures plus the whole report of `v1-simple`. Counts
+     asserted outright: v2 is 6 notes over 3 tables (3/2/1), 16 columns, 1 dropped, 1 warn-free read;
+     `unknown-types` is 2 remapped + 2 metadata + 1 dropped; `orphan-options` is 2 orphan values.
+  6. **Operator translation, against the twelve canonical ids** (`docs/08` §query): `equals`→`is`,
+     `contains`→`contains`, `before`→`lt`, `after`→`gt`, `isAnyOf`→`contains`, `isTrue`→`is`, `gt`→`gt`,
+     `isEmpty`→`isEmpty`, each with a reason; an operator with no canonical form (`fuzzyMatches`) keeps its
+     column and its spelling in the conditions table **and** is listed in `view.dropped`, because a filter that
+     is not applied is a loss a person has to be able to read.
+  7. **One undo step, one `importBlock` per table, new notes only, `.tabula` bytes unchanged.**
+     `migrateMutation` returns `['importBlock','setFieldOptions','setViewConfig']` for `v1-simple`; pushed to
+     `createHistory()` as **one** command (`{kind:'none'}` before-images — a note that did not exist), it gives
+     `depth() === 1`, `undoLabel() === 'Migrate 3 notes from 1 table'`, and `undo()` returns deletes for exactly
+     the three created notes; `redo()` puts them back. A note that already exists at a target path is left
+     byte-identical and is not in `created()`. The fixture's text is re-read after a full apply and is equal,
+     and no path in any op ends in `.tabula` (asserted over `vault.paths()`).
+  8. **Through the view source**, a migration produces **no refusals and no cell writes** (`written === 0`) and
+     exactly two sidecar patches, in order: `fieldOptions` (carrying `note.Status` with its options) and
+     `tablifyViewConfig` (carrying the translated view). Rows are the store's business — `BasesSource` has no
+     `importBlock` case and says so with an empty default — which is asserted rather than assumed.
+
+- Decisions and deviations worth recording:
+  1. **A column's destination is a four-way statement, not two booleans.** `ColumnPlan.destination` is
+     `'kept' | 'remapped' | 'metadata' | 'dropped'`, and `stored` is derived so the two cannot disagree
+     (asserted as an invariant over a 6-column plan). Reporting a `createdTime` column as "remapped" (as the
+     first draft did) would have said the type changed when what changed is that the *values* stop being copied.
+  2. **The auto-number counter is named only when a column used it.** A `.tabula` file carries
+     `autoNumberNext` even with no `autoNumber` column, and "counter discarded" would then be noise next to a
+     report that is otherwise exact. Asserted both ways (`v1-simple` must **not** mention it, `unknown-types`
+     must).
+  3. **v2 table ids come from the entry** (`{ id, table }`), matching the fork's own
+     `parseTableFileDocument`; the first draft read `id` from inside the table document, which would have
+     reported every v2 table as `t_1`/`t_2` and silently re-keyed a file that legitimately uses those names for
+     something else. A v1 document has no id of its own — the file *is* the table — so `t_1` is synthesised and
+     documented as synthesised.
+  4. **A table with zero rows contributes no `importBlock`.** The step's item 4 says "one `importBlock` per
+     table"; a no-op op would be recorded in the undo step and in the write log for nothing, so
+     `empty.tabula` produces a `setViewConfig` and nothing else. Reported as a deviation rather than split down
+     the middle.
+  5. **Op order inside one table is `importBlock` → `setFieldOptions` → `setViewConfig`** (a table at a time,
+     tables in order). A store applying the batch in order therefore cannot render a select column before its
+     options exist, and `previous: {}` is honest for a **fresh** base view: a non-empty `previous` would make
+     undo restore a config the user never had.
+  6. **`Project plan (1)` vs `" 2"`.** `prompts/step-13` item 5 illustrates the collision case as
+     `Project plan (1)`; `docs/03` line 99 says the suffix is `" 2"`, `" 3"`, …. The doc is the spec and the
+     implementation follows it (same divergence as step 12's finding 4, recorded once, awaiting a decision).
+  7. **`tests/fakes/noteStore.ts` (new) is a stand-in for the step-16 store, and it is a fake, not a mock**:
+     notes are written by the shipping `createNote` frontmatter path and state comes from the shipping
+     `applyOp` reducer, so a migrated note cannot drift from a pasted row. It exists because `importBlock` and
+     `deleteRows` have to be *applied* somewhere for the one-undo-step assertion to mean anything; step 16
+     replaces it with the real store and this file is then the thing to delete.
+  8. **`tests/fixtures/tabula/*` are hand-written to the recorded on-disk shapes**, not copied from the fork's
+     test data: v1 written bare, v2 only when there are two or more tables, select cells holding option **id**s,
+     number/currency/percent as plain numbers (`f_share: 25` — checked against the fork's `isNumericField`,
+     which does not store a ×100 form). The fork's reader was consulted for the detection rule and the envelope
+     shape only.
+
+- Interpretations worth recording:
+  1. **`metadata`, not `remapped`, is where `createdTime`/`lastModifiedTime` go.** Both become read-only
+     `file.ctime`/`file.mtime` columns; the column survives and the values are recomputed by Obsidian
+     (`docs/03` §field type mapping), so they are reported as a destination of their own.
+  2. **The reader keeps the file's own vocabulary.** A sort whose direction is not `asc`/`desc` is kept as
+     written and warned about (the dry run then normalises to `asc`), and an unknown legacy type keeps its
+     spelling in `legacyType` with `unknown: true` — so the report can show the user the word that was in their
+     file, which is the whole point of a dry run.
+  3. **Warnings are scoped by index, not by text.** `TabulaWarning.tableIndex` is stamped on every warning and
+     the dry run filters with `tableIndex === undefined || === index`; the earlier substring match on `where`
+     would have mis-attributed a warning whose text happened to contain another table's label.
+  4. **`Array.isArray` was replaced at every read site** (`isStringList` in `model.ts`, `asArray` in `parse.ts`)
+     because it types an `unknown` as `any[]` and `no-unsafe-*` catches it — the fix is a predicate, never a
+     cast.
+
+- Findings worth keeping (the docs did not say, or said differently):
+  1. **`docs/03` §Migration step 5's mapping file (`.tablify/migrations/<timestamp>.json`) is not written in
+     step 13.** The `sync` block is *carried* in every table plan and in the report, so the data a mapping file
+     needs is read and reported — but writing it is a vault write with a clock, and both are outside this
+     step's fence (read-only reader, pure migration). Whoever owns the dialog (step 23) has to own it, or the
+     file has to be dropped in favour of the report. *(reported, not applied)*
+  2. **`docs/03` should say that a row-creating op belongs to the store, not to the view source.** The source
+     deliberately has no case for `importBlock`; without the sentence, the next reader of `BasesSource` sees an
+     empty `default:` and has to guess whether it is a bug. *(reported, not applied)*
+  3. Unchanged: `docs/02` §Rows become notes should note that `createFileForView` is single-row only; step 10's
+     three `FINDINGS.md` corrections are still unapplied.
+
+- Open questions for the human:
+  1. **Does anything ever write `.tablify/migrations/<timestamp>.json`** (finding 1), or does the dry-run
+     report replace it? Until that is decided the reader keeps the `sync` block and nothing writes a file.
+  2. **`empty.tabula` has nothing to migrate** (zero rows, two columns). Should the dialog offer the migration
+     at all, or say "this file has no rows" and stop? Step 23's call, recorded here because the ops for it are
+     already empty except the view config.
+  3. (unchanged) **`docs/01` §in scope** needs the missing §undo paragraph (depth 60, one step per user action,
+     the menu wording, no keystroke coalescing).
+  4. (unchanged) **`docs/02` §Store's `Command`/`GridStore` sketch** is behind the implemented shape
+     (`label`, `undo()` returning ops, `History` as a factory) — and step 13 leaned on that shape, so the gap
+     is now load-bearing.
+  5. (unchanged) `docs/02` §Query and `docs/01` are behind the query layer; a select column's sort is
+     alphabetical rather than option-ordered (step 08, Findings 1–3).
+  6. (unchanged) `@standard-schema/spec` as a types-only devDependency, or the local structural declaration?
+  7. (unchanged) `docs/04` has no §cell-rendering section, which `prompts/step-07` cites.
+  8. (unchanged) `attachment`: write `[[link]]` or the plain vault path? (current: plain path.)
+  9. (unchanged) Layout guard: warning (current) or failing until step 21?
+ 10. (unchanged) `docs/09` line 33 still contains a banned word in its description template; three candidate
+     plugin descriptions await a pick.
+
+- Next step: `prompts/step-14-settings-schema-persistence-and-tab.md` — the settings schema, load/save with
+  migration, and the real `TablifySettingTab` replacing step 04's placeholder: schema-driven rows, hidden rather
+  than disabled, unknown keys preserved, a pure `migrate(raw)` at `version: 0`, a debounced save, a read-only
+  version row and a Diagnostics button that copies a secret-free blob. It must resolve the one standing lint
+  warning **by adopting the 1.13 declarative surface** (`PluginSettingTab.getSettingDefinitions()`,
+  `@since 1.13.0` — found while checking the Bases declaration in step 12) or by saying why not.
+
+- Files touched in **step 13**: new — `src/adapters/tabulaFile/{model,parse}.ts`,
+  `src/core/migrate/{dryRun,apply}.ts`, `tests/fixtures/tabula/*.tabula` (7),
+  `tests/fakes/noteStore.ts`, `tests/unit/{tabula-parse,tabula-migrate}.test.ts`,
+  `tests/unit/__snapshots__/tabula-parse.test.ts.snap`; changed — `PROGRESS.md`. Nothing outside
+  `src/adapters/tabulaFile/**`, `src/core/migrate/**`, `tests/**` and `PROGRESS.md`.
 
 ---
 

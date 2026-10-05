@@ -1,0 +1,44 @@
+{
+	"version": 1,
+	"name": "Content calendar",
+	"autoNumberNext": 4,
+	"fields": [
+		{ "id": "f_title", "name": "Title", "type": "text" },
+		{
+			"id": "f_status",
+			"name": "Status",
+			"type": "singleSelect",
+			"options": [
+				{ "id": "o_idea", "name": "Idea", "color": "gray" },
+				{ "id": "o_draft", "name": "Drafting", "color": "blue" },
+				{ "id": "o_live", "name": "Live", "color": "green" }
+			]
+		},
+		{ "id": "f_words", "name": "Words", "type": "number" },
+		{ "id": "f_due", "name": "Due", "type": "date" },
+		{ "id": "f_done", "name": "Done", "type": "checkbox" }
+	],
+	"rows": [
+		{
+			"id": "r_1",
+			"cells": { "f_title": "Quarterly report", "f_status": "o_live", "f_words": 2400, "f_due": "2024-11-14", "f_done": true }
+		},
+		{ "id": "r_2", "cells": { "f_title": "Launch notes", "f_status": "o_draft", "f_words": 900, "f_due": "2024-11-20", "f_done": false } },
+		{ "id": "r_3", "cells": { "f_title": "Ideas backlog", "f_status": "o_idea", "f_words": 0, "f_due": null, "f_done": false } }
+	],
+	"view": {
+		"sorts": [{ "fieldId": "f_due", "direction": "asc" }],
+		"filters": {
+			"logic": "and",
+			"conditions": [{ "id": "c_1", "fieldId": "f_status", "operator": "isNot", "value": "o_live" }]
+		},
+		"search": "report",
+		"query": "status:!live",
+		"hiddenFieldIds": ["f_done"],
+		"groupBy": { "fieldId": "f_status" },
+		"columnWidths": { "f_title": 260, "f_status": 140 },
+		"rowHeight": "medium",
+		"frozenPrimary": false
+	},
+	"sync": null
+}

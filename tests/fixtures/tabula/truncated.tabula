@@ -1,0 +1,9 @@
+{
+	"version": 1,
+	"name": "Broken import",
+	"fields": [
+		{ "id": "f_name", "name": "Name", "type": "text" },
+		{ "id": "f_notes", "name": "Notes", "type": "longText" }
+	],
+	"rows": [
+		{ "id": "r_1", "cells": { "f_name": "Half a row", "f_notes": "the file stops here"

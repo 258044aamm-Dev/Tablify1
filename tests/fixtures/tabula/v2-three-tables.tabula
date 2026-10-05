@@ -1,0 +1,128 @@
+{
+	"version": 2,
+	"tables": [
+		{
+			"id": "t_projects",
+			"table": {
+				"version": 1,
+				"name": "Projects",
+				"autoNumberNext": 4,
+				"fields": [
+					{ "id": "f_name", "name": "Project", "type": "text" },
+					{
+						"id": "f_owner",
+						"name": "Owner",
+						"type": "singleSelect",
+						"options": [
+							{ "id": "o_dana", "name": "Dana", "color": "blue" },
+							{ "id": "o_ravi", "name": "Ravi", "color": "orange" }
+						]
+					},
+					{ "id": "f_budget", "name": "Budget", "type": "currency", "symbol": "$" },
+					{ "id": "f_effort", "name": "Effort", "type": "duration" },
+					{ "id": "f_due", "name": "Due", "type": "date" }
+				],
+				"rows": [
+					{
+						"id": "r_p1",
+						"cells": {
+							"f_name": "Widening",
+							"f_owner": "o_dana",
+							"f_budget": 42000,
+							"f_effort": 7200,
+							"f_due": "2025-01-15"
+						}
+					},
+					{
+						"id": "r_p2",
+						"cells": { "f_name": "Resurfacing", "f_owner": "o_ravi", "f_budget": 18500, "f_effort": 5400, "f_due": "2025-02-01" }
+					},
+					{ "id": "r_p3", "cells": { "f_name": "Signage", "f_owner": null, "f_budget": null, "f_effort": null, "f_due": "2025-03-10" } }
+				],
+				"view": {
+					"sorts": [{ "fieldId": "f_due", "direction": "asc" }],
+					"filters": {
+						"logic": "and",
+						"conditions": [
+							{ "id": "c_1", "fieldId": "f_budget", "operator": "gt", "value": 10000 },
+							{ "id": "c_2", "fieldId": "f_owner", "operator": "isEmpty", "value": null }
+						]
+					},
+					"search": "",
+					"query": "",
+					"hiddenFieldIds": ["f_effort"],
+					"groupBy": { "fieldId": "f_owner" },
+					"columnWidths": { "f_name": 220 },
+					"rowHeight": "medium",
+					"frozenPrimary": true
+				},
+				"sync": {
+					"baseId": "appExampleBase",
+					"baseName": "Roads",
+					"tableId": "tblExampleProjects",
+					"tableName": "Projects",
+					"fieldMap": { "f_name": "fldName", "f_owner": "fldOwner" },
+					"recordMap": { "r_p1": "recOne", "r_p2": "recTwo" },
+					"lastPulledAt": "2024-11-01T10:00:00.000Z"
+				}
+			}
+		},
+		{
+			"id": "t_people",
+			"table": {
+				"version": 1,
+				"name": "People",
+				"fields": [
+					{ "id": "f_who", "name": "Who", "type": "text" },
+					{ "id": "f_mail", "name": "Email", "type": "email" },
+					{ "id": "f_phone", "name": "Phone", "type": "phone" },
+					{ "id": "f_start", "name": "Started", "type": "datetime" },
+					{ "id": "f_score", "name": "Score", "type": "rating", "max": 5 },
+					{ "id": "f_tags", "name": "Tags", "type": "multiSelect", "options": [{ "id": "o_crew", "name": "crew", "color": "cyan" }] }
+				],
+				"rows": [
+					{
+						"id": "r_w1",
+						"cells": {
+							"f_who": "Dana",
+							"f_mail": "dana@example.com",
+							"f_phone": "+81 3 1234 5678",
+							"f_start": "2023-04-01T00:00:00.000Z",
+							"f_score": 4,
+							"f_tags": ["o_crew"]
+						}
+					},
+					{ "id": "r_w2", "cells": { "f_who": "Ravi", "f_mail": "ravi@example.com", "f_score": 5 } }
+				],
+				"view": { "rowHeight": "tall", "frozenPrimary": false }
+			}
+		},
+		{
+			"id": "t_files",
+			"table": {
+				"version": 1,
+				"name": "Files",
+				"fields": [
+					{ "id": "f_label", "name": "Label", "type": "longText" },
+					{ "id": "f_link", "name": "Link", "type": "url" },
+					{ "id": "f_doc", "name": "Doc", "type": "attachment" },
+					{ "id": "f_share", "name": "Share", "type": "percent" },
+					{ "id": "f_legacy_num", "name": "Number", "type": "autoNumber" }
+				],
+				"rows": [
+					{
+						"id": "r_f1",
+						"cells": {
+							"f_label": "Site plan",
+							"f_link": "https://example.com/plan",
+							"f_doc": "Attachments/plan.pdf",
+							"f_share": 25,
+							"f_legacy_num": 1
+						}
+					}
+				],
+				"view": { "rowHeight": "short", "frozenPrimary": false }
+			}
+		}
+	]
+}

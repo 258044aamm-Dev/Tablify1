@@ -1,0 +1,21 @@
+{
+	"version": 1,
+	"name": "Empty table",
+	"fields": [
+		{ "id": "f_a", "name": "A", "type": "text" },
+		{ "id": "f_b", "name": "B", "type": "number" }
+	],
+	"rows": [],
+	"view": {
+		"sorts": [],
+		"filters": { "logic": "and", "conditions": [] },
+		"search": "",
+		"query": "",
+		"hiddenFieldIds": [],
+		"groupBy": { "fieldId": null },
+		"columnWidths": {},
+		"rowHeight": "short",
+		"frozenPrimary": true
+	},
+	"autoNumberNext": 1
+}
