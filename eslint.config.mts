@@ -54,6 +54,21 @@ export default defineConfig(
 			'@typescript-eslint/consistent-type-assertions': ['error', { assertionStyle: 'never' }],
 		},
 	},
+	// Product names are not sentence case. Without this the rule rewrites "Tablify" to "tablify" and
+	// Obsidian's own feature name "Bases" to "bases" — a false positive, not a style violation.
+	{
+		files: ['src/**/*.ts'],
+		rules: {
+			'obsidianmd/ui/sentence-case': [
+				'warn',
+				{
+					brands: ['Tablify', 'Bases'],
+					acronyms: ['CSV', 'TSV', 'XLSX', 'URL'],
+					enforceCamelCaseLower: true,
+				},
+			],
+		},
+	},
 	// Build tooling runs in Node, never in Obsidian, so the mobile-API guard does not apply.
 	{
 		files: ['scripts/**/*.ts', 'esbuild.config.mjs'],

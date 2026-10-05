@@ -3,18 +3,14 @@ import { describe, expect, it } from 'vitest';
 import TablifyPlugin from '../../src/plugin/main';
 // The same module the plugin's `import ... from 'obsidian'` resolves to (see vitest.config.ts):
 // asserting through the double keeps these tests type-safe, because the published package is types-only.
-import { noticeLog, Plugin } from '../mocks/obsidian';
+import { noticeLog, openedModals, Plugin } from '../mocks/obsidian';
 
-/** The receiver `onload()` is written against: a manifest and a command registrar. */
-function makeReceiver() {
-	const commands: { id: string; name: string; callback: () => void }[] = [];
-	return {
-		commands,
-		manifest: { version: '9.9.9' },
-		addCommand: (command: { id: string; name: string; callback: () => void }): void => {
-			commands.push(command);
-		},
-	};
+/** Load the plugin against the double, exactly as Obsidian would load it. */
+function loadPlugin(version = '9.9.9'): Plugin {
+	const plugin = new Plugin();
+	plugin.manifest = { version };
+	Reflect.apply(TablifyPlugin.prototype.onload, plugin, []);
+	return plugin;
 }
 
 describe('plugin entry point', () => {
@@ -30,24 +26,37 @@ describe('plugin entry point', () => {
 
 	it('has no top-level side effects on import', () => {
 		expect(noticeLog).toEqual([]);
+		expect(openedModals).toEqual([]);
 	});
 
-	it('registers exactly one command, show-version, which notices the manifest version', () => {
-		const receiver = makeReceiver();
-		Reflect.apply(TablifyPlugin.prototype.onload, receiver, []);
+	it('registers exactly two commands, with stable ids', () => {
+		const plugin = loadPlugin();
+		expect(plugin.commands.map((command) => command.id)).toEqual([
+			'show-version',
+			'open-keyboard-help',
+		]);
+	});
 
-		expect(receiver.commands).toHaveLength(1);
-		const command = receiver.commands[0];
-		expect(command?.id).toBe('show-version');
-		expect(command?.name).toBe('Show version');
-
+	it('show-version notices the manifest version', () => {
+		const plugin = loadPlugin('9.9.9');
+		const command = plugin.commands.find((entry) => entry.id === 'show-version');
 		command?.callback();
 		expect(noticeLog).toEqual(['Tablify 9.9.9']);
 	});
 
-	it('releases nothing on unload and does not throw', () => {
+	it('open-keyboard-help opens a modal and leaves it open', () => {
+		const plugin = loadPlugin();
+		const command = plugin.commands.find((entry) => entry.id === 'open-keyboard-help');
+		command?.callback();
+		expect(openedModals).toHaveLength(1);
+	});
+
+	it('releases everything on unload and does not throw', () => {
+		const plugin = loadPlugin();
+		expect(plugin.commands).toHaveLength(2);
 		expect(() => {
-			Reflect.apply(TablifyPlugin.prototype.onunload, makeReceiver(), []);
+			Reflect.apply(TablifyPlugin.prototype.onunload, plugin, []);
 		}).not.toThrow();
+		expect(plugin.commands).toHaveLength(0);
 	});
 });
