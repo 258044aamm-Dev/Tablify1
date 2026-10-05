@@ -7,6 +7,7 @@ prototype/**
 
 # Build artefacts, caches and lockfiles.
 main.js
+styles.css
 coverage/**
 playwright-report/**
 dist/**

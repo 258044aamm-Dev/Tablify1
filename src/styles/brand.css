@@ -1,0 +1,136 @@
+/* ============================================================================
+   brand.css — the two things that are Tablify's own, on top of the host: the
+   wordmark's slot, and where the accent is allowed to appear.
+
+   The rule from docs/04 §Tier 2, kept literally: **the accent is reserved for
+   selection, focus and primary actions, and is never a status colour.** Status
+   has its own tokens (`--tablify-positive` / `-warning` / `-negative`), and the
+   nine option hues are identity colours a user picked, not brand.
+
+   Nothing in this file is a colour literal: every value comes from tokens.css,
+   which is the only file allowed to hold one. Nothing here restyles an
+   Obsidian component either — these selectors all name plugin-owned classes.
+   ========================================================================== */
+
+/* ── the wordmark ───────────────────────────────────────────────────────────
+   The drawing itself (an inline SVG, `brand/wordmark.svg`) arrives with the
+   identity step; this is the slot and its sizing contract, so the toolbar does
+   not reflow when it lands. The mark is a flex item with a fixed height and an
+   aspect-preserving width, which means the toolbar's own layout never depends
+   on the drawing's intrinsic size. */
+.tablify-wordmark {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	gap: var(--tablify-sp-1);
+	height: var(--tablify-wordmark-h);
+	color: var(--tablify-text);
+	font-family: var(--tablify-font-display);
+	font-size: var(--tablify-fs-m);
+	line-height: var(--tablify-lh-tight);
+	white-space: nowrap;
+	user-select: none;
+	/* A wordmark is a label, not a control: it takes no pointer events, so it can
+	   never sit between a finger and the first toolbar button. */
+	pointer-events: none;
+}
+
+/* The SVG (or the text fallback, before the drawing exists) is the box. Its height is the token rather
+   than `100%`: a percentage height here would be the one place in the plugin that depends on an
+   ancestor's computed height, and `scripts/css-gate.ts` forbids the whole shape. */
+.tablify-wordmark > svg,
+.tablify-wordmark > img {
+	display: block;
+	height: var(--tablify-wordmark-h);
+	width: auto;
+}
+
+/* ── primary action ─────────────────────────────────────────────────────────
+   One filled button per surface, at most. Everything else is a normal (host
+   coloured) button — the accent is what says "this is the action". */
+.tablify-btn.is-primary {
+	background: var(--tablify-accent);
+	border-color: transparent;
+	color: var(--tablify-accent-text);
+	font-weight: 600;
+	transition:
+		background-color var(--tablify-dur-hover) var(--tablify-ease-hover),
+		color var(--tablify-dur-hover) var(--tablify-ease-hover);
+}
+@media (hover: hover) and (pointer: fine) {
+	.tablify-btn.is-primary:hover {
+		background: var(--tablify-accent-hover);
+	}
+}
+
+/* The pressed state is a scale, never a colour change: 0.97, 140 ms, and it is
+   also the only transform the plugin applies to a button. */
+.tablify-btn:active {
+	transform: scale(0.97);
+	transition: transform var(--tablify-dur-press) var(--tablify-ease-out);
+}
+
+/* ── focus: one ring, everywhere in the plugin ──────────────────────────────
+   `outline` rather than a box-shadow, so it survives clipping, zoom and forced
+   colours; `:focus-visible` rather than `:focus`, so a mouse click does not
+   leave a ring behind. */
+.tablify-root:focus-visible,
+.tablify-root :is(button, input, select, textarea, a[href], [tabindex]):focus-visible {
+	outline: var(--tablify-focus-w) solid var(--tablify-focus-ring);
+	outline-offset: 2px;
+}
+
+/* ── selection: a wash plus a line, never a scale or a fade ─────────────────
+   docs/04 §Motion: selection is not animated. The wash is insubstantial enough
+   that the cell's text keeps its contrast, which the gate checks
+   (`--tablify-text-muted on --tablify-accent-subtle`). */
+.tablify-root .cell.in-range {
+	background: var(--tablify-selection);
+}
+.tablify-root .grid-row.is-checked .cell,
+.tablify-root .grid-row.is-checked .gutter {
+	background: var(--tablify-accent-subtle);
+}
+
+/* The active cell is a ring inside the cell's own box: it must not move the
+   layout when it appears, so it is an inset shadow, not a border. */
+.tablify-root .cell.is-active {
+	box-shadow: inset 0 0 0 var(--tablify-focus-w) var(--tablify-focus-ring);
+	z-index: 1;
+}
+.tablify-root .cell.in-range.is-active {
+	background: var(--tablify-surface);
+}
+
+/* The edge of a selected range: the same accent, at full strength, drawn on the
+   cells at the boundary. `--tablify-selection-line` exists so these four rules
+   can be re-pointed without touching a component. */
+.tablify-root .cell.is-range-top {
+	box-shadow: inset 0 var(--tablify-focus-w) 0 var(--tablify-selection-line);
+}
+.tablify-root .cell.is-range-bottom {
+	box-shadow: inset 0 calc(-1 * var(--tablify-focus-w)) 0 var(--tablify-selection-line);
+}
+.tablify-root .cell.is-range-left {
+	border-left: var(--tablify-focus-w) solid var(--tablify-selection-line);
+}
+.tablify-root .cell.is-range-right {
+	border-right: var(--tablify-focus-w) solid var(--tablify-selection-line);
+}
+
+/* A conflicted cell is a status, not a brand colour, and it is drawn as a ring
+   plus a glyph (never a colour alone) so it survives forced-colors mode. */
+.tablify-root .cell.is-flagged {
+	box-shadow: inset 0 0 0 var(--tablify-focus-w) var(--tablify-negative);
+}
+
+/* ── numerals ───────────────────────────────────────────────────────────────
+   Brand owns the figure style, because it is the one typographic decision the
+   plugin makes on its own: a number cell is tabular, so digits line up down a
+   column, and it is brown rather than ink, so figures read as measured data. */
+.tablify-root .cell.is-number {
+	font-family: var(--tablify-font-mono);
+	font-size: var(--tablify-fs-m);
+	font-variant-numeric: var(--tablify-nums);
+	color: var(--tablify-number);
+}

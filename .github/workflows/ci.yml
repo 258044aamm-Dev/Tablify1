@@ -38,6 +38,8 @@ jobs:
             - run: bun run format:check
             - run: bun run test
             - run: bun run build
+            - run: bun run contrast
+            - run: bun run css:gate
             - run: bun run size
 
             # ---------------------------------------------------------------------------------------------

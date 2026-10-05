@@ -18,7 +18,9 @@
 		"test:layout": "playwright test",
 		"test:watch": "vitest",
 		"size": "bun scripts/bundle-size.ts",
-		"check": "bun run typecheck && bun run lint && bun run brand:gate && bun run manifest:check && bun run format:check && bun run test && bun run build && bun run size"
+		"contrast": "bun scripts/contrast.ts",
+		"css:gate": "bun scripts/css-gate.ts",
+		"check": "bun run typecheck && bun run lint && bun run brand:gate && bun run manifest:check && bun run format:check && bun run test && bun run build && bun run contrast && bun run css:gate && bun run size"
 	},
 	"devDependencies": {
 		"@eslint/js": "9.39.5",

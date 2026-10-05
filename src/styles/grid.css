@@ -1,0 +1,283 @@
+/* ============================================================================
+   grid.css — layout only. Every colour in here arrives through a token, and
+   every block states the measurement it implements (docs/04 §The layout
+   contract). The contract in one line:
+
+     host element (Obsidian-sized, position: relative)
+       └─ .tablify-root        position: absolute; inset: 0    ← cannot collapse
+          ├─ .tablify-toolbar  flex: 0 0 auto, min-height 40
+          ├─ .tablify-grid-area flex: 1 1 auto; min-height: 0; position: relative
+          │   └─ .tablify-scroller   position: absolute; inset: 0    ← the one scroller
+          │       ├─ .tablify-canvas      height = rows × rowHeight (set inline)
+          │       ├─ .tablify-rows        translate(-scrollTop)
+          │       ├─ .tablify-header      translate(-scrollTop, -scrollLeft)
+          │       └─ .tablify-frozen-col  translate(-scrollTop, 0)
+          └─ .tablify-statusbar flex: 0 0 auto, min-height 26
+
+   Forbidden here, and checked by `scripts/css-gate.ts`: percentage heights on
+   any ancestor of the scroller, `height: 100%`, the viewport units (`100vh` and
+   friends), and `will-change` on a scrolling layer. `position: absolute` takes
+   its size from the container's padding box, so no intermediate flex or
+   percentage chain can collapse it — which is exactly the failure the old build
+   shipped (860 px app shell compressed to 389 px on a phone, every percentage
+   layer collapsing to zero).
+   ========================================================================== */
+
+/* ── the root: fills the host, owns one scroller below it ──────────────────── */
+.tablify-root {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden; /* the scroller scrolls, not this box */
+	padding-bottom: var(--tablify-keyboard-inset); /* written by the view from visualViewport */
+	background: var(--tablify-surface);
+	color: var(--tablify-text);
+	font-family: var(--tablify-font-text);
+	font-size: var(--tablify-fs-l);
+	line-height: var(--tablify-lh-tight);
+}
+
+/* ── toolbar: one row, never two ────────────────────────────────────────────
+   It scrolls sideways rather than wrapping or clipping, because at 389 px the
+   right-hand end of a nowrap toolbar used to be unreachable. Safe-area padding
+   keeps the first and last control out from under a notch. */
+.tablify-toolbar {
+	display: flex;
+	flex: 0 0 auto;
+	align-items: center;
+	gap: var(--tablify-sp-2);
+	min-height: var(--tablify-toolbar-h);
+	padding: var(--tablify-sp-2) var(--tablify-sp-3);
+	padding-left: max(var(--tablify-sp-3), env(safe-area-inset-left));
+	padding-right: max(var(--tablify-sp-3), env(safe-area-inset-right));
+	border-bottom: 1px solid var(--tablify-line);
+	background: var(--tablify-surface-raised);
+	overflow-x: auto;
+	overflow-y: hidden;
+	overscroll-behavior-x: contain;
+	white-space: nowrap;
+	scroll-padding-inline: var(--tablify-sp-3);
+	scrollbar-width: thin;
+}
+.tablify-toolbar::-webkit-scrollbar {
+	height: 6px;
+}
+.tablify-toolbar::-webkit-scrollbar-thumb {
+	background: var(--tablify-line-strong);
+	border-radius: var(--tablify-radius-pill);
+}
+
+/* A tap target is 44 px on touch, whatever the toolbar's minimum says. */
+@media (pointer: coarse) {
+	.tablify-toolbar button,
+	.tablify-toolbar .tablify-btn {
+		min-width: var(--tablify-tap);
+		min-height: var(--tablify-tap);
+	}
+}
+
+/* ── the grid area and its single scroller ────────────────────────────────── */
+.tablify-grid-area {
+	position: relative; /* the containing block for the scroller and the two drawn scrollbars */
+	flex: 1 1 auto;
+	min-height: 0; /* a flex item may not be held open by its content */
+	overflow: hidden;
+}
+
+.tablify-scroller {
+	position: absolute; /* inset: 0 ⇒ the area's full box, whatever its ancestors do */
+	inset: 0;
+	overflow: auto;
+	overscroll-behavior: contain; /* a flick that reaches the end must not scroll the note behind it */
+	-webkit-overflow-scrolling: touch;
+	scrollbar-width: none; /* the two bars below are drawn: an OS scrollbar is neither themable nor finger-sized */
+	-ms-overflow-style: none;
+}
+.tablify-scroller::-webkit-scrollbar {
+	width: 0;
+	height: 0;
+}
+
+/* The scroll range: height is `rows × rowHeight`, set inline by the view. It is
+   deliberately empty — it exists so the scroller has something to scroll. */
+.tablify-canvas {
+	width: 1px;
+}
+
+/* The three transformed layers. They are positioned at the scroller's origin and
+   moved by transform only; no `will-change` (docs/04 forbids it on a scrolling
+   layer: it costs a composited layer per scroll position and buys nothing), and
+   no percentage or viewport-unit height. */
+.tablify-layer {
+	position: absolute;
+	top: 0;
+	left: 0;
+}
+.tablify-header {
+	z-index: 3;
+}
+.tablify-frozen-col {
+	z-index: 2;
+	background: var(--tablify-surface); /* opaque: the row lane scrolls behind it */
+	border-right: 1px solid var(--tablify-line-strong);
+}
+.tablify-corner {
+	z-index: 4; /* above both the header and the frozen column */
+}
+
+/* The row lane: as wide as its widest row, never narrower than the viewport. */
+.tablify-rows {
+	width: max-content;
+	min-width: 100%;
+}
+
+/* ── the two drawn scrollbars ───────────────────────────────────────────────
+   Geometry only; step 20 wires the drag. The horizontal bar sits at the top of
+   the grid area (above the header, so it is always reachable without scrolling
+   to the end of the sheet), the vertical one at the right edge. Both are 12 px
+   so a thumb is a finger target, both inset by the safe areas.
+   Below 600 px of pane width the grid is unpinned by design (P21): the frozen
+   layer is not rendered at all, so the horizontal bar spans the full width.
+   That is measured on the *pane* by the view — a media query here would answer
+   for the window, which is not the same question. */
+.tablify-hbar {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	height: var(--tablify-scrollbar);
+	z-index: 5;
+	touch-action: none;
+}
+.tablify-vbar {
+	position: absolute;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	width: var(--tablify-scrollbar);
+	z-index: 5;
+	touch-action: none;
+}
+.tablify-hbar-thumb,
+.tablify-vbar-thumb {
+	border-radius: var(--tablify-radius-pill);
+	background: var(--tablify-line-strong);
+	opacity: 0.55;
+}
+@media (hover: hover) and (pointer: fine) {
+	.tablify-hbar:hover .tablify-hbar-thumb,
+	.tablify-vbar:hover .tablify-vbar-thumb {
+		opacity: 0.9;
+	}
+}
+
+/* ── the row lane ───────────────────────────────────────────────────────────
+   One row is a flex line of fixed-height boxes. The width of a data cell comes
+   from its column (`width` in the view config) and is set inline per cell, so
+   nothing here guesses at it. */
+.grid-row {
+	display: flex;
+	height: var(--tablify-row-h);
+}
+
+.hcell,
+.cell {
+	display: flex;
+	flex: none;
+	align-items: center;
+	gap: var(--tablify-sp-2);
+	padding: 0 var(--tablify-sp-3);
+	border-right: 1px solid var(--tablify-line);
+	border-bottom: 1px solid var(--tablify-line);
+	overflow: hidden;
+	white-space: nowrap;
+}
+.hcell {
+	height: var(--tablify-header-h);
+	background: var(--tablify-surface-raised);
+	color: var(--tablify-text-muted);
+	font-size: var(--tablify-fs-xs);
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	text-transform: uppercase;
+	cursor: pointer;
+	user-select: none;
+	position: relative;
+}
+@media (hover: hover) and (pointer: fine) {
+	.hcell:hover {
+		background: var(--tablify-surface-sunken);
+		color: var(--tablify-text);
+	}
+}
+.cell {
+	font-size: var(--tablify-fs-l);
+	cursor: cell;
+	user-select: none;
+}
+@media (hover: hover) and (pointer: fine) {
+	.grid-row:hover .cell {
+		background: var(--tablify-selection);
+	}
+}
+
+/* The row-number lane. It is the pinned column's first box, so it carries the
+   same fixed width everywhere it appears. */
+.gutter {
+	display: flex;
+	flex: none;
+	align-items: center;
+	width: var(--tablify-gutter-w);
+	padding: 0 var(--tablify-sp-3);
+	border-right: 1px solid var(--tablify-line);
+	border-bottom: 1px solid var(--tablify-line);
+	background: var(--tablify-surface-raised);
+	color: var(--tablify-text-muted);
+	font-family: var(--tablify-font-mono);
+	font-size: var(--tablify-fs-xs);
+	user-select: none;
+}
+
+/* ── editors ────────────────────────────────────────────────────────────────
+   16 px is the rule, not a preference: an input below it makes iOS zoom the
+   whole viewport on focus (docs/04 §Keyboard). */
+.tablify-root input,
+.tablify-root textarea,
+.tablify-root select {
+	font-family: inherit;
+	font-size: var(--tablify-input-fs);
+	color: var(--tablify-text);
+	background: var(--tablify-surface-raised);
+	border: 1px solid var(--tablify-line);
+	border-radius: var(--tablify-radius-s);
+}
+
+/* ── status bar: counts and write state, never a second toolbar ────────────── */
+.tablify-statusbar {
+	display: flex;
+	flex: 0 0 auto;
+	align-items: center;
+	gap: var(--tablify-sp-4);
+	min-height: var(--tablify-statusbar-h);
+	padding: var(--tablify-sp-1) var(--tablify-sp-3);
+	padding-bottom: max(var(--tablify-sp-1), env(safe-area-inset-bottom));
+	border-top: 1px solid var(--tablify-line);
+	background: var(--tablify-surface-sunken);
+	color: var(--tablify-text-muted);
+	font-size: var(--tablify-fs-xs);
+}
+
+/* ── the empty state: one block, centred, no illustration to load ──────────── */
+.tablify-empty {
+	padding: var(--tablify-sp-8) var(--tablify-sp-6);
+	text-align: center;
+	color: var(--tablify-text-faint);
+	font-size: var(--tablify-fs-m);
+}
+.tablify-empty-title {
+	margin-bottom: var(--tablify-sp-2);
+	color: var(--tablify-text);
+	font-size: var(--tablify-fs-l);
+	font-weight: 600;
+}
