@@ -113,7 +113,7 @@ Read: docs/02-architecture.md (§field-type registry, §Query), docs/03-data-mod
 
 Deliverable, in this order (one turn each, stop after each):
 1. core/fieldTypes/types.ts — the FieldDescriptor interface exactly as specified in docs/02.
-2. One file per field type: the 13 surviving types from the docs/03 mapping table.
+2. One file per field type: the 16 types in the docs/03 mapping table (the table is the source of truth).
    Each declares parse, toYaml, formatDisplay, formatPlain, parsePlain, filterOps, matches,
    compare, groupKey, defaultValue.
 3. core/fieldTypes/registry.ts — registration + lookup, no switch statements anywhere else.

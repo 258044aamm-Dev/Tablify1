@@ -27,7 +27,7 @@ Every phase ends shippable. No phase leaves a half-migrated state. `M0` alone fi
 **Goal:** the pure layer that the old codebase never had, with the field-type registry replacing ~18 duplicated type switches.
 
 - [ ] `core/schema`: property schema, column set, read-only resolution.
-- [ ] `core/fieldTypes/**`: all 13 surviving types as descriptors (see mapping table in `03`) + registry + `fieldOptions` validation.
+- [ ] `core/fieldTypes/**`: one descriptor per type in the mapping table of `03` — **16 today** (`text`, `longText`, `number`, `checkbox`, `date`, `datetime`, `url`, `email`, `phone`, `singleSelect`, `multiSelect`, `rating`, `currency`, `percent`, `duration`, `attachment`) + registry + `fieldOptions` validation. The mapping table is the source of truth; this count is a convenience, not a spec.
 - [ ] `core/query`: AST, parser (DSL → AST), evaluator, comparator, `toQueryString`.
 - [ ] `core/ops`: Op types + reducers + inverse computation (for undo).
 - [ ] `core/selection`: ranges, anchors, clipboard matrix model (TSV/HTML in and out).
@@ -55,7 +55,7 @@ Every phase ends shippable. No phase leaves a half-migrated state. `M0` alone fi
 
 **Goal:** a grid you would actually use daily.
 
-- [ ] Windowing, single scroller, sticky header, frozen first column, `position: absolute; inset: 0` root.
+- [ ] Windowing, single scroller, sticky header, `position: absolute; inset: 0` root. First column pinned **only above 600 px of pane width** (`view.frozenPrimary && paneWidth >= 600`), with the freeze option hidden below that.
 - [ ] Store + selectors (`useSyncExternalStore`), command dispatch, optimistic overlay.
 - [ ] Keyboard model (`01-spec.md` table) with one handler and a roving `tabindex`.
 - [ ] Cell editors for every type; read-only cells disabled with a reason.

@@ -26,14 +26,14 @@ Mobile is a first-class target for all three (see `docs/04-design-system-and-lay
 
 | Area | Behaviour |
 |---|---|
-| **Grid rendering** | Virtualized rows; sticky header; optional frozen first column; three row heights; column resize; column reorder; row reorder by drag; grouped sections |
+| **Grid rendering** | Virtualized rows; sticky header; first column pinned **only while the pane is wide** (unpinned below 600 px — see *Pinning* below); three row heights; column resize; column reorder; row reorder by drag; grouped sections |
 | **Selection** | Single cell, rectangular range, whole row/column, all rows; shift-click and shift-arrow extension; select-all checkbox column |
 | **Clipboard** | Copy range as TSV **and** HTML (spreadsheet-compatible in both directions); paste TSV from any spreadsheet; paste HTML tables; paste a `.csv`/`.xlsx` file from the clipboard where the OS exposes it; cut; clear |
 | **Editing** | Type-to-replace, Enter to commit and move down, Tab to commit and move right, Escape to cancel; per-type editors (text, long text, number, checkbox, date, select, multi-select, rating, attachment) |
 | **Bulk operations** | Edit a column bottom-up, fill down/right from a selection, insert N rows, duplicate rows, delete rows in bulk (with confirmation), set/clear a property across the selection |
 | **Import** | CSV / TSV / XLSX file → preview → choose destination (create rows as notes, or keep as a standalone `.tabula` file) |
 | **Export** | Selection or whole view → TSV/XLSX to the clipboard or a downloaded file (CSV is already native in Bases; do not duplicate it) |
-| **Views of the same data** | Everything Bases provides (filters, sorts, grouping, formulas) is inherited, not re-implemented. The plugin contributes view options: row height, frozen first column, density, "show row numbers" |
+| **Views of the same data** | Everything Bases provides (filters, sorts, grouping, formulas) is inherited, not re-implemented. The plugin contributes view options: row height, frozen first column, density, "show row numbers". The freeze option is **hidden while the pane is too narrow to pin anything** |
 | **Airtable sync** | Optional, per-view link to one Airtable base+table; pull, push, per-field conflict review; schema is never modified on the Airtable side |
 | **Undo/redo** | All grid operations, including multi-note writes, as one user-visible step |
 
@@ -111,7 +111,7 @@ Import sheet.xlsx — 3 columns × 412 rows
 | Typing latency in a 5,000-row × 20-column view | No dropped keystrokes; frame budget held while typing |
 | Grid scroll | 60 fps on a mid-range laptop, no blank regions during scroll |
 | Paste of a 400 × 6 block | Correct values, single undo step, progress feedback, no freeze |
-| Mobile (phone, keyboard open) | Grid fills the view; header stays sticky; no clipped toolbar; no input zoom |
+| Mobile (phone, keyboard open) | Grid fills the view; header stays sticky; no clipped toolbar; no input zoom; **nothing pinned** — the row-number/checkbox gutter, the first column and the rest scroll as one lane |
 | Fresh install → first useful action | Under 60 seconds, no configuration required |
 | Bundle | Small enough not to measurably slow Obsidian mobile startup (see `docs/05-toolchain-and-ci.md` §bundle budget) |
 | Accessibility | Full keyboard operability; correct roles/labels; usable with the OS screen reader for navigation and reading (grid editing is announced, not silently mutated) |

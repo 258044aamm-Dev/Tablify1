@@ -30,8 +30,11 @@ The plugin is the successor to `airtable-tabula` (a fork of `MehulG/airtable-tab
 | [`docs/10-verification-and-ai-hygiene.md`](docs/10-verification-and-ai-hygiene.md) | How to verify AI output: claim ledger, deterministic gates, agent red flags, per-milestone audit |
 | [`docs/11-prompting-guide.md`](docs/11-prompting-guide.md) | How to prompt for exact, verifiable results: levers, prompt anatomy, anti-patterns, diagnostics |
 | [`docs/12-agent-prompt-pack.md`](docs/12-agent-prompt-pack.md) | Ready-to-paste prompts for the session anchor, every milestone M0–M6, and reusable review/bug/spike/handoff prompts |
+| [`prompts/README.md`](prompts/README.md) | **The implementation prompt pack**: 28 numbered, self-contained, copy-paste prompts (one step per turn, each with its own gate), plus the reusable verify/fix/audit/handoff/release prompts and the error protocol |
 
 `AGENTS.md` is written for the coding agent that implements this — boundaries, commands, conventions, and a never-do list.
+
+**To build it:** start with [`prompts/README.md`](prompts/README.md) (pre-flight, the paste loop, the step index, the error protocol), then paste `prompts/00-session-anchor.md` followed by `prompts/step-01-toolchain-and-gate.md` into your coding agent. One step per turn; never start a step until the previous step's gate is green.
 
 ## Non-negotiables
 

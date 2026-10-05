@@ -167,4 +167,4 @@ The Playwright harness renders the real grid against a fixture `RowSource` at:
 | `phone-keyboard` | 390 × 844, host squeezed to **389 px** | reproduces the historical failure (app shell compressed from 860 px) |
 | `tablet` | 834 × 1112 | both orientations |
 
-For each: toolbar visible and unwrapped, header sticky, frozen column aligned, no clipped controls, root fills 100 % of its host, no `!important` anywhere in the computed styles.
+For each: toolbar visible and unwrapped, header sticky, no clipped controls, root fills 100 % of its host, no `!important` anywhere in the computed styles. On the wide viewports the frozen column is aligned; at 389 px (and in any pane under 600 px) it is **unpinned by design** — assert that the gutter and the first column scroll with the rest instead.
