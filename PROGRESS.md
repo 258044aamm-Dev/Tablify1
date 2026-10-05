@@ -1,136 +1,157 @@
 # PROGRESS
 
-- Milestone: M0 — Foundation (complete) · M1 — Core domain (starting)             Branch: main
-- Last completed step: **step 05 — fakes, boundaries, coverage.** The test substrate the data layer will
-  lean on exists and lies as little as possible: `tests/fakes/vault.ts` (an in-memory `App` with a write
-  log), `tests/fakes/clock.ts` (time moves only when a test says so), `tests/fakes/transport.ts` (a
-  fetch-like recorder that throws when nothing is queued). The architectural boundary is now a **lint
-  error proven by a test that writes real violations at runtime**, not a convention.
+- Milestone: M0 — Foundation (complete) · M1 — Core domain (started)             Branch: main
+- Last completed step: **step 06 — the field contract, the schema, and the registry.** `src/core` now has a
+  spine: a closed value model, a `FieldDescriptor` contract implemented exactly as `docs/02` writes it, one
+  reference type (`text`), a registry that replaces every `switch (field.type)`, and the property→field
+  resolution that forgives a hand-edited `.base` file. One shared contract suite proves a descriptor; step 07
+  points it at every type.
 
 - Verified (commands run, observed results):
-  - `bun run check` — **exit 0**, with the suite grown from 16 tests / 3 files to **44 tests / 5 files**:
-    `boundaries.test.ts` 12, `fakes-contract.test.ts` 16, `plugin-smoke.test.ts` 7,
-    `bases-registration.test.ts` 5, `settings-tab.test.ts` 4. Bundle unchanged at
-    `main.js raw 3905 B / gzip 1843 B`, `!important` clean, `bundle-size: OK`, `manifest:check: OK`,
-    brand gate clean (note: 0 violations), Prettier clean.
-  - **The boundary rule demonstrably bites.** A scratch file
-    `src/core/scratch-boundary.ts` containing `import { Plugin } from "obsidian";` produced, from
-    `bun run lint`:
-    `1:1  error  'obsidian' import is restricted from being used. src/core must stay pure: it may not
-    import the Obsidian API  no-restricted-imports` → **exit 1**. The file was deleted and lint returned
-    to exit 0 with only the deferred settings warning. The same proof now runs on every gate, for eleven
-    file/rule combinations, in `tests/unit/boundaries.test.ts` (each probe asserts `severity === 2`, which
-    is the API's equivalent of the CLI's non-zero exit).
-  - **The four vault behaviours, each with its test** (`tests/unit/fakes-contract.test.ts`):
-    (a) *frontmatter is replaced wholesale* — a note containing `title: x  # keep me` and a block-style
-    list is rewritten to exactly `---\ntitle: "y"\n---\nBody text.\n`; the comment is gone because the
-    block is regenerated from the object;
-    (b) *untouched keys survive* — a callback that sets only `status` leaves `title` and `owner` in place;
-    (c) *`delete fm.key` removes it* — `'status' in after === false`, and the text contains no `status`
-    line, because `undefined` is not a YAML value;
-    (d) *a throwing callback writes nothing* — the promise rejects with the callback's error, the note
-    text is byte-identical to before, and `writeCount()` is 0.
-    Also asserted: the write log records `{path, before, after, at}` with copies (a later write cannot
-    rewrite history); `vault.modify` **rejects** with the message pointing at
-    `fileManager.processFrontMatter`; `create` on an existing path throws; `resolvePath` resolves exact
-    path → basename (case-insensitive) → shallowest match; the metadata cache serves what a test sets and
-    falls back to note frontmatter; the clock runs due timers in due order, `runTimers()` fires everything
-    pending, `clearTimer` cancels, and a thousand busy iterations move `now()` by 0; the transport throws
-    on an unqueued request without recording a call, records method/headers/body/`at`/outcome, and
-    rejects with `TransportTimeoutError` / `TransportNetworkError` while the clock stays put.
-  - **Coverage.** Standing report (`bunx vitest run --coverage`, product code only):
-    `All files 100% / 100% / 100% / 100%` over `TablifyPlaceholderView.ts`, `keyBindings.ts`,
-    `TablifySettingTab.ts`. Fakes measured on demand with a throwaway config (the standing gate excludes
-    `tests/**` as the step requires): `All files 92.63% stmts / 85.18% branch / 90.24% funcs`;
-    `clock.ts 100%`, `transport.ts 97.14%` (uncovered 116–117, the unqueued-throw's second branch),
-    `vault.ts 88.59%` (uncovered: the `parse()` fallbacks for a malformed block, and the duplicate/orphan
-    guard paths).
-  - **Step 04's first assumption is now closed.** The workflows have executed on GitHub: pushing step 04
-    as `2770c95` started run
-    [37338515889](https://github.com/258044aamm-Dev/Tablify/actions/runs/37338515889); the `gate` job
-    concluded **success** with every step green (`setup-bun`, cached `bun install --frozen-lockfile`,
-    typecheck, lint, format:check, test, build, size) and the four layout steps `skipped` by the guard,
-    exactly as designed — the annotation-plus-summary path instead of a red badge.
+  - `bun run check` — **exit 0**, with the suite grown from 44 tests / 5 files to **115 tests / 8 files**:
+    `field-contract.text` 26, `property-schema` 29, `registry` 16, `fakes-contract` 16, `boundaries` 12,
+    `plugin-smoke` 7, `bases-registration` 5, `settings-tab` 4. `brand-gate: OK — 59 permitted match(es),
+    0 violations`, `manifest:check: OK`, Prettier clean on every new file, `bundle-size: OK` at
+    `main.js 3905 B raw / 1843 B gzip` — **unchanged**, because the plugin does not import `src/core` yet;
+    the core adds zero shipped bytes until step 12 wires `BasesSource` to it.
+  - **Coverage, with the step-05 glob threshold now live** (`bunx vitest run --coverage`, exit 0):
+    `core/fieldTypes 98.4 % stmts / 98.14 % branch`, `core/schema 98.71 / 95.09`, `core/types.ts 100 %`,
+    `text.ts 100 %` (statements, branches, functions and lines), all files `98.81 / 96.41`. The floor is
+    85/85/85/75, so it passes with 13 points of headroom; the uncovered lines are the two unreachable
+    defensive branches in `assertRegistryComplete` and three "cannot happen" paths in the schema layer.
+  - **A hostile-input run**, names and results pasted from `--reporter=verbose` (26/26 in the file):
+    `parse never throws, for any hostile input` ✓ — 18 labelled inputs (null, undefined, `{}`, a nested
+    object, `[]`, `[{a:1}]`, the number 42, NaN, Infinity, a boolean, a function, a symbol, a `Date`,
+    a 1,000,000-character string, emoji including a ZWJ sequence, right-to-left text, a string containing
+    NUL, whitespace only); `parsePlain never throws, for any hostile text` ✓; `handles a very long value in
+    every operator without pathological work` ✓.
+  - **The one-line cost of field type #2**, measured against the staged step-06 tree:
+    ```
+     src/core/fieldTypes/index.ts        |  1 +
+     src/core/fieldTypes/scratchProbe.ts | 23 +++++++++++++++++++++++
+     2 files changed, 24 insertions(+)
+    ```
+    the single added line being `export { scratchProbeField } from './scratchProbe';`. In that state
+    `bunx tsc --noEmit` and `bunx eslint src/core/fieldTypes` were green and the new type was live:
+    `allFields(): longText, text` / `getField('longText') → Long text`. The probe was then deleted and the
+    line reverted (verified: no unstaged diff). Answer to "how many files does field type #2 require?" —
+    **one new file, plus exactly one line in `index.ts`**, because a type module registers itself when it is
+    imported. Nothing else changes: no list to append to, no dispatch to extend, no test file to duplicate
+    (the shared suite picks it up when step 07 points it at the registry).
 
-- **A silent hole this step found before it could ship.** `no-restricted-imports` is **not merged** across
-  ESLint flat-config objects: when two objects match the same file, the later object's option *replaces*
-  the earlier one's wholesale. The first version of this step added one block banning
-  `prototype/**` imports for `src/**`, `tests/**` and `scripts/**` — and because that block matched
-  `src/core/**` too and sat later in the array, it erased the core's purity rule that step 01 had added.
-  It was caught by probing the resolved config (`eslint.calculateConfigForFile` showed only the prototype
-  pattern for a core file) and by a CLI probe returning exit 0 where an error was expected. The fix is
-  structural: exactly one boundary block per file set, and every restriction that applies to that set is
-  composed by a `restrict()` helper that always appends the reference-material ban. The reason it cannot
-  silently regress is `tests/unit/boundaries.test.ts`, which writes the violations to disk and lints them;
-  a loosened pattern or a newly-added overlapping block turns that suite red.
+- Two real problems the step found, both worth keeping:
+  1. **An "invalid operand" filter must satisfy nothing, not everything.** The first operand coercion mapped
+     anything that is not a scalar to `""`, which a test written the other way round exposed: `contains` with
+     an object operand then matched *every* row — a filter that looks like it works and silently ignores what
+     the user asked for. `readOperand` now distinguishes "no operand yet" (`null`/`undefined` ⇒ `""`) from
+     "cannot be text" (object, array, function, symbol ⇒ invalid ⇒ the operator answers false).
+  2. **`expect(0).toBe(-0)` fails.** The suite's antisymmetry assertion negated one sign, and `compare(v, v)`
+     is `0`, so `-0` vs `0` failed under `Object.is`. Fixed by asserting the sum of the two signs.
+
+- Decisions and interpretations worth recording:
+  1. **`resolveField` returns a `ResolvedField`, not a bare `FieldDescriptor`.** The step requires the reasons
+     to be *recorded*, and a descriptor has nowhere to carry them, so the result is
+     `{ descriptor, readOnly, reasons, options, context }`. The descriptor interface itself is implemented
+     exactly as `docs/02` writes it — no member added, none removed. If a later step wants reasons somewhere
+     else, this is the one place to change.
+  2. **`docs/01-spec.md` has no operator table**, although the step refers to one. `FilterOpId` is therefore
+     derived from the semantics `docs/02` §Query needs: `is, isNot, contains, notContains, startsWith,
+     endsWith, isEmpty, isNotEmpty, gt, gte, lt, lte`. `text` declares the eight string operators and answers
+     `false` for the numeric ones rather than comparing strings numerically. **This list is worth confirming
+     before step 08 (the query parser) and step 23 (the filter builder) freeze it** — see open questions.
+  3. **`EditorId` and `StandardSchemaV1` are referenced by the `docs/02` interface but defined nowhere in the
+     docs.** `EditorId` is now a closed union of the editors `docs/01` §Editing names plus `readonly`
+     (step 18 owns the components, step 19 the keys). `StandardSchemaV1` is declared *structurally* in
+     `src/core/types.ts` and nothing implements it yet; see open question 2.
+  4. **`editor` is not defaulted to `id` by `defineField`.** `docs/02` says the editor "defaults to id", but
+     the editor set is smaller than the type set — `currency`, `percent` and `duration` share the number
+     editor, and ids like `createdTime` are not editor ids at all. The default is resolved where the editor
+     set lives (the grid, step 18); typing it here would need a cast the fence forbids. Recorded so nobody
+     "fixes" it with one.
+  5. **The whitespace and Unicode policy for `text`**, asserted in `tests/unit/field-contract.text.test.ts`:
+     `parse` preserves authored frontmatter byte for byte; `parsePlain` trims and normalises to NFC, because
+     the same name pasted from two apps must not become two values; whitespace-only is the empty value
+     (`null`) in both paths, so a canonical `text` value is never `""`; `toYaml` mirrors this by writing the
+     value verbatim and writing `null` for absence, which the write queue turns into a deleted key.
+  6. **`compare` ends with a code-point tiebreak** for exactly this reason: at variant sensitivity a
+     collator reports `e`+U+0301 and `é` as *equal*, so without the tiebreak two visually identical values
+     would compare equal while `groupKey` still separated them, and the suite's consistency assertion would
+     fail. There is a test with the concrete pair; the tiebreak makes the sort deterministic instead.
+  7. **`assertRegistryComplete(target)` takes an optional registry** so the guard itself is testable — the
+     shipped registry cannot be broken from outside, so an argument is the only honest way to prove the
+     assertion fires.
+  8. **`filterOps` is a declaration, not documentation.** A type that declares an operator it does not handle
+     fails the shared suite (`declares "x" but no case exercises it`), and a fixture that uses an undeclared
+     operator fails too. That is what keeps the operator list honest as types are added.
+  9. **The registry holds 1 of 18 ids on purpose.** `FIELD_TYPE_IDS` lists all eighteen type names, but two of
+     them (`createdTime`, `lastModifiedTime`) are read-only columns backed by file metadata and are never
+     registered — they are built inside `schema/propertySchema.ts` (P11). `assertRegistryComplete()` checks
+     what is registered, not that the list is exhausted, which is what lets step 07 point the suite at the
+     registry as it grows.
 
 - Assumed / not verified (each with how to verify):
-  1. **The fake's YAML handling is a model, not a parser.** `parse()` understands flat `key: <JSON>` lines
-     only, so behaviour (a) is proven structurally (the block is regenerated from the object) but the
-     fidelity of a *real* round-trip — aliases, multi-line strings, dates, comments in Obsidian's own YAML
-     serialiser — rests on step 10's real-vault spike. The fakes were written to keep `core/` and the tests
-     free of the `obsidian` package, so this cannot be closed here.
-  2. **`processFrontMatter`'s callback is modelled as synchronous and `void`-returning**, matching
-     `obsidian.d.ts:2954` (`(frontmatter: any) => void`). The parameter type is deliberately
-     `Record<string, unknown>` rather than upstream's `any`, because `any` is banned here. A generic
-     parameter would read better but cannot be written without a cast the lint fence forbids: the callback
-     receives a cloned `Record<string, unknown>`, which is not assignable to the narrower `T` a caller
-     asked for. Consequence to respect until step 10 proves otherwise: an adapter must never return a
-     promise from the callback.
-  3. `vault.create` / `read` / `modify` / `delete` are `Promise`-returning in the fake, matching
-     `obsidian.d.ts` (7386 / 7412 / 7467 / 7441) rather than being convenient synchronous stubs, so a
-     forgotten `await` in an adapter is at least visible in the types. Only the seeding helpers
-     (`seedNote`, `createNote`, `raw`) are synchronous, and tests use those.
-  4. `resolvePath` models Obsidian's link resolution with three documented rules (exact path, then
-     case-insensitive basename, ambiguity by shallowest then alphabetical) and **not** the parts the
-     `.tabula` importer needs: `#heading`, `^block`, `[[Note|alias]]` and frontmatter aliases. Step 13
-     owns those.
-  5. The fake transport proves no test can reach the network *through it*; it cannot prove an adapter will
-     not call the global `fetch` directly. That audit belongs to step 25, where the sync client is written,
-     and the boundary rule for `src/sync/**` (dynamic-import only) is the second half of the answer.
-  6. `src/core/**`'s coverage floor (85/85/85/75) is a **no-op while `src/core/` is empty** — verified:
-     the coverage run on an empty `core/` reports no `core` rows and exits 0. It is not a hole: the
-     threshold is a ratio over the files the glob matches, so the first file committed under `src/core/`
-     is measured immediately. The floor becomes real in step 09.
-  7. `tests/**` is exempted from `obsidianmd/no-nodejs-modules` (a test runner is the workstation, not
-     Obsidian) and from `obsidianmd/ui/sentence-case` (the rule reported `fm.title = 'y'` as UI copy).
-     Both exemptions are written in `eslint.config.mts` with their reason, and both stay on for every
-     shipped file.
+  1. **Only `text` exists.** The other fifteen types' storage rules come from `docs/03` §the mapping table and
+     are unproven until step 07 implements them. Nothing in this step claims otherwise.
+  2. **`Intl` output.** The two file-metadata columns render through `Intl.DateTimeFormat` with the context's
+     locale and timezone. The tests pin `en-GB` in UTC, `Asia/Dhaka` and `Asia/Tokyo` on this machine's ICU
+     (Node 20, full-icu): `24 Sept 2025, 06:26`, `24 Sept 2025, 12:26`, `25 Sept 2025, 05:00`. Obsidian runs on
+     Electron's ICU, which should agree for these locales; a locale with a different CLDR date pattern could
+     render a different separator. Verify on a real vault in step 10.
+  3. **`file.ctime`/`file.mtime` are epoch numbers.** The descriptor accepts epoch ms or an ISO string; that
+     the real `TFile` fields are numbers is taken from `obsidian.d.ts`, not observed. Step 10 proves it.
+  4. **`StandardSchemaV1` is written from memory of the spec's v1 shape**, not from a fetched page, and is
+     structurally compatible rather than imported. Verify if the dependency is adopted (open question 2).
+  5. **The hostile table's long input is 1,000,000 characters, not the 1e9 the step names** — 1e9 would
+     allocate roughly two gigabytes and take the runner out with an OOM instead of an assertion. The property
+     under test (no throw, no quadratic or backtracking work) is the same at 1e6, and the implementation uses
+     `indexOf`-class string operations with no regular expressions. A 1e9 run needs a machine with ~4 GB
+     spare; it is not in CI.
 
 - Findings worth keeping:
-  1. Vitest's **default** coverage excludes hide any file under a `tests/` directory, so measuring
-     `tests/fakes/**` needed an explicit `exclude: []`; without it the report prints an empty table with
-     `All files 0%` and no rows, which looks like "no coverage" rather than "not measured".
-  2. `mergeConfig` concatenates arrays, so a throwaway config cannot narrow `coverage.include` by merging
-     the base config — it has to be a standalone config. (Both traps cost a run each; recorded so the next
-     person does not pay again.)
-  3. ESLint's Node API and the CLI agree on these rules, so `tests/unit/boundaries.test.ts` is a faithful
-     proxy for `bun run lint` — confirmed by running both against the same probe and comparing exit
-     semantics.
-  4. The boundary probes create directories when they do not exist and remove them again afterwards *only
-     while empty* (`rmdir`, ENOTEMPTY ignored), so the suite leaves a clean tree and cannot delete real
-     modules.
+  1. A closed union makes some validation unrepresentable: `if (field.id === '')` was a **type error**
+     (`'FieldTypeId' and '""' have no overlap`), so the check was deleted rather than kept as dead code. If a
+     validation cannot be typed, it is usually unnecessary.
+  2. **Method syntax is what makes the type parameter erasable.** `FieldDescriptor<string | null>` is
+     assignable to `FieldDescriptor<CellValue>` because method parameters are bivariant in TypeScript;
+     rewriting the interface's methods as arrow properties would break registration and force a cast, which
+     the house fence forbids. Worth knowing before anyone "tidies" `docs/02`'s interface.
+  3. `satisfies` is allowed by the fence (`as` is not) — the scratch probe used it to keep a literal
+     descriptor assignable without a cast.
+  4. Prettier owns line breaking: hand-wrapped signatures are rejoined, so `format:check` failed on all eight
+     new files until `bun run format` ran. Run the formatter before the first gate of a step, not after.
 
-- Half-finished: nothing. The fakes are complete for their declared slice; anything beyond it is a new
-  behaviour, not a missing one.
+- Half-finished: nothing. The registry deliberately holds one type; `FIELD_TYPE_IDS` lists eighteen.
 
-- Open questions for the human (carried from step 04 — both still unanswered and both still live):
-  1. Should the layout guard emit a warning (current choice) or fail the run until step 21? A failing run
-     would be a stronger signal but leaves CI red for the rest of M0–M2.
-  2. Dependabot: the `obsidian` ignore covers `version-update:semver-major` only, so minor and patch bumps
-     are still proposed. If every `obsidian` bump should be human-gated, say so and the ignore list
-     changes.
+- Open questions for the human:
+  1. **Confirm the filter-operator list** (`is, isNot, contains, notContains, startsWith, endsWith, isEmpty,
+     isNotEmpty, gt, gte, lt, lte`) before step 08 parses it and step 23 renders it. `docs/01` has no operator
+     table, so this list is currently derived from `docs/02` §Query.
+  2. **`@standard-schema/spec` as a types-only devDependency, or keep the local structural declaration** plus
+     the generic `validateFieldOptions`? The question becomes concrete in step 07: `singleSelect`,
+     `multiSelect`, `rating`, `currency`, `percent` and `duration` all take options, and `docs/02` gives the
+     descriptor an `optionsSchema` member that nothing populates today.
+  3. (carried from step 04) Should the layout guard emit a warning (current choice) or fail the run until
+     step 21?
+  4. (carried from step 04) Dependabot: the `obsidian` ignore covers `version-update:semver-major` only, so
+     minor and patch bumps are still proposed.
+  5. (carried from step 02, unchanged) `docs/09` line 33's description template contains a banned brand word
+     while line 79 forbids it; the three proposed plugin descriptions still await a pick; whether the
+     internal-only files keep whole-file brand-gate permissions.
 
-- Next step: `prompts/step-06-*.md` (M1 — the core domain begins: field types, schema and the value model,
-  still with no Obsidian and no React in `src/core/**`).
+- Next step: `prompts/step-07-field-types.md` (M1 — the remaining field types, each one file, and the shared
+  contract suite pointed at the whole registry).
 
-- Files touched this step: `tests/fakes/vault.ts`, `tests/fakes/clock.ts`, `tests/fakes/transport.ts`,
-  `tests/unit/fakes-contract.test.ts`, `tests/unit/boundaries.test.ts`, `eslint.config.mts`,
-  `vitest.config.ts`, `PROGRESS.md`.
+- Files touched this step: `src/core/types.ts`, `src/core/fieldTypes/registry.ts`,
+  `src/core/fieldTypes/text.ts`, `src/core/fieldTypes/index.ts`,
+  `src/core/schema/propertySchema.ts`, `tests/unit/field-contract.suite.ts`,
+  `tests/unit/field-contract.text.test.ts`, `tests/unit/registry.test.ts`,
+  `tests/unit/property-schema.test.ts`, `PROGRESS.md`. Nothing outside `src/core/**`, `tests/unit/**` and
+  `PROGRESS.md`, as the fence requires.
 
-- Earlier steps: 01 toolchain and gate (802 B / 532 B bundle, `bun run check` exit 0); 02 manifest and
-  legal (`brand:gate`, `manifest:check`, `minAppVersion` 1.13.0 as the tested floor); 03 plugin shell
-  (Bases view registration, two commands, settings tab, status bar item, `release-assets` and
-  `version-bump`; 16 tests); 04 CI and release (the `gate` job, the self-retiring layout guard, the
-  tag-driven release with three assets; verified green on GitHub as run 37338515889). Forced amendments
-  are recorded in `prompts/README.md` under "Amendments applied during execution".
+- Earlier steps: 01 toolchain and gate (802 B / 532 B bundle, `bun run check` exit 0); 02 manifest and legal
+  (`brand:gate`, `manifest:check`, `minAppVersion` 1.13.0 as the tested floor); 03 plugin shell (Bases view
+  registration, two commands, settings tab, status bar item, `release-assets` and `version-bump`; 16 tests);
+  04 CI and release (the `gate` job, the self-retiring layout guard, the tag-driven release with three
+  assets; verified green on GitHub as run 37338515889); 05 fakes, boundaries and coverage (the fake vault,
+  clock and transport; the boundary lint proven by a runtime test; 44 tests). Forced amendments are recorded
+  in `prompts/README.md` under "Amendments applied during execution".
