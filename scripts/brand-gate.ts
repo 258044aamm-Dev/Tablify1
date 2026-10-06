@@ -165,6 +165,26 @@ const ALLOWED_LINES: { path: string; pattern: RegExp; reason: string }[] = [
 		pattern: /./,
 		reason: 'the port, link and hash tests: their fixtures and sentences name the service',
 	},
+	{
+		path: 'src/plugin/sync/',
+		pattern: /Airtable token|document\.airtable|sync\/airtable\//,
+		reason: 'the sync surface: the token field and the two sentences that point at it, the link document`s `airtable` key (docs/03 §Sync state fixes it), and the provider client`s module path, which only the composition root imports',
+	},
+	{
+		path: 'tests/dom/conflict-review.test.tsx',
+		pattern: /Add an Airtable token|airtable: \{/,
+		reason: "asserts the panel's own user-facing sentence, and builds a link document with the `airtable` key docs/03 fixes",
+	},
+	{
+		path: 'tests/unit/pull-push.test.ts',
+		pattern: /sync\/airtable\/client/,
+		reason: 'imports the client under test by its module path',
+	},
+	{
+		path: 'tests/unit/startup.test.ts',
+		pattern: /api\.airtable\.com/,
+		reason: 'the startup proof`s marker: the request host exists only in the provider client, so finding it in the bundle is the inlining measurement',
+	},
 ];
 
 type Match = { file: string; line: number; text: string };

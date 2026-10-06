@@ -383,10 +383,34 @@ export class Plugin {
 		minAppVersion: '1.13.0',
 	};
 	/**
-	 * The app, as far as this plugin touches it: the vault's markdown file list (Diagnostics counts notes)
-	 * and nothing else. `loadData`/`saveData` below stand in for `data.json`.
+	 * The app, as far as this plugin touches it: the vault's markdown file list (Diagnostics counts notes), the
+	 * workspace handles sync's badge needs, and an empty adapter for the link folder. A test that needs more
+	 * assigns its own `app` — `tests/unit/startup.test.ts` does exactly that.
+	 *
+	 * `onLayoutReady` calls its callback **immediately**: the real `Workspace` defers only until the layout is
+	 * ready, and a double that never called back would leave the badge path untested.
 	 */
-	app: unknown = { vault: { getMarkdownFiles: (): unknown[] => [] } };
+	app: unknown = {
+		vault: {
+			getMarkdownFiles: (): unknown[] => [],
+			adapter: {
+				list: (): Promise<{ files: string[]; folders: string[] }> =>
+					Promise.resolve({ files: [], folders: [] }),
+				read: (): Promise<string> => Promise.reject(new Error('no such file')),
+				write: (): Promise<void> => Promise.resolve(),
+				exists: (): Promise<boolean> => Promise.resolve(false),
+				mkdir: (): Promise<void> => Promise.resolve(),
+			},
+		},
+		workspace: {
+			activeLeaf: null,
+			getLeavesOfType: (): unknown[] => [],
+			onLayoutReady: (callback: () => unknown): void => {
+				void callback();
+			},
+			on: (): { readonly name: string } => ({ name: 'event-ref' }),
+		},
+	};
 	/** What `saveData` was last given, and how many times it was called. */
 	savedData: unknown = null;
 	saveCount = 0;
@@ -405,6 +429,16 @@ export class Plugin {
 
 	register(callback: () => void): void {
 		this.cleanups.push(callback);
+	}
+
+	/**
+	 * `Component.registerEvent(eventRef)` (obsidian.d.ts @0.9.7): the real app detaches every reference on
+	 * unload. The double keeps them so a test can assert that a listener was registered at all.
+	 */
+	readonly events: unknown[] = [];
+
+	registerEvent(event: unknown): void {
+		this.events.push(event);
 	}
 
 	addCommand(command: { id: string; name: string; callback: () => void }): {

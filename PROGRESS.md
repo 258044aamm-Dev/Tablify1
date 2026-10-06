@@ -1,10 +1,112 @@
 # PROGRESS
 
 - Milestone: M0 — Foundation (complete) · M1 — Core domain (complete) · M2 — Data layer (complete) ·
-  M3 — Grid v1 (complete) · M4 — Import/export (complete) · **M5 — Sync (in progress — the port, the link file and
-  the client are in; the diff, the review and the wiring are step 26)**
+  M3 — Grid v1 (complete) · M4 — Import/export (complete) · **M5 — Sync (complete)** · M6 — Release (not started)
   Branch: main
-- Last completed step: **step 25 — the sync foundation: the token, the port, the link file and the client.**
+- Last completed step: **step 26 — sync, end to end: the three-way diff, the plan, the pull and the push, the
+  conflict review, and the wiring that keeps all of it off the startup path.** The rule the step exists for is one
+  sentence of `docs/08` §P9 — *ask before overwriting, never silent* — and it is enforced in three places rather
+  than asserted: the diff type has **no undecided member** for a choice, `applyPull` **refuses** a plan with an
+  unbooked conflict and names the fields, and the review dialog's primary action is **disabled** with the reason on
+  the button until every field has one.
+
+  **`docs/03` §Sync behaviour, row by row.** Eight rows, one test each, and the verdicts are the doc's:
+
+  | `docs/03` §Sync behaviour row | Verdict as built | Writes |
+  |---|---|---|
+  | Only local changed | `local-only` | push, automatic |
+  | Only remote changed | `remote-only` | pull, automatic |
+  | Both changed, different fields | `local-only` + `remote-only` | both, no conflict promoted |
+  | Both changed, same field | `conflict` | **nothing** until a person chooses |
+  | Both changed to the **same** value | `both-same` | nothing, and the next run agrees |
+  | Remote record missing | `remote-deleted` | reported; nothing is deleted locally |
+  | Local note missing | `local-deleted` | reported; nothing is deleted remotely |
+  | A value the column cannot read | `type-mismatch` | reported with both values |
+  | A field with no counterpart | not a verdict at all | the caller's skip list, reported once |
+
+  **Three real bugs the tests found, all in the engine, all fixed before the gate.** (1) With **no stored
+  agreement** — a first sync — equal values were reported `both-same`, which claims *"both sides moved to the same
+  value"* and needs a base to be true; they are now `unchanged`, and the two rules that only apply without a base
+  (`filling` an empty local cell is `remote-only`; **emptying** a cell is a `conflict`) are written next to each
+  other in `diff.ts`. (2) `runSync` applied a pull from a **truncated read**, because only the *pull* phase checked
+  `plan.blocked`; the guard is now `holdsEverything = plan.blocked === null` around **both** phases. (3)
+  `nextSnapshot` counted **sent** pushes as agreements, so a record the provider refused looked settled and would
+  never have been retried; `PushReport.acceptedIds` is what counts now, and `sent` still lists the attempts.
+
+  **The 12-note × 40-field pull, as raw evidence** (a throwaway harness over the shipping code, pasted in the run
+  report): plan `{rows: 12, cells: 480, pullRecords: 12, pullFields: 480, conflicts: 0}`, label
+  `Pull 12 notes · 480 fields`, `ready: true`; apply `{ok: true, written: 480, applied: 12, stale: 0, blocked: 0,
+  refused: 0, errors: 0}`, **one** `apply` call, **one** op in it — one undo step; undo `{ok: true, written: 480}`
+  with `Field1…Field4` back to `old, 1, old, 1`. A cell edited **between** the plan and the apply is re-hashed at
+  write time and reported `stale`, left exactly as typed (`docs/03` §Sync: *"never silently overwrite"*).
+
+  **The review dialog** (`src/plugin/sync/ConflictReview.ts`) is the surface where that rule becomes visible: one
+  row per field, grouped by note, local and remote values **side by side as the two buttons that pick them**,
+  a raw line underneath when the display and the vault disagree (*"In the vault: 2026-11-01 · remote: 2026-12-01"* —
+  a date column displays `1 Nov 2026`, and a person choosing between two dates needs both), a bulk take-mine /
+  take-remote pair, and a count built from **the book rather than the plan** — *"Will write 2 record field(s) in the
+  remote table across 2 note(s) · 0 still to decide"*. There is no base **value** column, and that is stated in the
+  file rather than omitted: `docs/03` §Sync state stores a `sha256:…` per field, so a link file cannot become a
+  second copy of the vault, and a hash cannot be rendered back into a third value. What the hashes *can* say — which
+  side moved — is the line above the pair.
+
+  **The startup proof, measured two ways, because either one alone can be argued with.** Structurally: the plugin is
+  bundled with `esbuild` in-test (same entry point and options as `esbuild.config.mjs`) and the **metafile** is read —
+  **0** static edges from `src/plugin/main.ts` into `src/sync/**` or `src/plugin/sync/**`, and exactly **1** dynamic
+  edge, `src/plugin/sync/host.ts`. At runtime: `src/plugin/sync/host.ts` is mocked, and with an empty
+  `.tablify/links` folder the module is **never evaluated** and no client is built; one link file later it is
+  evaluated once and one host is built — the command *"Sync with Airtable"* is the only other way in, and it loads
+  the feature even with no link, because a person asked for it by name.
+
+  **The honest half of that claim, asserted rather than remembered.** `cjs` inlines a dynamic chunk, so the client's
+  code **is** in the shipped `main.js`; the test asserts `text.includes('api.airtable.com')` so the fact cannot be
+  forgotten, and the wording in `src/plugin/sync/host.ts` says *lazily evaluated, not deferred bytes*. The whole sync
+  feature costs **+42,919 bytes raw / +13,619 gzip**: `main.js` 416,471 → **459,390 bytes / 142,948 gzip**, both well
+  under the limits. Two measurements, taken once at module load so the numbers land **in the test names** (this repo
+  forbids `console.*` everywhere, tests included): **1.3 ms** for the plugin's `onload` plus the badge's decision with
+  no link file (no I/O at all — the badge lists the folder, finds nothing, stops), and **0.3 ms over 8 microtasks**
+  for the same path with a link present and the module already evaluated. The first dynamic import in the harness
+  reads **101.4 ms** and is *not* a startup cost: that is Vite transforming the module graph from source, which a
+  real Obsidian paid when it read `main.js` off disk. Stated as ASSUMED: no real Obsidian was run.
+
+  **Two platform gaps, both handled with a visible fallback rather than a pretend success.** `BasesView` at
+  `obsidian.d.ts` 1.13.1 exposes `app`, `config`, `allProperties`, `data` and `type` — **no way back from a leaf to
+  the view instance**, and no path to the `.base` file a view came from. So the plugin keeps a **live-view registry**
+  (the factory pushes what it builds; the cleanup pops it), finds the active one through
+  `workspace.getLeavesOfType('bases')` + `leaf.view.containerEl.contains(containerEl)`, and reads the `.base` path
+  from the leaf's own view state. When that path is a guess — more than one Bases leaf — the link file's own
+  `basePath` is **checked against it**, and a mismatch is refused with a sentence instead of quietly sharing one
+  link between two views. That state lives in `onload`'s closure rather than on `this`, because this project's house
+  double drives `onload` as `Reflect.apply(TablifyPlugin.prototype.onload, double, [])`, and anything `onload` reads
+  off `this` must be something the double has.
+
+  **The brand gate grew deliberately, and the four new permissions are the ones to review.** 164 → **197 permitted, 0
+  violations**. Fourteen lines were first **reworded** to provider-neutral language — a quoted doc line, four doc
+  comments, three code comments and the review's own raw line, which now reads `remote:` — and the command was renamed
+  from `Sync with Airtable` to **`Open the sync panel`** (id `open-sync-panel`), which took two permissions away
+  rather than adding them: the panel and the settings copy are where a person reads *which* service this talks to.
+  Four named permissions cover what genuinely names it: the panel's token label and the two sentences pointing at it,
+  the link document's `airtable` key (`docs/03` fixes it), the provider client's module path in the one composition
+  root, and the two tests that assert that copy and build that fixture — plus `api.airtable.com` as the startup
+  proof's own marker. Reasons are in `scripts/brand-gate.ts`, printed by every gate run so they can be audited rather
+  than trusted.
+
+  `bun run check` green end to end: **1446 tests in 54 files** (+50 tests, +4 files over step 25 — `diff` 20,
+  `pull-push` 12, `conflict-review` 12, `startup` 6); `eslint .` 0 errors / 0 warnings; typecheck clean; prettier
+  clean; brand-gate 197/0; manifest OK; contrast 32/32; css-gate clean; `main.js` 459,390 bytes / 142,948 gzip;
+  `styles.css` unchanged (21,813 bytes — no stylesheet changed in this step, so it is byte-identical again).
+
+- Files touched in **step 26**: new — `src/sync/{values,diff,pullPush}.ts`,
+  `src/plugin/sync/{SyncPanel,ConflictReview,local,host}.ts`, `tests/fakes/syncLocal.ts`,
+  `tests/unit/{diff,pull-push,startup}.test.ts`, `tests/dom/conflict-review.test.tsx`; changed —
+  `src/plugin/main.ts` (the third command, the badge, the live-view registry, the lazy `import('./sync/host')`),
+  `scripts/brand-gate.ts` (six permissions with reasons), `tests/mocks/obsidian.ts` (the double's app gained the
+  workspace and adapter handles the badge needs, plus `registerEvent`), `tests/unit/plugin-smoke.test.ts` and
+  `tests/unit/bases-registration.test.ts` (two → **three** commands), `PROGRESS.md`. **Nothing outside
+  `src/sync/**`, `src/plugin/sync/**`, `src/plugin/main.ts`, `tests/**`, `scripts/brand-gate.ts` and
+  `PROGRESS.md`**; the grid, the adapters and the core are untouched.
+
+- Before that: **step 25 — the sync foundation: the token, the port, the link file and the client.**
   Nothing in this step is reachable from the grid yet, and that is the point of it: `src/sync/**` is a leaf,
   `main.js` does not contain a line of it, and the only file outside the new tree that changed is the settings
   door it will come through. The step's own two STOP clauses were checked **first**, because both would have
