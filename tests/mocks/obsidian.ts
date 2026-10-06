@@ -413,3 +413,160 @@ export class Plugin {
 		this.registeredViews.length = 0;
 	}
 }
+
+/**
+ * The double for `Menu` / `MenuItem` (obsidian.d.ts, `Menu` @since 0.15.3, `MenuItem` 0.15.0–0.16.2).
+ *
+ * It keeps the *items a menu was built with*, in order, with their labels, icons, check state, disabled state and
+ * warning flag — which is exactly what `tests/dom/menus.test.tsx` asserts: the menu inventory, item by item.
+ * `showAtMouseEvent`/`showAtPosition`/`hide`/`close`/`onHide` are recorded rather than drawn, because a menu's
+ * appearance is Obsidian's business and this plugin may not reinvent it.
+ *
+ * `onClick` fires the callback the way the real item's click does, so a test can drive "the user chose Delete
+ * rows" through the real code path.
+ */
+export type MenuItemStub = {
+	title: string;
+	icon: string | null;
+	checked: boolean | null;
+	disabled: boolean;
+	warning: boolean;
+	section: string | null;
+	/** Fires the item's own `onClick`, and answers whether it was allowed to. */
+	click(): boolean;
+};
+
+export type MenuStub = {
+	readonly items: MenuItemStub[];
+	/** `Menu.addSeparator()` — separators are recorded as `null` slots between items. */
+	readonly separators: number[];
+	shownAt: { x: number; y: number } | null;
+	hidden: number;
+	readonly callbacks: (() => void)[];
+};
+
+/** Every menu shown in a test run, in order. Cleared by `resetMenus()`. */
+export const openedMenus: MenuStub[] = [];
+
+export function resetMenus(): void {
+	openedMenus.length = 0;
+}
+
+export class MenuItem {
+	private readonly item: MenuItemStub;
+	private readonly handler: { current: (() => void) | null } = { current: null };
+
+	constructor(item: MenuItemStub) {
+		this.item = item;
+	}
+
+	setTitle(title: string | DocumentFragment): this {
+		this.item.title = typeof title === 'string' ? title : (title.textContent ?? '');
+		return this;
+	}
+
+	setIcon(icon: string | null): this {
+		this.item.icon = icon;
+		return this;
+	}
+
+	setChecked(checked: boolean | null): this {
+		this.item.checked = checked;
+		return this;
+	}
+
+	setDisabled(disabled: boolean): this {
+		this.item.disabled = disabled;
+		return this;
+	}
+
+	setWarning(warning: boolean): this {
+		this.item.warning = warning;
+		return this;
+	}
+
+	setIsLabel(isLabel: boolean): this {
+		this.item.section = isLabel ? 'label' : this.item.section;
+		return this;
+	}
+
+	setSection(section: string): this {
+		this.item.section = section;
+		return this;
+	}
+
+	onClick(callback: () => void): this {
+		this.handler.current = callback;
+		this.item.click = () => {
+			// The real `MenuItem` does nothing when it is disabled; the double is the same, because a test that
+			// fires a disabled item proves less than the menu inventory it is trying to check.
+			if (this.item.disabled) {
+				return false;
+			}
+			callback();
+			return true;
+		};
+		return this;
+	}
+}
+
+export class Menu {
+	readonly stub: MenuStub = {
+		items: [],
+		separators: [],
+		shownAt: null,
+		hidden: 0,
+		callbacks: [],
+	};
+
+	constructor() {
+		openedMenus.push(this.stub);
+	}
+
+	addItem(callback: (item: MenuItem) => unknown): this {
+		const item: MenuItemStub = {
+			title: '',
+			icon: null,
+			checked: null,
+			disabled: false,
+			warning: false,
+			section: null,
+			click: () => false,
+		};
+		this.stub.items.push(item);
+		callback(new MenuItem(item));
+		return this;
+	}
+
+	addSeparator(): this {
+		this.stub.separators.push(this.stub.items.length);
+		return this;
+	}
+
+	setNoIcon(): this {
+		return this;
+	}
+
+	showAtMouseEvent(event: MouseEvent): this {
+		this.stub.shownAt = { x: event.clientX, y: event.clientY };
+		return this;
+	}
+
+	showAtPosition(position: { x: number; y: number }): this {
+		this.stub.shownAt = { x: position.x, y: position.y };
+		return this;
+	}
+
+	hide(): this {
+		this.stub.hidden += 1;
+		return this;
+	}
+
+	close(): void {
+		this.hide();
+	}
+
+	onHide(callback: () => void): void {
+		this.stub.callbacks.push(callback);
+	}
+}

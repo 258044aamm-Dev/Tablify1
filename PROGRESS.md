@@ -3,7 +3,16 @@
 - Milestone: M0 — Foundation (complete) · M1 — Core domain (complete) · M2 — Data layer (complete) ·
   **M3 — Grid v1 (in progress)**
   Branch: main
-- Last completed step: **step 19 — the keyboard, the focus contract and the accessible names.** One `keydown`
+- Last completed step: **step 20 — the pointer: four drags, three menus, five dialogs, and one real bug found by
+  a menu test.** One reusable pointer-capture drag session (4 px threshold, capture, `Escape`, exactly one
+  `onEnd`), four gestures built on it — column resize with a live width preview, column reorder with a drop
+  indicator, row reorder from the gutter handle, the fill handle on the selection's corner — the two docked
+  scroll thumbs, every context menu built with Obsidian's `Menu` from data, and every overlay a real `Modal`
+  subclass. **The bug**: the grid's `reorderColumn` command reordered the *table's* fields while the grid renders
+  `ViewResult.columnOrder`, so dragging a column changed nothing on screen; it now writes the view's own column
+  order, which is what `docs/03` says the sidecar holds. 1186 tests, 38 files; `eslint .` 0 errors, 0 warnings.
+
+- Before that: **step 19 — the keyboard, the focus contract and the accessible names.** One `keydown`
   listener on the grid root in the capture phase, a declared event → intent table, a roving `tabindex` that
   leaves **exactly one** element tabbable, one polite live region, the ARIA roles built by functions instead of
   spread into three components, and a keyboard help surface that renders the binding list itself — one row per
@@ -67,6 +76,105 @@
   pending values only.
 
 ---
+
+---
+
+**Step 20 — the pointer, the menus and the dialogs.**
+
+- Verified (`bun run check` — raw, exit 0): `tsc --noEmit` clean; `eslint .` **0 errors, 0 warnings**;
+  `brand-gate: OK — 61 permitted match(es), 0 violations`; `manifest:check: OK`; Prettier clean;
+  **1186 tests across 38 files** (was 1140 / 36: +46 tests, +2 files — `tests/dom/pointer.test.tsx` 27 and
+  `tests/dom/menus.test.tsx` 19); `contrast: OK — all 32 gated checks pass`; `css-gate: OK — 21652 bytes of built
+  styles.css, no bang-important, 51 colour literals in the identity layer, no percentage or viewport heights`;
+  `bundle-size: OK` — `main.js raw 395778 bytes (386.50 KB)` / `gzip 122169 bytes (119.31 KB)`.
+
+- **One drag session, five gestures.** `src/grid/pointer/dragSession.ts` is the whole pointer story: a 4 px
+  activation threshold (the prototype's own numbers where they differ — 5 px for a header, 4 px for a row), real
+  pointer capture, ignore-every-other-pointer (`isPrimary === false` and a non-zero button), and **exactly one
+  `onEnd`** whatever ends it: a release, a `pointercancel`, a lost capture, or `Escape`. The unfinished ones
+  (`Escape` and a lost capture) are reported as `cancelled`, and no gesture commits on a cancel. The one
+  `document` listener in the repo lives here — a keydown added on `begin` and removed in `finish`, because a drag
+  owns the pointer but not the keyboard.
+
+- **The four gestures, each with its own preview and one command on release:**
+  | Gesture | While dragging | On release | Constants |
+  |---|---|---|---|
+  | Resize a column | the width, written to `[data-field]` and `[data-cell$]` in the DOM | one `resizeColumn` | floor 60 px; auto-fit 90–520 px |
+  | Reorder a column | a drop line (`.is-drop-before/after` on the hovered header) | one `reorderColumn` | 5 px threshold |
+  | Reorder a row | an insertion line on the hovered row's half | one `moveRowTo` | 4 px threshold |
+  | Fill from the handle | `.is-fill-preview` on every cell the release would write | one `setCells` | 4 px threshold |
+
+  The pure halves are pure and unit-tested: `columnDropIndex` / `rowDropIndex` answer **`null` for every drop
+  that would not change the order** (on yourself, just before yourself, just after yourself, outside the lane) so
+  "dropped where it started" cannot become an undo entry; `fillPlan` owns the fill's direction, target range and
+  write list, so the preview and the commit are the same object and cannot disagree.
+
+- **Copy, never series.** `1, 2, 3` dragged down writes `3, 3, 3` (`prompt step-20` item 5: *"no series inference
+  — the doc says copy, so copy"*). The fill plan reads the source row (or the left column) and writes it.
+
+- **The menus are data, and the inventory is a test.** `src/grid/menus/` builds every menu as a list of specs —
+  cell (12 items, 3 separators), header (15 items: the prototype's 13 plus the two accessible reorder rows),
+  gutter (5 items, 2 separators) — and `showMenu` is the only place a `Menu` is constructed. `menus.test.tsx`
+  compares each list **by id, in order**, against the documented list, asserts each disabled item's *reason*
+  (the API has no tooltip: `MenuItem` is `setTitle`/`setIcon`/`setChecked`/`setDisabled`/`setWarning`/`setIsLabel`/
+  `onClick`/`setSection` and nothing else, obsidian.d.ts §MenuItem), and then drives a chosen item through the
+  real command layer — `Clear cells` marks the store undoable, `Move column right` moves the column,
+  `Sort descending` writes the view's sorts and shows its check mark.
+
+- **The bug the menu test found.** `commands.reorderColumn` dispatched the core `reorderColumn` op, which reorders
+  `TableState.fields` — and the grid renders `ViewResult.columnOrder` (`docs/02` §the view pipeline: configured
+  columns first, then the rest in schema order). So a column drag (and `Move right`) moved an array that nothing
+  displayed: the gesture looked broken and the command looked fine. It now writes `view.columnOrder` in one
+  `setViewConfig` op, which is also what `docs/03` §where-things-live says the sidecar holds, and both the drag and
+  the menu row go through it. The core op stays for callers that reorder the schema itself.
+
+- **Every overlay is a `Modal`, and the focus contract is what closes the loop.** Five dialogs in
+  `src/grid/dialogs/` (`ViewOptions`, `FieldConfig`, `OptionManager`, `RowDetails`, `BulkEdit`) plus step 19's
+  keyboard help: a title, a body built from Obsidian's own DOM helpers, and a footer with **one** primary action;
+  `TablifyPlaceholderView.ts` does not exist in this repo (nothing to delete, as the prompt allowed). Each opener
+  **builds** the modal (which creates `contentEl`), records a focus surface with the opener and that container,
+  and only then opens it — recording after `open()` would capture the dialog's own first field as the opener.
+  `src/grid/dialogs/port.ts` is the hinge that keeps `src/grid/**`'s "may import `obsidian` only in `menus/` and
+  `dialogs/`" rule intact.
+
+- **What the field and option dialogs honestly are.** `FieldConfig` shows the resolved descriptor, the property
+  id, the resolved options and the resolver's own notes — read-only, because renaming a property or changing its
+  type rewrites the `.base` sidecar and every note's key, and that command set arrives in step 23. `OptionManager`
+  shows every defined option **with its usage count** and every value that has no option (the orphan case
+  `docs/03`'s migration notes exist for). Neither pretends to save; both say where the editable version lives.
+
+- **The row actions are the view's, and two of the three are honestly absent.** `GridViewProps.rows` carries
+  `onInsertRow` / `onDuplicateRows` / `onDeleteRows`; `TablifyView` wires **insert** (a new note, the same thing
+  the toolbar's New row does) and leaves duplicate (needs a filename for the copy) and delete (needs a
+  confirmation and `FileManager.trashFile`) as `null` — which the menus render as disabled items **with their
+  reason**, never as a dead click. Both land in step 21, which is the first step that can believe a real vault.
+
+- Open questions for the human:
+  1. **`docs/01` §menus still does not exist**: the item lists this step implemented are the prototype's, item for
+     item, plus the two reorder rows the prompt required. If the docs are meant to be the contract, the menus are
+     the third thing (after the key bindings) whose fullest statement is now the code.
+  2. **The disabled-item reasons are invisible to users.** Obsidian's `MenuItem` has no tooltip; a disabled
+     "Filter this field…" says nothing about *why* it is disabled. The alternative (a title suffix such as
+     "Filter this field… (edit filters in the `.base` file)") is ugly and changes the menu's reading rhythm — the
+     human may prefer it anyway. One line in `src/grid/menus/headerMenu.ts` changes it.
+  3. (carried) `docs/04` §Touch's 44 × 44 floor; `docs/02` §Grid rendering's sticky-lane description;
+     `docs/01` §undo; `docs/02` §Store's `Command`; `@standard-schema/spec`; `docs/04` §cell-rendering;
+     `attachment` links; the layout guard; `docs/09` line 33.
+
+- Next step: `prompts/step-21-harness-and-playwright.md` — the layout harness: five viewports, the thirteen Tier-4
+  assertions, `window.__harness`, `tests/layout/__screenshots__/`, and the CI job's Playwright steps
+  un-conditionalized. **It needs the human's approval for `@playwright/test` before anything is installed.**
+
+- Files touched in **step 20**: new — `src/grid/pointer/{dragSession,hitTest,resizeColumn,reorderColumn,reorderRow,
+  fillHandle,scrollBar}.ts`, `src/grid/menus/{items,context,cellMenu,headerMenu,gutterMenu}.ts`,
+  `src/grid/dialogs/{base,port,ViewOptionsDialog,FieldConfigDialog,OptionManagerDialog,RowDetailsDialog,
+  BulkEditDialog}.ts`, `tests/dom/{pointer.test.tsx,menus.test.tsx}`; changed — `src/grid/GridView.tsx` (the
+  delegated `pointerdown`, the context menu router, the fill handle and its placement, the dialog port, the
+  presentation channel), `src/grid/rows/{Row,Cell}.tsx` (the gutter handle, `data-field`), `src/grid/Header.tsx`
+  (the resize edge, both lanes), `src/grid/store/commands.ts` (`moveRowTo`, and the `reorderColumn` fix),
+  `src/plugin/TablifyView.ts` (the dialog port, the row ports, `gridProps()`), `src/styles/{tokens,grid}.css`
+  (two geometry tokens, the drag/preview/dialog rules), `tests/mocks/obsidian.ts` (`Menu`/`MenuItem`), and the
+  built `styles.css`.
 
 **Step 19 — the keyboard, the focus contract and the accessible names.**
 

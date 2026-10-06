@@ -34,7 +34,13 @@
  * takes it as a callback. Without a callback the button is absent rather than inert.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, FocusEvent as ReactFocusEvent, ReactElement } from 'react';
+import type {
+	CSSProperties,
+	FocusEvent as ReactFocusEvent,
+	MouseEvent as ReactMouseEvent,
+	PointerEvent as ReactPointerEvent,
+	ReactElement,
+} from 'react';
 
 import { Empty } from './Empty';
 import { FrozenLane } from './FrozenColumn';
@@ -45,14 +51,22 @@ import { Row } from './rows/Row';
 import type { ColumnView } from './rows/Row';
 import { Toolbar } from './Toolbar';
 import { DEFAULT_COLUMN_WIDTH, FALLBACK_HEADER_HEIGHT, resolvePresentation } from './layout';
-import { readHeaderHeight } from './measure';
-import { selectCellDisplay, selectLaneItems, useStore } from './store/selectors';
+import { paneWidthOf, readHeaderHeight, readPxToken } from './measure';
+import {
+	selectCellDisplay,
+	selectLaneItems,
+	useSelectionRevision,
+	useStore,
+} from './store/selectors';
 import {
 	clearSelection,
 	extendSelection,
 	fillDown,
 	fillRight,
+	moveRowTo,
 	redo,
+	reorderColumn,
+	resizeColumn,
 	selectCell,
 	setCell,
 	setCells,
@@ -66,6 +80,17 @@ import type { ScrollPosition } from './useWindow';
 import { usePinnedPrimary } from './usePinnedPrimary';
 import { windowSlice } from './store/window';
 import { attachGridKeyboard } from './keyboard/handler';
+import { cellAtPoint, columnAtPoint, offsetsOf, rowAtPoint, splitCellKey } from './pointer/hitTest';
+import { beginColumnResize } from './pointer/resizeColumn';
+import { beginColumnReorder } from './pointer/reorderColumn';
+import { beginFillDrag } from './pointer/fillHandle';
+import { beginRowReorder } from './pointer/reorderRow';
+import { beginScrollDrag, offsetForTrackClick, thumbGeometry } from './pointer/scrollBar';
+import { cellMenuItems } from './menus/cellMenu';
+import { gutterMenuItems } from './menus/gutterMenu';
+import { headerMenuItems } from './menus/headerMenu';
+import { showMenu } from './menus/items';
+import { fieldOf, menuBounds } from './menus/context';
 import type { GridIntent, KeyContext } from './keyboard/handler';
 import {
 	cellKey,
@@ -77,16 +102,18 @@ import {
 	tabStop,
 } from './keyboard/focus';
 import { announcementOf, gridRoleProps, LiveRegion } from './a11y/roles';
-import { allOf, cellPosition, cellsOf, rowRange } from '../core/selection/range';
+import { allOf, cellPosition, cellsOf, normalize, rowRange } from '../core/selection/range';
 import type { EditSession } from './editSession';
 import type { GridPresentation } from './layout';
 import type { GridStore } from './store/types';
 import type { CellRef, CellWrite, RowId } from '../core/ops/types';
-import type { CellValue } from '../core/types';
+import type { CellValue, PropertyId } from '../core/types';
 import type { LaneItem } from './store/selectors';
 import type { ResolvedField } from '../core/schema/propertySchema';
 import type { CommandResult } from './store/commands';
 import type { Edge, Range, RangeOrder } from '../core/selection/range';
+import type { DialogPort } from './dialogs/port';
+import type { GridDialogId, GridMenuPorts, GridRowPorts } from './menus/context';
 
 export type GridViewProps = {
 	readonly store: GridStore;
@@ -113,6 +140,23 @@ export type GridViewProps = {
 	 * simply left to the browser, which is honest — a help key that opened nothing would be worse.
 	 */
 	readonly onHelp?: (() => void) | undefined;
+	/**
+	 * The grid's own dialogs, built by whoever mounts the grid. `src/grid/**` may not import `obsidian` outside
+	 * `menus/` and `dialogs/`, so the four dialogs are constructed there and handed over as a port — the same
+	 * arrangement `onHelp` and `resolveLink` already use, and the reason this component stays host-agnostic.
+	 * Omit it and the menu/dialog items say so instead of opening nothing.
+	 */
+	readonly dialogs?: DialogPort | undefined;
+	/**
+	 * The view's own row actions (create a note, duplicate it, delete it). The grid cannot do any of them: they
+	 * are file operations. `null`/absent ⇒ the menu items that need them are disabled with a reason.
+	 */
+	readonly rows?: GridRowPorts | undefined;
+	/**
+	 * Reports a presentation change back to the host (density, the frozen primary column). The grid renders what it
+	 * is given, so this is how a change made *inside* a dialog reaches the next render.
+	 */
+	readonly onPresentation?: ((patch: Partial<GridPresentation>) => void) | undefined;
 };
 
 export function GridView(props: GridViewProps): ReactElement {
@@ -129,6 +173,7 @@ export function GridView(props: GridViewProps): ReactElement {
 	const vbarRef = useRef<HTMLDivElement | null>(null);
 	const hthumbRef = useRef<HTMLDivElement | null>(null);
 	const vthumbRef = useRef<HTMLDivElement | null>(null);
+	const fillRef = useRef<HTMLDivElement | null>(null);
 
 	// The header band's height is a design token, read once from the DOM so the arithmetic and the CSS cannot
 	// disagree. Until that read happens (a jsdom test, or the instant before the first paint) the documented
@@ -136,6 +181,21 @@ export function GridView(props: GridViewProps): ReactElement {
 	const [headerHeight, setHeaderHeight] = useState(FALLBACK_HEADER_HEIGHT);
 	/** Bumped when focus has to move; the layout effect below is the only consumer. See `requestFocus`. */
 	const [focusTick, setFocusTick] = useState(0);
+	/**
+	 * The dialog port, held in a ref rather than read from props inside callbacks: the port is rebuilt whenever the
+	 * view re-renders (`createDialogPort` closes over the app), and a port in a dependency array would re-create
+	 * every menu and pointer handler on every render — which is exactly the "one user action, three renders" budget
+	 * step 16 measured. The ref's value is the freshest one; nothing observes its identity.
+	 */
+	const dialogsRef = useRef<DialogPort | null>(props.dialogs ?? null);
+	dialogsRef.current = props.dialogs ?? null;
+	/**
+	 * The presentation change channel, in a ref for the same reason: the view's own `onPresentation` is a fresh
+	 * arrow function on every render, and a dialog opener that re-created itself per render would re-render the
+	 * menu handlers that hold it.
+	 */
+	const onPresentationRef = useRef(props.onPresentation);
+	onPresentationRef.current = props.onPresentation;
 	useLayoutEffect(() => {
 		const measured = readHeaderHeight(rootRef.current);
 		if (measured > 0) {
@@ -278,6 +338,13 @@ export function GridView(props: GridViewProps): ReactElement {
 	const columnOffset = pinned ? 1 : 0;
 
 	/**
+	 * The scroll frame needs the fill handle's placer, and the frame is set up *before* it (the frame owns the
+	 * window, the window feeds the lanes, and the lanes decide where the corner cell is). One ref closes that loop
+	 * without reordering a hundred lines of layout code: the frame calls "whatever the latest placer is".
+	 */
+	const placeFillHandleRef = useRef<() => void>(() => undefined);
+
+	/**
 	 * The one place scroll becomes pixels. Everything here is a transform or a width — never a layout
 	 * property — so the frame costs no layout pass, which is what `docs/02` §Grid rendering asks for.
 	 */
@@ -309,8 +376,13 @@ export function GridView(props: GridViewProps): ReactElement {
 					scroller.clientWidth,
 					'X',
 				);
+				// The handle rides the corner cell, so a scroll moves it exactly as much as the cell moved.
+				placeFillHandleRef.current();
 			}
 		},
+		// `placeFillHandleRef` rather than the placer itself: the frame is defined before the placer (the frame owns
+		// the window, the window feeds the lanes, the lanes decide where the corner is), and the ref is what lets the
+		// frame call "whatever the latest placer is" without reordering a hundred lines of layout code.
 		[headerHeight],
 	);
 
@@ -623,6 +695,576 @@ export function GridView(props: GridViewProps): ReactElement {
 		};
 	}, [readContext, runIntent, onCommitKey]);
 
+	/**
+	 * Places the fill handle over the selection's bottom-right cell.
+	 *
+	 * Measured rather than computed, and deliberately: the corner's position is the sum of the gutter's width, every
+	 * column's width before it, which lane the cell is in, the scroll offsets and the windowing's transform — six
+	 * numbers the browser has already added up. One `getBoundingClientRect` on one mounted element answers all of
+	 * them, which is the same trade `revealElement` makes. It runs on a selection change and inside the scroll frame
+	 * (where `docs/04` allows a read), never per pointer move.
+	 */
+	const placeFillHandle = useCallback((): void => {
+		const handle = fillRef.current;
+		const area = areaRef.current;
+		if (handle === null || area === null) {
+			return;
+		}
+		const snapshot = store.getSnapshot();
+		const bounds =
+			snapshot.selection === null ? null : normalize(snapshot.selection, snapshot.order);
+		const corner =
+			bounds === null
+				? null
+				: {
+						filePath: snapshot.order.rows[bounds.bottom] ?? '',
+						fieldId: snapshot.order.fields[bounds.right] ?? '',
+					};
+		const cell = corner === null ? null : queryCell(area, corner);
+		if (cell === null || snapshot.editing !== null) {
+			handle.classList.add('is-hidden');
+			return;
+		}
+		const areaBox = area.getBoundingClientRect();
+		const box = cell.getBoundingClientRect();
+		// The token, not a literal: the handle's size is a design value and `tokens.css` owns it. Read at placement
+		// (once per selection change or scroll frame), never in a render.
+		const fillSize = readPxToken(area, '--tablify-fill-size', 9);
+		handle.classList.remove('is-hidden');
+		handle.style.transform = `translate(${String(box.right - areaBox.left - fillSize / 2)}px, ${String(
+			box.bottom - areaBox.top - fillSize / 2,
+		)}px)`;
+	}, [store]);
+
+	/**
+	 * The scroll frame needs the placer, and the frame is set up before it (the frame owns the window, the window
+	 * feeds the lanes, the lanes decide where the corner is). One ref closes that loop without reordering a hundred
+	 * lines of layout code: the frame calls "whatever the latest placer is".
+	 */
+	placeFillHandleRef.current = placeFillHandle;
+
+	const selectionRevision = useSelectionRevision(store);
+	useLayoutEffect(() => {
+		placeFillHandle();
+	}, [placeFillHandle, selectionRevision, activeKey, focusTick]);
+
+	/* ── the menus ─────────────────────────────────────────────────────────────────────────────────────── */
+
+	/** The row actions the view owns, defaulted to "this view cannot do that" — see `GridViewProps.rows`. */
+	const rowPorts = props.rows ?? { onInsertRow: null, onDuplicateRows: null, onDeleteRows: null };
+	const rowsRef = useRef(rowPorts);
+	rowsRef.current = rowPorts;
+
+	/** A note-shaped summary of a row, in the grid's own dialog (`RowDetailsDialog`). */
+	const openRowDetails = useCallback(
+		(filePath: RowId): void => {
+			dialogsRef.current?.rowDetails({ store, filePath });
+		},
+		[store],
+	);
+
+	const openFieldDialog = useCallback(
+		(id: GridDialogId, argument?: string): void => {
+			const port = dialogsRef.current;
+			if (port === null) {
+				return;
+			}
+			if (id === 'view-options') {
+				port.viewOptions({
+					store,
+					presentation,
+					// Measured at the moment the dialog opens: the freeze row follows the *pane*, and a pane that
+					// was resized since the last render is the case §P21 is about.
+					paneWidth: paneWidthOf(areaRef.current),
+					onPresentation: (patch) => {
+						onPresentationRef.current?.(patch);
+					},
+				});
+				return;
+			}
+			if (argument === undefined) {
+				return;
+			}
+			if (id === 'field-config') {
+				port.fieldConfig({ store, fieldId: argument });
+				return;
+			}
+			port.optionManager({ store, fieldId: argument });
+		},
+		[store, presentation],
+	);
+
+	/**
+	 * The bulk-edit prompt: `Cmd/Ctrl+Enter`'s dialog half. It is one `Modal` with a text field, and the value it
+	 * collects goes to every cell of the range through `setCells` — one batch, one undo step.
+	 */
+	const openBulkEdit = useCallback((): void => {
+		const port = dialogsRef.current;
+		const ref = store.getSnapshot().active;
+		port?.bulkEdit({
+			store,
+			fieldId: ref?.fieldId ?? '',
+			onApply: (value) => {
+				const writes = bulkWrites(store, true, value);
+				if (writes !== null) {
+					setCells(store, writes, 'Edit the column');
+				}
+			},
+		});
+	}, [store]);
+
+	/**
+	 * The scroll frame needs the placer, and the frame is set up before it (the frame owns the window, the window
+	 * feeds the lanes, the lanes decide where the corner is). One ref closes that loop without reordering a hundred
+	 * lines of layout code: the frame calls "whatever the latest placer is".
+	/** The ports every menu item needs, gathered once per open. */
+	const menuPorts = useCallback(
+		(): GridMenuPorts => ({
+			onRowDetails: openRowDetails,
+			onBulkEdit: openBulkEdit,
+			onInsertRow: rowsRef.current.onInsertRow,
+			onDuplicateRows: rowsRef.current.onDuplicateRows,
+			onDeleteRows: rowsRef.current.onDeleteRows,
+			onDialog: openFieldDialog,
+			onSelectRows: (paths) => {
+				for (const path of paths) {
+					// A range over whole rows: the selection the gutter's own checkbox makes.
+					const range = rowRange(path, store.getSnapshot().order);
+					if (range !== null) {
+						setSelection(store, range);
+					}
+				}
+			},
+		}),
+		[openRowDetails, openBulkEdit, openFieldDialog, store],
+	);
+
+	/** Opens the header menu at the pointer (a header click, or a right-click on a header). */
+	const openHeaderMenu = useCallback(
+		(fieldId: PropertyId, event: MouseEvent): void => {
+			const field = fieldOf(store, fieldId);
+			if (field === null) {
+				return;
+			}
+			const snapshot = store.getSnapshot();
+			const anchor = { kind: 'event', event } as const;
+			showMenu(
+				headerMenuItems({
+					store,
+					field,
+					columnIndex: snapshot.order.fields.indexOf(fieldId),
+					order: snapshot.order,
+					bounds: menuBounds(snapshot.order, snapshot.selection, snapshot.active),
+					ports: menuPorts(),
+				}),
+				anchor,
+			);
+		},
+		[store, menuPorts],
+	);
+
+	/** Right-click (or a long press, which the browser reports as a context menu) anywhere in the grid. */
+	const onContextMenu = useCallback(
+		(event: ReactMouseEvent<HTMLDivElement>): void => {
+			const node = event.target;
+			if (!(node instanceof Element)) {
+				return;
+			}
+			const snapshot = store.getSnapshot();
+			event.preventDefault();
+			const header = node.closest('.hcell[data-field]');
+			if (header !== null) {
+				const fieldId = header.getAttribute('data-field');
+				if (fieldId !== null) {
+					openHeaderMenu(fieldId, event.nativeEvent);
+					return;
+				}
+			}
+			const cell = node.closest('[data-cell]');
+			if (cell !== null) {
+				const key = cell.getAttribute('data-cell');
+				const at = key === null ? null : splitCellKey(key);
+				if (at !== null) {
+					const field = fieldOf(store, at.fieldId);
+					showMenu(
+						cellMenuItems({
+							store,
+							filePath: at.filePath,
+							field,
+							bounds: menuBounds(snapshot.order, snapshot.selection, snapshot.active),
+							ports: menuPorts(),
+						}),
+						{ kind: 'event', event: event.nativeEvent },
+					);
+					return;
+				}
+			}
+			const row = node.closest('[data-row]');
+			const filePath = row?.getAttribute('data-row');
+			if (filePath !== null && filePath !== undefined) {
+				const selected = snapshot.order.rows.filter((path) =>
+					(snapshot.selection === null
+						? []
+						: cellsOf(snapshot.selection, snapshot.order)
+					).some((candidate) => candidate.filePath === path),
+				);
+				showMenu(
+					gutterMenuItems({
+						store,
+						filePath,
+						paths: selected.length === 0 ? [filePath] : selected,
+						bounds: menuBounds(snapshot.order, snapshot.selection, snapshot.active),
+						ports: menuPorts(),
+					}),
+					{ kind: 'event', event: event.nativeEvent },
+				);
+			}
+		},
+		[store, openHeaderMenu, menuPorts],
+	);
+
+	/* ── the pointer ───────────────────────────────────────────────────────────────────────────────────── */
+
+	/**
+	 * The live width preview: a drag writes to the DOM, not to the store.
+	 *
+	 * `docs/04` §The layout contract's own rule ("the scroll frame writes transforms; a gesture writes the thing
+	 * it is dragging") and the reason is the same in both cases — 60 `resizeColumn` commands for one drag would be
+	 * 60 undo steps for one gesture, and every one of them would re-render every cell in the column. The store
+	 * hears about the drag once, on release.
+	 */
+	const previewColumnWidth = useCallback((fieldId: PropertyId, width: number): void => {
+		const root = rootRef.current;
+		if (root === null) {
+			return;
+		}
+		for (const element of offsetsOf(root.ownerDocument, fieldId)) {
+			element.style.width = `${String(width)}px`;
+		}
+	}, []);
+
+	/**
+	 * The live preview's undo. Re-rendering is what restores a column's width — the styles React owns are the
+	 * truth, so the drag's inline styles are all that has to go.
+	 */
+	const retreatFromPreview = useCallback((fieldId: PropertyId): void => {
+		const root = rootRef.current;
+		if (root === null) {
+			return;
+		}
+		for (const element of offsetsOf(root.ownerDocument, fieldId)) {
+			element.style.removeProperty('width');
+		}
+	}, []);
+
+	/**
+	 * The drop indicator, painted straight onto the two elements that can show it. A ref holds what is painted so
+	 * clearing is one class removal rather than a query over every header cell on every move — and so the row
+	 * reorder stays at **zero React renders per pointer move**, which is a property the tests assert.
+	 */
+	const paintedIndicatorRef = useRef<readonly HTMLElement[]>([]);
+	const paintIndicator = useCallback(
+		(targets: readonly HTMLElement[], className: string): void => {
+			for (const element of paintedIndicatorRef.current) {
+				element.classList.remove('is-drop-before', 'is-drop-after');
+			}
+			paintedIndicatorRef.current = targets;
+			for (const element of targets) {
+				element.classList.add(className);
+			}
+		},
+		[],
+	);
+	const clearIndicator = useCallback((): void => {
+		paintIndicator([], 'is-drop-before');
+	}, [paintIndicator]);
+
+	/** The fill handle's live preview: a class per cell the release would write. */
+	const paintedFillRef = useRef<readonly HTMLElement[]>([]);
+	const previewFill = useCallback((writes: readonly CellWrite[] | null): void => {
+		const doc = rootRef.current?.ownerDocument;
+		if (doc === undefined) {
+			return;
+		}
+		for (const element of paintedFillRef.current) {
+			element.classList.remove('is-fill-preview');
+		}
+		const next: HTMLElement[] = [];
+		for (const write of writes ?? []) {
+			const cell = doc.querySelector<HTMLElement>(
+				`[data-cell="${write.filePath}::${write.fieldId}"]`,
+			);
+			if (cell !== null) {
+				cell.classList.add('is-fill-preview');
+				next.push(cell);
+			}
+		}
+		paintedFillRef.current = next;
+	}, []);
+
+	/** Starts a resize from a header edge. */
+	const startColumnResize = useCallback(
+		(element: HTMLElement, fieldId: PropertyId, event: PointerEvent): void => {
+			const field = store
+				.getSnapshot()
+				.fields.find((candidate) => candidate.definition.id === fieldId);
+			if (field === undefined) {
+				return;
+			}
+			beginColumnResize({
+				element,
+				fieldId,
+				startWidth: store.getSnapshot().widths.get(fieldId) ?? DEFAULT_COLUMN_WIDTH,
+				event,
+				onPreview: previewColumnWidth,
+				onCommit: (id, width) => {
+					resizeColumn(store, id, width);
+				},
+				onCancel: () => {
+					retreatFromPreview(fieldId);
+				},
+			});
+		},
+		[store, previewColumnWidth, retreatFromPreview],
+	);
+
+	/** Starts a header reorder — and, if the press never moved, opens the header menu where it was pressed. */
+	const startColumnReorder = useCallback(
+		(element: HTMLElement, fieldId: PropertyId, event: PointerEvent): void => {
+			beginColumnReorder({
+				element,
+				fieldId,
+				event,
+				order: store.getSnapshot().order.fields,
+				columnAt: (x, y) => columnAtPoint(element.ownerDocument, x, y),
+				onIndicator: (target) => {
+					if (target === null) {
+						clearIndicator();
+						return;
+					}
+					const doc = element.ownerDocument;
+					paintIndicator(
+						Array.from(
+							doc.querySelectorAll<HTMLElement>(`[data-field="${target.fieldId}"]`),
+						),
+						target.side === 'before' ? 'is-drop-before' : 'is-drop-after',
+					);
+				},
+				onCommit: (id, to) => {
+					reorderColumn(store, id, to);
+				},
+				onClick: (pressed) => {
+					openHeaderMenu(fieldId, pressed);
+				},
+			});
+		},
+		[store, paintIndicator, clearIndicator, openHeaderMenu],
+	);
+
+	/** Starts a row reorder from the gutter handle — the audit's drop targets and all. */
+	const startRowReorder = useCallback(
+		(element: HTMLElement, filePath: RowId, event: PointerEvent): void => {
+			beginRowReorder({
+				element,
+				filePath,
+				event,
+				order: store.getSnapshot().order.rows,
+				rowAt: (x, y) => rowAtPoint(element.ownerDocument, x, y),
+				onIndicator: (target) => {
+					if (target === null) {
+						clearIndicator();
+						return;
+					}
+					const doc = element.ownerDocument;
+					paintIndicator(
+						Array.from(
+							doc.querySelectorAll<HTMLElement>(`[data-row="${target.filePath}"]`),
+						),
+						target.half === 'before' ? 'is-drop-before' : 'is-drop-after',
+					);
+				},
+				onCommit: (path, to) => {
+					moveRowTo(store, path, to);
+				},
+			});
+		},
+		[store, paintIndicator, clearIndicator],
+	);
+
+	/** Starts a fill drag from the handle at the selection's corner. */
+	const startFillDrag = useCallback(
+		(element: HTMLElement, event: PointerEvent): void => {
+			const snapshot = store.getSnapshot();
+			const selection = snapshot.selection;
+			if (selection === null) {
+				return;
+			}
+			beginFillDrag({
+				element,
+				event,
+				selection,
+				order: snapshot.order,
+				cellAt: (x, y) => cellAtPoint(element.ownerDocument, x, y),
+				valueOf: (filePath, fieldId) =>
+					store.state().table.rows.find((row) => row.filePath === filePath)?.cells[
+						fieldId
+					] ?? null,
+				onPreview: previewFill,
+				onCommit: (plan) => {
+					// One `setCells`: the whole drag is one undo step (the property the step asks to assert).
+					setCells(
+						store,
+						plan.writes,
+						`Fill ${plan.direction} ${String(plan.writes.length)} cell(s)`,
+					);
+					// The extended range becomes the selection, which is what the person just drew.
+					setSelection(store, plan.target);
+				},
+			});
+		},
+		[store, previewFill],
+	);
+
+	/** Starts a scroll-thumb drag, or pages the track when the press missed the thumb. */
+	const startScrollDrag = useCallback(
+		(axis: 'x' | 'y', element: HTMLElement, event: PointerEvent): void => {
+			const scroller = scrollerRef.current;
+			if (scroller === null) {
+				return;
+			}
+			const track = axis === 'x' ? hbarRef.current : vbarRef.current;
+			const trackLength =
+				track === null ? 0 : axis === 'x' ? track.clientWidth : track.clientHeight;
+			const viewLength = axis === 'x' ? scroller.clientWidth : scroller.clientHeight;
+			const contentLength = axis === 'x' ? scroller.scrollWidth : scroller.scrollHeight;
+			const startOffset = axis === 'x' ? scroller.scrollLeft : scroller.scrollTop;
+			const geometry = thumbGeometry({ trackLength, viewLength, contentLength });
+			beginScrollDrag({
+				element,
+				event,
+				axis,
+				geometry,
+				startOffset,
+				onScroll: (offset) => {
+					if (axis === 'x') {
+						scroller.scrollLeft = offset;
+					} else {
+						scroller.scrollTop = offset;
+					}
+					// One frame's worth of the same work a real scroll does: the lanes and the thumbs follow.
+					syncScroll({
+						scrollLeft: scroller.scrollLeft,
+						scrollTop: scroller.scrollTop,
+					});
+				},
+			});
+		},
+		[syncScroll],
+	);
+
+	/** A press on a track *beside* the thumb pages one viewport towards the click (the prototype's `trackPage`). */
+	const pageTrack = useCallback(
+		(axis: 'x' | 'y', event: ReactPointerEvent<HTMLDivElement>): void => {
+			const scroller = scrollerRef.current;
+			const track = event.currentTarget;
+			if (scroller === null) {
+				return;
+			}
+			const trackLength = axis === 'x' ? track.clientWidth : track.clientHeight;
+			const viewLength = axis === 'x' ? scroller.clientWidth : scroller.clientHeight;
+			const contentLength = axis === 'x' ? scroller.scrollWidth : scroller.scrollHeight;
+			const offset = axis === 'x' ? scroller.scrollLeft : scroller.scrollTop;
+			const geometry = thumbGeometry({ trackLength, viewLength, contentLength });
+			const thumb = axis === 'x' ? hthumbRef.current : vthumbRef.current;
+			if (thumb === null) {
+				return;
+			}
+			const trackBox = track.getBoundingClientRect();
+			const thumbBox = thumb.getBoundingClientRect();
+			const next = offsetForTrackClick({
+				clientPos: axis === 'x' ? event.clientX : event.clientY,
+				thumbStart:
+					(axis === 'x' ? thumbBox.left - trackBox.left : thumbBox.top - trackBox.top) +
+					(axis === 'x' ? trackBox.left : trackBox.top),
+				thumbEnd:
+					(axis === 'x'
+						? thumbBox.right - trackBox.left
+						: thumbBox.bottom - trackBox.top) +
+					(axis === 'x' ? trackBox.left : trackBox.top),
+				offset,
+				maxOffset: geometry.maxOffset,
+				viewLength,
+			});
+			if (next === null) {
+				return;
+			}
+			if (axis === 'x') {
+				scroller.scrollLeft = next;
+			} else {
+				scroller.scrollTop = next;
+			}
+			syncScroll({ scrollLeft: scroller.scrollLeft, scrollTop: scroller.scrollTop });
+		},
+		[syncScroll],
+	);
+
+	/**
+	 * One delegated `pointerdown` for every drag the grid has.
+	 *
+	 * Delegation rather than a handler per element, for the reason the keyboard uses one listener: rows are
+	 * windowed and a handler per row is a listener per row that has to be cleaned up per unmount. The dispatch is
+	 * by `closest()`, in the order the elements nest — the resize edge lives *inside* the header cell, and the
+	 * fill handle *inside* a cell, so the innermost target has to win.
+	 */
+	const onRootPointerDown = useCallback(
+		(event: ReactPointerEvent<HTMLDivElement>): void => {
+			const node = event.target;
+			if (!(node instanceof Element)) {
+				return;
+			}
+			const resize = node.closest('[data-resize]');
+			if (resize instanceof HTMLElement) {
+				const fieldId = resize.dataset['resize'];
+				if (fieldId !== undefined) {
+					startColumnResize(resize, fieldId, event.nativeEvent);
+					return;
+				}
+			}
+			const rowHandle = node.closest('[data-row-drag]');
+			if (rowHandle instanceof HTMLElement) {
+				const filePath = rowHandle.dataset['rowDrag'];
+				if (filePath !== undefined) {
+					startRowReorder(rowHandle, filePath, event.nativeEvent);
+					return;
+				}
+			}
+			const fill = node.closest('[data-fill]');
+			if (fill instanceof HTMLElement) {
+				event.preventDefault();
+				startFillDrag(fill, event.nativeEvent);
+				return;
+			}
+			const thumb = node.closest('[data-thumb]');
+			if (thumb instanceof HTMLElement) {
+				event.preventDefault();
+				startScrollDrag(
+					thumb.dataset['thumb'] === 'x' ? 'x' : 'y',
+					thumb,
+					event.nativeEvent,
+				);
+				return;
+			}
+			const header = node.closest('[data-field]');
+			if (header instanceof HTMLElement && node.closest('.hcell') === header) {
+				const fieldId = header.dataset['field'];
+				if (fieldId !== undefined) {
+					startColumnReorder(header, fieldId, event.nativeEvent);
+				}
+			}
+		},
+		[startColumnResize, startRowReorder, startFillDrag, startScrollDrag, startColumnReorder],
+	);
+
 	const onActivate = useCallback(
 		(ref: CellRef, extend: boolean): void => {
 			if (!extend) {
@@ -687,10 +1329,23 @@ export function GridView(props: GridViewProps): ReactElement {
 			tabIndex={rootTabIndex(hasSelection)}
 			// Focus that lands on the grid rather than on a cell is routed to the active cell.
 			onFocus={onRootFocus}
+			// One delegated press for every drag (step 20): a per-row or per-cell handler would be a listener per
+			// row, and rows are windowed.
+			onPointerDown={onRootPointerDown}
+			// Right-click and long-press both arrive here. The grid's own menus are built from data
+			// (`src/grid/menus/`) and shown through Obsidian's `Menu`.
+			onContextMenu={onContextMenu}
 		>
 			<Toolbar store={store} {...(onNewRow === undefined ? {} : { onNewRow })} />
 
 			<div className="tablify-grid-area" ref={areaRef}>
+				{/*
+				 * The fill handle. It is a *drag* affordance and is therefore hidden from assistive technology
+				 * (`aria-hidden`): the equivalent action is `Alt+D` / `Alt+R` on a selection, and the cell menu's
+				 * `Fill down` / `Fill right`, both of which are announced. Positioned by measurement, not by CSS:
+				 * the corner cell's box is read once per placement (see `placeFillHandle`).
+				 */}
+				<div className="tablify-fill" ref={fillRef} data-fill="corner" aria-hidden="true" />
 				<div className="tablify-scroller" ref={scrollerRef}>
 					<div className="tablify-canvas" style={canvasStyle} />
 					<div className="tablify-layer tablify-rows" style={rowsStyle}>
@@ -765,11 +1420,35 @@ export function GridView(props: GridViewProps): ReactElement {
 
 				{/* The two drawn scrollbars. The scroller's own are hidden — an OS scrollbar is neither
 				    themable nor finger-sized (docs/04) — so these are the visible ones; step 20 adds dragging. */}
-				<div className="tablify-hbar" ref={hbarRef} aria-hidden="true">
-					<div className="tablify-hbar-thumb" ref={hthumbRef} />
+				<div
+					className="tablify-hbar"
+					ref={hbarRef}
+					aria-hidden="true"
+					onPointerDown={(event) => {
+						pageTrack('x', event);
+					}}
+				>
+					<div
+						className="tablify-hbar-thumb"
+						ref={hthumbRef}
+						data-thumb="x"
+						role="presentation"
+					/>
 				</div>
-				<div className="tablify-vbar" ref={vbarRef} aria-hidden="true">
-					<div className="tablify-vbar-thumb" ref={vthumbRef} />
+				<div
+					className="tablify-vbar"
+					ref={vbarRef}
+					aria-hidden="true"
+					onPointerDown={(event) => {
+						pageTrack('y', event);
+					}}
+				>
+					<div
+						className="tablify-vbar-thumb"
+						ref={vthumbRef}
+						data-thumb="y"
+						role="presentation"
+					/>
 				</div>
 			</div>
 

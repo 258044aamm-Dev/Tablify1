@@ -33,6 +33,8 @@ import { createBasesSource } from '../adapters/bases/BasesSource';
 import type { BasesRowHost, BasesViewHost, CellProblem } from '../adapters/bases/BasesSource';
 import type { ApplyResult } from '../adapters/RowSource';
 import { GridView } from '../grid/GridView';
+import type { GridViewProps } from '../grid/GridView';
+import { createDialogPort } from '../grid/dialogs/port';
 import { KeyboardHelpModal } from './help/KeyboardHelpModal';
 import { createGridStore } from '../grid/store/store';
 import type { GridStore } from '../grid/store/types';
@@ -136,6 +138,11 @@ export class TablifyView extends BasesView {
 	private readonly watchers = new Set<() => void>();
 	/** The app's metadata listener, so an external edit reaches the source. Released in `dispose()`. */
 	private metadataRef: EventRef | null = null;
+	/**
+	 * The presentation the grid is rendering with. The view owns it (§P21's pinning rule and the density setting
+	 * are both *this view's* answer, not the store's), and a change from the View options dialog lands here.
+	 */
+	private presentation: { density: 'short' | 'medium' | 'tall'; frozenPrimary: boolean };
 
 	constructor(
 		controller: QueryController,
@@ -178,13 +185,17 @@ export class TablifyView extends BasesView {
 		const density =
 			settings?.get().appearance.defaultRowHeight ??
 			DEFAULT_SETTINGS.appearance.defaultRowHeight;
-		const presentation = { density };
+		this.presentation = { density, frozenPrimary: true };
 		if (settings !== undefined) {
 			this.cleanup.push(
 				settings.subscribe(() => {
-					this.remount({
+					// A settings change moves the *default*; a presentation change made in the View options dialog is
+					// the view's own decision while it is open, so this only replaces the field the setting owns.
+					this.presentation = {
+						...this.presentation,
 						density: settings.get().appearance.defaultRowHeight,
-					});
+					};
+					this.remount();
 				}),
 			);
 		}
@@ -197,21 +208,8 @@ export class TablifyView extends BasesView {
 		if (typeof document !== 'undefined') {
 			// Measured before the first paint, on purpose (step 17 item 6): the first frame is already windowed
 			// and already knows whether this pane pins its primary column.
-			const paneWidth = this.host.clientWidth;
 			this.root = createRoot(this.host);
-			this.root.render(
-				createElement(GridView, {
-					store: this.store,
-					presentation,
-					initialPaneWidth: paneWidth,
-					onNewRow: () => {
-						void this.createRow();
-					},
-					onHelp: () => {
-						this.openHelp();
-					},
-				}),
-			);
+			this.root.render(createElement(GridView, this.gridProps()));
 		}
 
 		this.cleanup.push(
@@ -362,21 +360,9 @@ export class TablifyView extends BasesView {
 		}
 	}
 
-	/** Re-renders the grid with a new presentation (a settings change). Cheap: React diffs the props. */
-	private remount(presentation: { readonly density: 'short' | 'medium' | 'tall' }): void {
-		this.root?.render(
-			createElement(GridView, {
-				store: this.store,
-				presentation,
-				initialPaneWidth: this.host.clientWidth,
-				onNewRow: () => {
-					void this.createRow();
-				},
-				onHelp: () => {
-					this.openHelp();
-				},
-			}),
-		);
+	/** Re-renders the grid with the current presentation. Cheap: React diffs the props. */
+	private remount(): void {
+		this.root?.render(createElement(GridView, this.gridProps()));
 	}
 
 	/**
@@ -386,6 +372,62 @@ export class TablifyView extends BasesView {
 	 */
 	private openHelp(): void {
 		new KeyboardHelpModal(this.app).open();
+	}
+
+	/**
+	 * The row actions the grid's menus offer.
+	 *
+	 * A row is a note (`docs/01`), so every one of these is a **file operation**, which is exactly why the grid
+	 * cannot do them (`src/grid/**` may not import `obsidian`) and why they arrive as a port. What this build
+	 * wires is the operation that already exists — inserting a row creates a note, the same thing the toolbar's
+	 * "New row" does — and the other two are `null`, which the menus render as a disabled item with its reason
+	 * rather than a dead click:
+	 *
+	 *  · **duplicate** needs a filename for the copy (the same template question "New row" answers) and a note
+	 *    created from another note's frontmatter;
+	 *  · **delete** needs a confirmation dialog and `FileManager.trashFile` rather than `Vault.delete` — *"a failed
+	 *    write must never look like a success"* is a promise a deletion keeps by being undoable in the OS, not by
+	 *    being silent.
+	 *
+	 * Both land in step 21, next to the layout harness, because they are the two operations that need a real vault
+	 * to be believed.
+	 */
+	private rowPorts(): {
+		readonly onInsertRow: ((at: number) => void) | null;
+		readonly onDuplicateRows: ((paths: readonly string[]) => void) | null;
+		readonly onDeleteRows: ((paths: readonly string[]) => void) | null;
+	} {
+		return {
+			// `at` is deliberately ignored: a new note's position in the row set is the *source's* answer (Bases
+			// orders the query's rows), and a grid that inserted at an index the source did not honour would be
+			// telling the person something untrue about their vault. The unsupported half is recorded here.
+			onInsertRow: () => {
+				void this.createRow();
+			},
+			onDuplicateRows: null,
+			onDeleteRows: null,
+		};
+	}
+
+	/** The grid's props, in one place: the mount, a presentation change and a settings change all mean this. */
+	private gridProps(): GridViewProps {
+		return {
+			store: this.store,
+			presentation: this.presentation,
+			initialPaneWidth: this.host.clientWidth,
+			onNewRow: () => {
+				void this.createRow();
+			},
+			onHelp: () => {
+				this.openHelp();
+			},
+			dialogs: createDialogPort(this.app),
+			rows: this.rowPorts(),
+			onPresentation: (patch) => {
+				this.presentation = { ...this.presentation, ...patch };
+				this.remount();
+			},
+		};
 	}
 
 	/** Called by the plugin when the view closes: release listeners, timers and queued writes. */

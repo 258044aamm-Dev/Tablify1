@@ -233,6 +233,30 @@ export function moveRowBy(store: GridStore, filePath: RowId, delta: number): Com
 	return OK;
 }
 
+/**
+ * Moves a row to an absolute index in the **current** order — what a drag-and-drop drop means.
+ *
+ * `moveRowBy` is the keyboard's nudge and takes a delta; a drop names a place. Both end in the same `moveRow`
+ * op, so a drag is one undo step like everything else, and neither is a special case in the store.
+ */
+export function moveRowTo(store: GridStore, filePath: RowId, to: number): CommandResult {
+	const order = store.getSnapshot().order.rows;
+	const from = order.indexOf(filePath);
+	if (from === -1) {
+		return no(`the row "${filePath}" is not in this view`);
+	}
+	if (to === from) {
+		return no('the row is already there');
+	}
+	const target = to > from ? to - 1 : to;
+	const built = moveRowOp(store.state().table, filePath, target);
+	if (!built.ok) {
+		return built;
+	}
+	store.dispatch({ label: 'Move row', ops: [built.op] });
+	return OK;
+}
+
 /* ── columns and the view ──────────────────────────────────────────────────── */
 
 /** Sets a column's width. `null` returns it to the grid's own default. */
@@ -255,7 +279,20 @@ export function resizeColumn(
 	return OK;
 }
 
-/** Moves a column to a new position in the render order. */
+/**
+ * Moves a column, as a **view** change — which is what a person dragging a column is asking for.
+ *
+ * This was the one real bug step 20's menu test found: the command used to dispatch the core `reorderColumn` op,
+ * which reorders the *table's* fields, and the grid renders `ViewResult.columnOrder` — configured columns first,
+ * then the rest in schema order (`docs/02` §the view pipeline). So the op moved an array nothing displayed and the
+ * drag looked like it did nothing at all. The order a person drags into place is the **view's** order and belongs
+ * in the `.base` sidecar (`docs/03` §where-things-live), next to the sort chain and the hidden columns — which is
+ * also why it is one `setViewConfig` op: one command, one undo step, one thing to write back.
+ *
+ * `to` is an **insertion index into the order as it is right now**, which is what a drop indicator draws and what
+ * the header menu's "Move right" means by `index + 1`. The core `reorderColumn` op keeps its own convention for
+ * callers that reorder the schema itself; this command does the arithmetic for the view.
+ */
 export function reorderColumn(store: GridStore, fieldId: PropertyId, to: number): CommandResult {
 	const order = store.getSnapshot().order.fields;
 	const from = order.indexOf(fieldId);
@@ -266,12 +303,12 @@ export function reorderColumn(store: GridStore, fieldId: PropertyId, to: number)
 	if (clamped === from) {
 		return no('the column is already there');
 	}
-	// The op is a swap *of positions in the array as it is now*, so the builder's own convention applies:
-	// dragging right means the column lands one earlier once it has been lifted out.
-	const target = clamped > from ? clamped - 1 : clamped;
+	const next = [...order];
+	next.splice(from, 1);
+	next.splice(clamped, 0, fieldId);
 	store.dispatch({
 		label: 'Reorder column',
-		ops: [{ kind: 'reorderColumn', fieldId, from, to: target }],
+		ops: [viewConfigOp(store.state().table, { columnOrder: next })],
 	});
 	return OK;
 }

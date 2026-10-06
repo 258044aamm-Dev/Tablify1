@@ -211,6 +211,9 @@
 		--tablify-row-h-medium
 	); /* the live value; a view overrides it inline (step 17) */
 	--tablify-header-h: 40px; /* the header row, aligned with a medium row */
+	--tablify-fill-size: 9px; /* the fill handle's square: big enough for a fingertip's centre, small enough
+	                            not to cover the value under it (step 20; the prototype drew it in CSS only) */
+	--tablify-resize-w: 6px; /* the width of a header's resize edge: a 6 px strip, invisible until hovered */
 	--tablify-toolbar-h: 40px; /* the toolbar's minimum, so it never collapses to a sliver */
 	--tablify-statusbar-h: 26px; /* the status bar's minimum: one line of smaller text */
 	--tablify-gutter-w: 56px; /* the row-number lane, wide enough for four digits */

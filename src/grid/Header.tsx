@@ -50,6 +50,12 @@ function HeaderLaneView(props: HeaderLaneProps): ReactElement {
 					data-field={column.field.definition.id}
 				>
 					<span className="hcell-name">{column.field.definition.name}</span>
+					{/*
+					 * The resize edge. A 6 px target at the column's right edge, invisible until hovered — the
+					 * prototype's `.hcell-resize`, and the only part of the header that is a drag rather than a
+					 * click. `data-resize` names the column so one delegated handler can start the drag.
+					 */}
+					<span className="hcell-resize" data-resize={column.field.definition.id} />
 				</div>
 			))}
 		</div>
@@ -89,6 +95,7 @@ function CornerView(props: CornerProps): ReactElement {
 					data-field={column.field.definition.id}
 				>
 					<span className="hcell-name">{column.field.definition.name}</span>
+					<span className="hcell-resize" data-resize={column.field.definition.id} />
 				</div>
 			))}
 		</div>

@@ -98,6 +98,18 @@ function RowView(props: RowProps): ReactElement {
 							}}
 						/>
 					</label>
+					{/*
+					 * The reorder handle. Structure, not content: `prototype/js/grid.js` §gutter keeps it even when
+					 * the row numbers and checkboxes are switched off, because "reorder this row" has to stay
+					 * reachable — step 20's row drag starts here, and the gutter's own box is the drop target.
+					 */}
+					<span
+						className="gutter-handle"
+						title="Drag to reorder"
+						data-row-drag={filePath}
+					>
+						⣿
+					</span>
 					<span className="gutter-index">{rowIndex + 1}</span>
 				</div>
 			) : null}

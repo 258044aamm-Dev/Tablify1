@@ -128,6 +128,9 @@ function CellView(props: CellProps): ReactElement {
 				readOnly,
 			})}
 			data-cell={`${filePath}::${fieldId}`}
+			// The column, named separately from the cell key: a pointer hit test asks "which column is under me?"
+			// and reading it out of `data-cell` would mean parsing a key that contains a file path.
+			data-field={fieldId}
 			// The roving tab stop (step 19): the active cell is the grid's one tab-reachable cell, and every other
 			// cell is reachable only by arrows or by code. Nothing else in the grid is tabbable, which is what
 			// keeps `Tab` from walking 5,000 cells.

@@ -637,3 +637,246 @@
 	padding: 0;
 	margin: 0;
 }
+
+/* ── the pointer's own surfaces (step 20) ────────────────────────────────────
+   Four things a person can grab — a column's edge, a row's handle, the fill
+   handle, a scroll thumb — and the two previews a drag paints. All of it is
+   `docs/04` §Touch's rule applied to pointers rather than fingers: the target is
+   at least as big as the thing it moves, and nothing here introduces a colour:
+   the drag state uses the identity layer's accent and line tokens only. */
+
+/* The resize edge. 6 px wide, full row height, sitting *over* the header's right
+   edge rather than next to it, so a column's width means one thing: the distance
+   between two edges. Invisible until the pane is hovered, which is why it is
+   `transparent` rather than absent — an element that appears on hover changes the
+   header's own box and makes the pointer jump. */
+.hcell {
+	position: relative;
+}
+.hcell-resize {
+	position: absolute;
+	top: 0;
+	right: calc(var(--tablify-resize-w) / -2);
+	width: var(--tablify-resize-w);
+	/* The header band's own height, from the token the grid's arithmetic reads too — never `100%`, which the
+	   layout contract forbids on anything that can sit above the scroller (docs/04 §The layout contract). */
+	height: var(--tablify-header-h);
+	cursor: col-resize;
+	background: transparent;
+	touch-action: none;
+}
+.hcell-resize:hover,
+.hcell-resize.is-resizing {
+	background: var(--tablify-accent);
+}
+
+/* The row's drag handle: the six-dot grip, in the gutter, before the number. It
+   is structure, not content — the prototype keeps it when the row numbers and
+   checkboxes are switched off, because "reorder this row" has to stay reachable. */
+.gutter-handle {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex: none;
+	width: var(--tablify-row-h);
+	height: var(--tablify-row-h);
+	color: var(--tablify-text-muted);
+	cursor: grab;
+	touch-action: none;
+	user-select: none;
+}
+.gutter-handle:hover {
+	color: var(--tablify-text);
+}
+.gutter-handle.is-dragging {
+	cursor: grabbing;
+	color: var(--tablify-accent);
+}
+
+/* The drop indicator: one line, before or after the element it will land beside.
+   A pseudo-element so the paint cannot change a box, and `pointer-events: none`
+   so the indicator never becomes the thing under the pointer it is following. */
+.is-drop-before::before,
+.is-drop-after::after {
+	content: '';
+	position: absolute;
+	z-index: 3;
+	background: var(--tablify-accent);
+	pointer-events: none;
+}
+.is-drop-before::before {
+	inset-inline-start: calc(-1px);
+	inset-block: 0;
+	width: 2px;
+}
+.is-drop-after::after {
+	inset-inline-end: calc(-1px);
+	inset-block: 0;
+	width: 2px;
+}
+/* A row's indicator runs across the row, not down its edge. */
+.grid-row.is-drop-before::before,
+.grid-row.is-drop-after::after {
+	inset-inline: 0;
+	inset-block-start: auto;
+	width: auto;
+	height: 2px;
+}
+.grid-row.is-drop-before::before {
+	inset-block-start: calc(-1px);
+}
+.grid-row.is-drop-after::after {
+	inset-block-end: calc(-1px);
+}
+
+/* The fill handle: a small square straddling the selection's bottom-right corner.
+   Positioned by a transform written in `placeFillHandle` — the same "the frame
+   writes a transform" rule the lanes follow — so it never participates in layout
+   and never makes a cell measure differently. Hidden while an editor is open and
+   while nothing is selected (`aria-hidden` in the markup: the keyboard and menu
+   equivalents are `Alt+D`/`Alt+R` and the cell menu's fill items). */
+.tablify-fill {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: var(--tablify-fill-size);
+	height: var(--tablify-fill-size);
+	background: var(--tablify-accent);
+	border: 1px solid var(--tablify-surface);
+	border-radius: 1px;
+	cursor: crosshair;
+	touch-action: none;
+	z-index: 4;
+}
+.tablify-fill.is-hidden {
+	display: none;
+}
+
+/* The fill preview: the cells the release would write. A tint, not a border —
+   a border would change the cell's box and make the grid flicker while dragging. */
+.cell.is-fill-preview {
+	background: var(--tablify-accent-subtle);
+	outline: 1px solid var(--tablify-accent);
+	outline-offset: -1px;
+}
+
+/* The scroll thumbs. `touch-action: none` because the drag *is* the scroll on
+   this axis: letting the browser pan while a thumb is captured would move the
+   scroller twice, in opposite directions. */
+.tablify-hbar-thumb,
+.tablify-vbar-thumb {
+	touch-action: none;
+}
+.tablify-hbar-thumb.is-dragging,
+.tablify-vbar-thumb.is-dragging {
+	background: var(--tablify-accent);
+}
+
+/* A drag anywhere: no text selection, no accidental image drag, and the cursor
+   the gesture deserves. Applied to the drag's own element by `dragSession`. */
+.is-dragging {
+	user-select: none;
+}
+
+/* ── the dialogs (step 20) ───────────────────────────────────────────────────
+   Obsidian's `Modal` supplies the shell, the focus trap and the scoped Escape;
+   everything below is the *body* of the five dialogs in `src/grid/dialogs/`.
+   The layout is one column: a title (the host's `titleEl`), sections, rows, and
+   a footer whose primary action is last — `docs/04` §Accessibility's reading
+   order, which is why the footer is not a flex row of two equal buttons. */
+.tablify-dlg-sub {
+	margin-bottom: var(--tablify-sp-3);
+	color: var(--tablify-text-muted);
+	line-height: 1.5;
+}
+.tablify-dlg-section {
+	margin-top: var(--tablify-sp-4);
+	margin-bottom: var(--tablify-sp-1);
+	font-weight: 600;
+	color: var(--tablify-text);
+}
+.tablify-dlg-section:first-child {
+	margin-top: 0;
+}
+.tablify-dlg-row {
+	display: flex;
+	align-items: center;
+	gap: var(--tablify-sp-3);
+	min-height: var(--tablify-tap);
+}
+.tablify-dlg-row-label {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.tablify-dlg-row-value {
+	flex: none;
+	color: var(--tablify-text-muted);
+	font-variant-numeric: var(--tablify-nums);
+}
+.tablify-dlg-hint {
+	margin: var(--tablify-sp-2) 0;
+	color: var(--tablify-text-muted);
+	line-height: 1.5;
+}
+.tablify-dlg-switch {
+	flex: none;
+	width: 16px;
+	height: 16px;
+	margin: 0;
+	cursor: pointer;
+}
+.tablify-dlg-select,
+.tablify-dlg-input {
+	flex: none;
+	min-width: 12ch;
+	min-height: var(--tablify-tap);
+}
+.tablify-dlg-input {
+	flex: 1;
+}
+.tablify-dlg-swatch {
+	flex: none;
+	width: 12px;
+	height: 12px;
+	border-radius: 50%;
+	border: 1px solid var(--tablify-line);
+	background: var(--tablify-surface-sunken);
+}
+.tablify-dlg-type {
+	display: flex;
+	align-items: center;
+	gap: var(--tablify-sp-2);
+}
+.tablify-dlg-type-icon {
+	color: var(--tablify-text-muted);
+}
+.tablify-dlg-yaml {
+	margin: 0 0 var(--tablify-sp-3);
+	padding: var(--tablify-sp-3);
+	overflow-x: auto;
+	font-family: var(--tablify-font-mono);
+	font-size: var(--tablify-fs-m);
+	line-height: 1.6;
+	background: var(--tablify-surface-sunken);
+	border: 1px solid var(--tablify-line);
+	border-radius: var(--tablify-radius-s);
+}
+.tablify-dlg-foot {
+	display: flex;
+	justify-content: flex-end;
+	gap: var(--tablify-sp-2);
+	margin-top: var(--tablify-sp-4);
+}
+.tablify-dlg-btn {
+	min-height: var(--tablify-tap);
+	padding: 0 var(--tablify-sp-4);
+	cursor: pointer;
+}
+.tablify-dlg-btn.is-primary {
+	background: var(--tablify-accent);
+	color: var(--tablify-accent-text);
+	border-color: transparent;
+}
