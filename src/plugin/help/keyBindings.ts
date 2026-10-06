@@ -1,9 +1,11 @@
 /**
  * The keyboard model, as data. Transcribed from `docs/01-spec.md` §"Core interaction model".
  *
- * This array is the single source of truth for keyboard help: the modal in `main.ts` renders it today,
- * and the real help surface in the grid milestone reuses it unchanged. No UI logic lives here, so it
- * can be unit-tested and rendered by anything.
+ * This array is the single source of truth for keyboard help: `KeyboardHelpModal.ts` (this folder) renders it,
+ * one row per binding, and `src/grid/keyboard/keyTable.ts` is the *executable* twin of the same list — the
+ * match test (`tests/unit/keybindings-match.test.ts`) holds the two in step by comparing **ids**, so wording can
+ * change freely and an action cannot quietly go missing. No UI logic lives here, so it can be unit-tested and
+ * rendered by anything.
  */
 export type KeyBinding = {
 	/** Stable id: safe as a map key and as a DOM id. */
@@ -59,6 +61,21 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
 		description: 'Clear the values in the selection.',
 	},
 	{
+		id: 'fill',
+		keys: 'Alt+D / Alt+R (also Cmd/Ctrl+D, Ctrl+R)',
+		description: 'Fill the top row of the selection down, or the left column across.',
+	},
+	{
+		id: 'escape',
+		keys: 'Escape',
+		description: 'Close the surface on top; with nothing open, clear the selection.',
+	},
+	{
+		id: 'help',
+		keys: 'F1 / ?',
+		description: 'Open this keyboard reference.',
+	},
+	{
 		id: 'context-menu',
 		keys: 'Right-click / long-press',
 		description: 'Open the context menu for the cell, row, column or selection.',
@@ -73,5 +90,36 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
 		id: 'type-ahead',
 		keys: 'Type ahead in a select cell',
 		description: 'Filter options, and create one on the fly when allowed.',
+	},
+];
+
+/**
+ * The bindings that no `keydown` in `src/grid/keyboard/handler.ts` can serve, with the reason for each.
+ *
+ * They are in this file rather than in the test because a help table is a promise: it lists things a person can
+ * do, and the question "what implements this row?" has to be answerable next to the row. The match test requires
+ * every id here to be either handled by the keyboard table or listed below — so a new row cannot be added
+ * without saying which code serves it, and a row whose code arrives later (the menus' `Shift+F10` path, the drag
+ * sessions) moves out of this list and into the table in the same step.
+ */
+export const NON_KEYBOARD_BINDINGS: readonly {
+	readonly id: string;
+	readonly reason: string;
+}[] = [
+	{
+		id: 'context-menu',
+		reason: 'A pointer gesture; its keyboard path (Shift+F10) arrives with the menus in step 20.',
+	},
+	{
+		id: 'resize-column',
+		reason: 'A drag of a column edge; the pointer session is step 20.',
+	},
+	{
+		id: 'reorder-row',
+		reason: 'A drag of the row handle; the pointer session is step 20.',
+	},
+	{
+		id: 'type-ahead',
+		reason: 'Handled by the select popover, which owns the keyboard while it is open.',
 	},
 ];

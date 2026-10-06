@@ -30,6 +30,8 @@ import type {
 } from 'react';
 
 import { editorFor } from '../editors/registry';
+import { cellRoleProps } from '../a11y/roles';
+import { cellTabIndex } from '../keyboard/focus';
 import { useCellDisplay, useCellFlags, useEditing } from '../store/selectors';
 import type { GridStore } from '../store/types';
 import type { EditSession } from '../editSession';
@@ -119,15 +121,17 @@ function CellView(props: CellProps): ReactElement {
 		<div
 			className={className}
 			style={style}
-			role="gridcell"
-			aria-rowindex={rowIndex + 1}
-			aria-colindex={columnIndex + 1}
-			aria-selected={flags.inRange}
-			{...(readOnly ? { 'aria-readonly': true, title: 'This column is read-only' } : {})}
+			{...cellRoleProps({
+				rowIndex,
+				columnIndex,
+				selected: flags.inRange,
+				readOnly,
+			})}
 			data-cell={`${filePath}::${fieldId}`}
-			// Programmatic focus only: an edit hands focus back to the cell it was editing, and step 19's roving
-			// tabindex is what makes exactly one cell tab-reachable.
-			tabIndex={-1}
+			// The roving tab stop (step 19): the active cell is the grid's one tab-reachable cell, and every other
+			// cell is reachable only by arrows or by code. Nothing else in the grid is tabbable, which is what
+			// keeps `Tab` from walking 5,000 cells.
+			tabIndex={cellTabIndex(flags.active)}
 			onPointerDown={onPointerDown}
 			onDoubleClick={onDoubleClick}
 		>

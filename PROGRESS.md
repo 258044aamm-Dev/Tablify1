@@ -3,12 +3,21 @@
 - Milestone: M0 — Foundation (complete) · M1 — Core domain (complete) · M2 — Data layer (complete) ·
   **M3 — Grid v1 (in progress)**
   Branch: main
-- Last completed step: **step 18 — the cell editors: one per type, behind one registry, committing through
+- Last completed step: **step 19 — the keyboard, the focus contract and the accessible names.** One `keydown`
+  listener on the grid root in the capture phase, a declared event → intent table, a roving `tabindex` that
+  leaves **exactly one** element tabbable, one polite live region, the ARIA roles built by functions instead of
+  spread into three components, and a keyboard help surface that renders the binding list itself — one row per
+  binding, no prose. Two real product bugs were found by the end-to-end test rather than by reading: React's
+  `onFocus` is `focusin` (it bubbles), so the grid re-focused the active cell for *any* focus inside it and every
+  freshly mounted editor was blurred the instant it opened; and a handled keystroke could reach the surface it
+  had just opened. 1140 tests, 36 files; `eslint .` 0 errors, 0 warnings.
+
+- Before that: **step 18 — the cell editors: one per type, behind one registry, committing through
   the store.** Nothing writes per keystroke: a cell edit ends in exactly one `setCell`, one queued batch and one
   undo step, and a value the column cannot read is refused on screen rather than guessed at. The registry keys
   on the **descriptor's declared editor id**, so this step never branches on a type and the mapping is one
   table. `editSession.ts` is the state machine behind it (idle → editing → committing → idle) and it is tested
-  without React. 1046 tests, 32 files; `eslint .` 0 errors, 0 warnings.
+  without React. 1049 tests, 32 files.
 
 - Before that: **step 17 — the grid view: one scroller, three sticky lanes, and a windowed row lane.**
   Rows live inside the one scroller as a windowed layer; the header, the frozen column and the corner are
@@ -59,7 +68,143 @@
 
 ---
 
+**Step 19 — the keyboard, the focus contract and the accessible names.**
+
+- Verified (`bun run check` — raw, exit 0): `tsc --noEmit` clean; `eslint .` **0 errors, 0 warnings**;
+  `brand-gate: OK — 61 permitted match(es), 0 violations`; `manifest:check: OK`; Prettier clean;
+  **1140 tests across 36 files** (was 1049 / 32: +91 tests, +4 files — `tests/unit/keyboard-table.test.ts` 32,
+  `tests/unit/keybindings-match.test.ts` 30, `tests/dom/focus-contract.test.tsx` 10, `tests/dom/keyboard.test.tsx`
+  19); `contrast: OK — all 32 gated checks pass (light, dark)`; `css-gate: OK — 4 file(s) under src/styles,
+  18112 bytes of built styles.css, no bang-important, 51 colour literal(s) all inside the identity layer,
+  170 token declaration(s), no percentage or viewport heights`; `bundle-size: OK` —
+  `main.js raw 360309 bytes (351.86 KB)` / `gzip 111910 bytes (109.29 KB)`.
+
+- **The keyboard is one listener, one table, and one decision.** `src/grid/keyboard/handler.ts` attaches a single
+  `keydown` listener to the **grid root, in the capture phase**: capture because the grid has to see `Tab` and
+  `Enter` before an open editor consumes them (the commit-and-move follow-up lives here, not in each editor), one
+  listener because a listener per cell is a leak dressed as locality. It ignores composition (`isComposing`, key
+  `Process`) so an IME is never half-eaten, stands down on `contentEditable` targets, and calls
+  `preventDefault` **only when the dispatcher said it handled the intent** — which is why `Cmd+C` still copies a
+  selection of text today. `attachGridKeyboard(root, port)` is exported as a standalone so its attach/detach
+  contract is testable without a grid, and `GridView` detaches it on unmount; there is **no** listener on
+  `document` or `window` anywhere in `src/grid`.
+
+- **The table is data, and the help surface is the same data.** `keyBindings.ts` (step 03) listed the bindings
+  the docs name; `keybindings-match.test.ts` holds it against `src/grid/keyboard/keyTable.ts` — 26 rows of
+  `{ id, keys, example, intent?, reason? }`, each row carrying a **real example event** so a test proves the row
+  is not aspirational: the example is fed through the matcher and must resolve to that row's id. Escape, `F1`/`?`
+  and the fill pair needed ids the spec does not enumerate, so **three ids were added to `keyBindings.ts`**
+  (`escape`, `help`, `fill`) rather than invented in the table; the remaining four rows the keyboard genuinely
+  cannot serve (`context-menu`, `resize-column`, `reorder-row`, `type-ahead`) are listed with their **reason** in
+  `NON_KEYBOARD_BINDINGS`, and the match test requires every id to be in exactly one of the two lists. Wording
+  is free; an action cannot quietly go missing.
+
+- **The help surface is a table, not a page.** `src/plugin/help/KeyboardHelpModal.ts` is a real Obsidian `Modal`
+  rendering `KEY_BINDINGS` — one `<tr>` per binding, no prose, no blurb — and the command keeps its step-03 id
+  `open-keyboard-help`. The inline modal that had been sitting in `src/plugin/main.ts` since step 03 was
+  deleted; `main.ts` now only wires the command to that class, and `src/grid/**` still never imports `obsidian`.
+  Because `Modal` owns the focus trap and the scoped `Escape`, the grid hands the whole surface over and gets it
+  back, which is the interaction `docs/04` §Accessibility asks for.
+
+- **Accessibility was made assertable rather than asserted.** `src/grid/a11y/roles.tsx` builds the root, row and
+  cell roles/ARIA in three small functions (`gridRoleProps`, `rowRoleProps`, `cellRoleProps`) that the components
+  spread; the values are the ones the grid already rendered in steps 17–18, so nothing about the output changed —
+  what changed is that a unit test can now name them. `cellTabIndex(active)` / `rootTabIndex(hasSelection)` are
+  the roving model: the root is the tab stop while nothing is selected and the active cell takes it over after,
+  so **exactly one element in the grid is ever tabbable** (asserted on the rendered DOM, `[tabindex="0"]` count
+  = 1). `aria-activedescendant` is deliberately **not** used: `docs/04` says real focus moves.
+
+- **Every move ends inside a mounted cell, including the ones that are 4,900 rows away.**
+  `src/grid/keyboard/focus.ts` is the arithmetic: `revealOffset` inverts the windowing's own band
+  (`clientHeight - headerHeight`, the rows may not draw under the header), `revealElement` moves the scroller by
+  rect and never calls `scrollIntoView()` (which walks up Obsidian's own panes), `revealRowIndex` handles the
+  cell that has **no element yet** — the caller waits one `requestAnimationFrame` for the window to catch up —
+  and `focusCell` falls back to the root so a vanished row leaves the keyboard in the grid instead of on
+  `document.body`. `revealOffset` is pure and unit-tested; the DOM half is asserted where it can be (jsdom
+  measures nothing, and that limit is stated in the test file).
+
+- **The focus contract, in one helper.** `src/grid/a11y/focusContract.ts` is a stack of open surfaces
+  (`grid-popover`, `menu`, `dialog`, `help`) that **records the opener**, restores focus on close **only if focus
+  was lost**, and never steals focus from a surface that opened in the meantime: closing a menu behind a dialog
+  answers `kept`, and a second `Escape` is a no-op (`none`) rather than a second restore. A detached opener is
+  never focused — that answers `lost` and the focus is left where the browser put it. The grid's own handler
+  routes `Escape` to exactly one owner per surface kind, and the tests assert the ownership table is complete
+  for every kind.
+
+- **Announcements are the write report, not a guess.** `announcementOf({lastError, lastApply})` turns the store's
+  last action into one sentence — *"3 cells updated in 3 notes"*, *"N cells updated, K read-only"*, or the
+  failure reason — and the grid owns a single polite live region (`.tablify-live`, visually hidden, appended to
+  `src/styles/grid.css`). One region, replaced text, no `role="alert"`: a screen reader hears the result of the
+  operation the user just performed, once.
+
+- **Two real product bugs, found by the end-to-end test rather than by reading, and both fixed in the source:**
+  1. **`Enter` never opened an editor.** React's `onFocus` is `focusin`, which **bubbles**: the grid root's
+     `onRootFocus` therefore fired for focus landing on the newly mounted input, asked for the active cell
+     again, blurred the input, and the blur committed the empty draft — the editor closed the instant it opened.
+     Instrumented until the sequence was plain (`openEditor → onActiveChange(ref)` then `ANNOUNCE null` one tick
+     later). Fix: `if (event.target !== event.currentTarget) return;` in `onRootFocus`, with the bug recorded in
+     the comment — this is the guard, not the theory.
+  2. **The keystroke that opens a surface could reach it.** `handler.ts` now calls `stopPropagation()` after
+     `preventDefault()` once an intent is handled, so the `Enter` that opens an editor cannot also be seen by the
+     input that editor just autofocused.
+  A third came out of making the step green: `onFinish` had been rewritten to hand focus to *whatever is active*,
+  which is right after a commit key but wrong for the **double-click** path — an editor opened by double-click
+  never selected its cell, so the focus fell to the root. `onFinish(ref)` now moves the grid only when a commit
+  key was pressed **and** the grid has a selection; otherwise the cell the edit belonged to takes the focus back.
+
+- **Selection semantics were verified rather than assumed** (a probe against a 3 × 4 grid drove this): a plain
+  arrow moves anchor and focus together; `Shift+Arrow` extends and leaves the anchor where it was; the opposite
+  arrow collapses the range back to a single cell. `PageUp`/`PageDown` move the active cell by a **measured**
+  screen (`viewportHeight / rowHeight`) in **one** selection change, keeping the column.
+
+- **Decisions taken inside this step, recorded rather than asked** (each is a doc-level question, none blocked
+  the work):
+  1. `Escape` closes the top surface and, with nothing open, **clears the selection** — the second half of the
+     binding is new, and `docs/01` does not say it.
+  2. **`Ctrl+R` is bound and is known to be claimed elsewhere.** The prototype's own help text promises
+     `Ctrl+D` / `Ctrl+R` *and* `Alt+D` / `Alt+R`; the browser claims `Ctrl+D` (bookmark) and `Ctrl+R` (reload),
+     and Obsidian's Electron shell claims `Ctrl+R` for *Reload app without saving*. The table therefore **leads
+     with `Alt+D` / `Alt+R`** and accepts `Cmd/Ctrl+D` and `Ctrl+R` where they arrive. If the human wants one
+     answer, delete the second half of the pair — the table row is the single place to change it.
+  3. `Space` toggles a checkbox on a checkbox cell and **starts an edit** everywhere else (typing a space is a
+     real thing a person does); `F2` opens an editor as `Enter` does; `Delete` and `Backspace` are the same key.
+  4. `commit-move` is recorded, not dispatched: the editor commits, the grid listens, and only a **successful**
+     commit moves the selection — a cancel must not move anything.
+  5. `bulk-edit` (`Cmd/Ctrl+Enter`) writes the value to **every cell of the selection in one batch** through
+     `setCells`, so it is one undo step, which is a stronger guarantee than the spec's "bottom-up" wording needs.
+  6. The old note that "nothing accepts keyboard input yet" is gone from the help surface, because it is no
+     longer true.
+
+- Open questions for the human:
+  1. **`docs/01` §"Core interaction model" does not enumerate `Escape`, `F1`/`?` or the fill pair.** The binding
+     list in `src/plugin/help/keyBindings.ts` is now the fullest statement of the keyboard model in the repo, and
+     it is the surface a user reads. Either promote it into the doc or accept the code as the source.
+  2. **`Ctrl+R` / `Ctrl+D`** (above) — one decision, one line in the help table.
+  3. (carried) `docs/04` §Touch's 44 × 44 floor vs §Mobile's 40 px row — answered for editors and again here for
+     the 40 px editor row; the doc still states both without naming the exception.
+  4. (carried) `docs/02` §Grid rendering's sticky-lane description; `docs/01` §undo; `docs/02` §Store's
+     `Command`; `@standard-schema/spec`; `docs/04` §cell-rendering; `attachment` links; the layout guard;
+     `docs/09` line 33.
+
+- Next step: `prompts/step-20-pointer.md` — the pointer layer: `src/grid/pointer/{dragSession,resizeColumn,
+  reorderColumn,reorderRow,fillHandle}.ts` (a 4 px threshold before a drag counts, pointer capture, one undo step
+  per finished drag) plus the scrollbar dragging the prototype proved out.
+
+- Files touched in **step 19**: new — `src/grid/a11y/{roles.tsx,focusContract.ts}`,
+  `src/grid/keyboard/{focus.ts,handler.ts,keyTable.ts}`, `src/plugin/help/KeyboardHelpModal.ts` (the help surface
+  the step-03 command now opens), `tests/unit/{keyboard-table,keybindings-match}.test.ts`,
+  `tests/dom/{focus-contract.test.tsx,keyboard.test.tsx}`; changed — `src/plugin/help/keyBindings.ts` (the three
+  added ids and `NON_KEYBOARD_BINDINGS`), `src/grid/GridView.tsx` (the keyboard block, the bulk-aware commit, the
+  roving tabindex, the live region, the focus effect), `src/grid/rows/Cell.tsx` (the role builder and the roving
+  `tabindex`; the frozen lane's cells are the same component and inherit both), `src/plugin/main.ts` (the inline
+  modal deleted), `src/plugin/TablifyView.ts` (`onHelp`), `src/styles/grid.css` + the built `styles.css`
+  (`.tablify-live`), `eslint.config.mts` (the two pure `tests/unit` modules and the dom tests, each with its
+  reason), `tests/dom/editors.test.tsx` (`process` imported rather than used as a bare global),
+  `tests/mocks/obsidian.ts` (`Modal` gained the virtual `onOpen`/`onClose` its real counterpart calls — without
+  them a subclass's `onOpen` never ran, which is a double that lies), `PROGRESS.md`.
+
 **Step 18 — the cell editors, the registry, and the edit session.**
+
 
 - Verified (`bun run check` — raw, exit 0): `tsc --noEmit` clean; `eslint .` **0 errors, 0 warnings**;
   `brand-gate: OK — 61 permitted match(es), 0 violations`; `manifest:check: OK`; Prettier clean;

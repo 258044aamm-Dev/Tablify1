@@ -33,6 +33,7 @@ import { createBasesSource } from '../adapters/bases/BasesSource';
 import type { BasesRowHost, BasesViewHost, CellProblem } from '../adapters/bases/BasesSource';
 import type { ApplyResult } from '../adapters/RowSource';
 import { GridView } from '../grid/GridView';
+import { KeyboardHelpModal } from './help/KeyboardHelpModal';
 import { createGridStore } from '../grid/store/store';
 import type { GridStore } from '../grid/store/types';
 import { DEFAULT_SETTINGS } from './settings/schema';
@@ -206,6 +207,9 @@ export class TablifyView extends BasesView {
 					onNewRow: () => {
 						void this.createRow();
 					},
+					onHelp: () => {
+						this.openHelp();
+					},
 				}),
 			);
 		}
@@ -368,8 +372,20 @@ export class TablifyView extends BasesView {
 				onNewRow: () => {
 					void this.createRow();
 				},
+				onHelp: () => {
+					this.openHelp();
+				},
 			}),
 		);
+	}
+
+	/**
+	 * The keyboard reference, opened by `F1`/`?` from inside the grid (step 19's key table routes those keys
+	 * here) and by the `open-keyboard-help` command in `main.ts`. One surface, two doors, and the grid never
+	 * learns what a `Modal` is — it asks a callback, exactly as it does for a new row.
+	 */
+	private openHelp(): void {
+		new KeyboardHelpModal(this.app).open();
 	}
 
 	/** Called by the plugin when the view closes: release listeners, timers and queued writes. */

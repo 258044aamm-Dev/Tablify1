@@ -161,8 +161,19 @@ export class Modal {
 		// Real signature: Modal(app: App). The double accepts anything.
 	}
 
+	/**
+	 * `Modal.onOpen()` / `Modal.onClose()` (obsidian.d.ts, @since 0.9.16) are virtual, and the real `open()` and
+	 * `close()` call them. The double has to do the same or a subclass's rendering — the keyboard help surface is
+	 * a loop over `KEY_BINDINGS` in `onOpen` — would never run in a test, and "the modal opened" would be the only
+	 * thing anyone could assert.
+	 */
+	onOpen(): void {}
+
+	onClose(): void {}
+
 	open(): void {
 		openedModals.push(this);
+		this.onOpen();
 	}
 
 	close(): void {
@@ -170,6 +181,7 @@ export class Modal {
 		if (index >= 0) {
 			openedModals.splice(index, 1);
 		}
+		this.onClose();
 	}
 }
 

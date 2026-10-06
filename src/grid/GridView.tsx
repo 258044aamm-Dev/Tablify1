@@ -33,8 +33,8 @@
  * something can make one — that is the view's job (`TablifyView` calls `createFileForView`), and this component
  * takes it as a callback. Without a callback the button is absent rather than inert.
  */
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, ReactElement } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties, FocusEvent as ReactFocusEvent, ReactElement } from 'react';
 
 import { Empty } from './Empty';
 import { FrozenLane } from './FrozenColumn';
@@ -46,20 +46,47 @@ import type { ColumnView } from './rows/Row';
 import { Toolbar } from './Toolbar';
 import { DEFAULT_COLUMN_WIDTH, FALLBACK_HEADER_HEIGHT, resolvePresentation } from './layout';
 import { readHeaderHeight } from './measure';
-import { selectLaneItems, useStore } from './store/selectors';
-import { clearSelection, selectCell, setCell, setSelection, toggleGroup } from './store/commands';
+import { selectCellDisplay, selectLaneItems, useStore } from './store/selectors';
+import {
+	clearSelection,
+	extendSelection,
+	fillDown,
+	fillRight,
+	redo,
+	selectCell,
+	setCell,
+	setCells,
+	setSelection,
+	toggleGroup,
+	undo,
+} from './store/commands';
 import { createEditSession } from './editSession';
 import { useWindow } from './useWindow';
 import type { ScrollPosition } from './useWindow';
 import { usePinnedPrimary } from './usePinnedPrimary';
 import { windowSlice } from './store/window';
-import { rowRange } from '../core/selection/range';
+import { attachGridKeyboard } from './keyboard/handler';
+import type { GridIntent, KeyContext } from './keyboard/handler';
+import {
+	cellKey,
+	focusCell,
+	queryCell,
+	revealElement,
+	revealRowIndex,
+	rootTabIndex,
+	tabStop,
+} from './keyboard/focus';
+import { announcementOf, gridRoleProps, LiveRegion } from './a11y/roles';
+import { allOf, cellPosition, cellsOf, rowRange } from '../core/selection/range';
 import type { EditSession } from './editSession';
 import type { GridPresentation } from './layout';
 import type { GridStore } from './store/types';
-import type { CellRef, RowId } from '../core/ops/types';
+import type { CellRef, CellWrite, RowId } from '../core/ops/types';
 import type { CellValue } from '../core/types';
 import type { LaneItem } from './store/selectors';
+import type { ResolvedField } from '../core/schema/propertySchema';
+import type { CommandResult } from './store/commands';
+import type { Edge, Range, RangeOrder } from '../core/selection/range';
 
 export type GridViewProps = {
 	readonly store: GridStore;
@@ -80,11 +107,17 @@ export type GridViewProps = {
 	 * the attachment editor simply cannot promise a file exists — see that file's header.
 	 */
 	readonly resolveLink?: ((path: string) => boolean) | undefined;
+	/**
+	 * Opens the keyboard reference — `F1` and `?` press it (step 19's key table). The grid does not own that
+	 * surface: a modal is the host's, and `src/grid/**` does not import `obsidian`. Omit it and the two keys are
+	 * simply left to the browser, which is honest — a help key that opened nothing would be worse.
+	 */
+	readonly onHelp?: (() => void) | undefined;
 };
 
 export function GridView(props: GridViewProps): ReactElement {
 	const { store, presentation: patch, initialPaneWidth = 0, onNewRow, onClearFilters } = props;
-	const { resolveLink } = props;
+	const { resolveLink, onHelp } = props;
 	const presentation = useMemo(() => resolvePresentation(patch), [patch]);
 
 	const rootRef = useRef<HTMLDivElement | null>(null);
@@ -101,6 +134,8 @@ export function GridView(props: GridViewProps): ReactElement {
 	// disagree. Until that read happens (a jsdom test, or the instant before the first paint) the documented
 	// fallback applies — the same 40 px the token holds.
 	const [headerHeight, setHeaderHeight] = useState(FALLBACK_HEADER_HEIGHT);
+	/** Bumped when focus has to move; the layout effect below is the only consumer. See `requestFocus`. */
+	const [focusTick, setFocusTick] = useState(0);
 	useLayoutEffect(() => {
 		const measured = readHeaderHeight(rootRef.current);
 		if (measured > 0) {
@@ -114,7 +149,46 @@ export function GridView(props: GridViewProps): ReactElement {
 	const totalRows = useStore(store, (snapshot) => snapshot.result.totalRows);
 	const visibleRowCount = useStore(store, (snapshot) => snapshot.rows.length);
 
+	/**
+	 * Two narrow channels, both of them primitives, which is what keeps a keystroke cheap:
+	 *
+	 *  · `hasSelection` a boolean — the grid's own `tabindex` and the "first cell is the way in" rule follow it,
+	 *    and a boolean only re-renders this component when it flips, not on every arrow key.
+	 *  · `activeKey` the active cell as a *string* (`filePath::fieldId`), compared with `Object.is` — so the
+	 *    focus effect below runs when the active cell moves and not once per revision. The ref itself is read
+	 *    from the snapshot inside the effect, where a fresh object is free.
+	 */
+	const hasSelection = useStore(store, (snapshot) => snapshot.active !== null);
+	const activeKey = useStore(store, (snapshot) =>
+		snapshot.active === null ? null : cellKey(snapshot.active),
+	);
+	/** The polite announcement (`docs/04`: "412 cells updated in 137 notes"), derived from the write report. */
+	const announcement = useStore(store, announcementOf);
+
 	const pinned = usePinnedPrimary(areaRef, presentation.frozenPrimary, initialPaneWidth);
+
+	/**
+	 * The keyboard's four pieces of scratch state, all refs because none of them is a picture of the UI:
+	 *
+	 *  · `pendingFocusRef` — a move happened and DOM focus has to follow it, on the next commit rather than
+	 *    inside the key handler (the DOM a handler sees is the DOM *before* React applies the selection change).
+	 *  · `pendingMoveRef` — a *commit key* was pressed while an editor was open. The editor commits or cancels;
+	 *    if it committed, the selection moves (down for `Enter`, sideways for `Tab`).
+	 *  · `bulkRef` — the open editor belongs to `Cmd/Ctrl+Enter`, so its commit writes the whole range.
+	 *  · `committedRef` — the last `finish()` was a successful write, not a cancel. `onFinish` fires for both,
+	 *    and moving the selection after a cancel would be a bug nobody attributes to the keyboard.
+	 */
+	const pendingFocusRef = useRef(false);
+	/**
+	 * Where that focus goes: `null` means "whatever is active now", which is the right answer for every
+	 * *move*. A finished edit passes the cell it belonged to instead, because an edit is not a move: the
+	 * session's last act is to hand its cell back (`editSession.ts` §`onFinish`), and in the double-click
+	 * path the cell that was edited never became the active cell in the first place.
+	 */
+	const focusTargetRef = useRef<CellRef | null>(null);
+	const pendingMoveRef = useRef<'down' | 'forward' | 'backward' | null>(null);
+	const bulkRef = useRef(false);
+	const committedRef = useRef(false);
 
 	/**
 	 * The one edit session. Built once per store: `useState` with an initialiser rather than `useMemo`, because
@@ -127,7 +201,15 @@ export function GridView(props: GridViewProps): ReactElement {
 	const [session] = useState<EditSession>(() =>
 		createEditSession({
 			commit: (ref, value) => {
-				const result = setCell(store, ref, value as CellValue);
+				// The session hands the editor's value through as `unknown`, so this is the one place a canonical
+				// value is named. Everything below works on that value and nothing re-parses it.
+				const canonical = value as CellValue;
+				const writes = bulkWrites(store, bulkRef.current, canonical);
+				const result =
+					writes === null
+						? setCell(store, ref, canonical)
+						: setCells(store, writes, 'Edit the column');
+				committedRef.current = result.ok;
 				return result.ok ? { ok: true } : { ok: false, reason: result.reason };
 			},
 			parse: (ref, draft) => {
@@ -151,19 +233,24 @@ export function GridView(props: GridViewProps): ReactElement {
 			onActiveChange: (ref) => {
 				store.setEditing(ref);
 			},
-			// Focus goes back to the cell that was being edited, so the grid is where the keyboard left it.
+			// The follow-up to a finished edit: clear the gesture's flags, move the selection if a commit key asked
+			// for it, and hand focus to whatever is active now.
 			onFinish: (ref) => {
-				const area = areaRef.current;
-				if (area === null) {
+				bulkRef.current = false;
+				const move = pendingMoveRef.current;
+				const wrote = committedRef.current;
+				pendingMoveRef.current = null;
+				committedRef.current = false;
+				// A commit key moves the grid on, but only if the grid *has* a selection to move: a double-click
+				// opens an editor without ever selecting the cell, and there the edited cell takes the focus back.
+				if (wrote && move !== null && store.getSnapshot().active !== null) {
+					nudge(store, move);
+					requestFocus();
 					return;
 				}
-				const target =
-					ref === null
-						? null
-						: area.querySelector<HTMLElement>(
-								`[data-cell="${ref.filePath}::${ref.fieldId}"]`,
-							);
-				(target ?? rootRef.current)?.focus();
+				// Everything else — a cancel, a blur, the `Save` button on a long text — hands focus back to the
+				// cell the edit belonged to, which is the contract `docs/01` §Core interaction model states.
+				requestFocus(ref);
 			},
 		}),
 	);
@@ -227,7 +314,7 @@ export function GridView(props: GridViewProps): ReactElement {
 		[headerHeight],
 	);
 
-	const { window: rowWindow } = useWindow({
+	const { window: rowWindow, viewportHeight } = useWindow({
 		scroller: scrollerRef,
 		area: areaRef,
 		rowHeight: presentation.rowHeight,
@@ -245,6 +332,296 @@ export function GridView(props: GridViewProps): ReactElement {
 		[sliced],
 	);
 	const firstRowIndex = rowItems[0]?.rowIndex ?? 0;
+
+	/* ── the keyboard ───────────────────────────────────────────────────────────────────────────────────── */
+
+	/**
+	 * A page is what the pane shows: the band the rows may draw in, divided by the row height. Measured state
+	 * (`useWindow`'s `viewportHeight`), never assumed — a `tall` density in a short pane is four rows, and
+	 * `PageDown` had better move four.
+	 */
+	const pageRows = Math.max(1, Math.floor(viewportHeight / presentation.rowHeight));
+
+	/**
+	 * Where each row sits in the *lane* — the windowing's own index, which is what a reveal needs. A `Map`
+	 * rather than a `findIndex` per key press: the lane holds thousands of items and a key press should cost
+	 * nothing that scales with the table.
+	 */
+	const rowItemIndex = useMemo(() => {
+		const map = new Map<RowId, number>();
+		for (const [index, item] of items.entries()) {
+			if (item.kind === 'row') {
+				map.set(item.filePath, index);
+			}
+		}
+		return map;
+	}, [items]);
+
+	/**
+	 * Asks for focus to follow the active cell — or, when a target is given, that exact cell — once React has
+	 * applied the change. The request is remembered in a ref rather than acted on here: the DOM a handler sees
+	 * is the DOM *before* this commit, and the cell being asked for may not exist yet.
+	 */
+	const requestFocus = useCallback((target: CellRef | null = null): void => {
+		pendingFocusRef.current = true;
+		focusTargetRef.current = target;
+		setFocusTick((tick) => tick + 1);
+	}, []);
+
+	/**
+	 * The one place DOM focus is placed. It runs after every commit that could have moved the active cell, and
+	 * does nothing unless something asked for it — which is what keeps a scroll or a toolbar click from stealing
+	 * the keyboard.
+	 *
+	 * Two paths, because rows are windowed: a mounted cell is revealed with the rects the browser already has;
+	 * a cell with **no element** (the `Ctrl+End` case) is reached with the windowing's own arithmetic
+	 * (`revealRowIndex`), and the second attempt happens one frame later, when the scroll read has mounted it.
+	 */
+	useLayoutEffect(() => {
+		if (!pendingFocusRef.current) {
+			return;
+		}
+		pendingFocusRef.current = false;
+		const requested = focusTargetRef.current;
+		focusTargetRef.current = null;
+		const root = rootRef.current;
+		const target = requested ?? store.getSnapshot().active;
+		if (root === null) {
+			return;
+		}
+		if (target === null) {
+			// No cell to land on (the selection was let go): the root keeps the keyboard, so the next arrow
+			// key still belongs to the grid instead of scrolling the application behind it.
+			focusCell(root, null);
+			return;
+		}
+		const cell = queryCell(root, target);
+		if (cell !== null) {
+			revealElement(scrollerRef.current, cell, headerHeight);
+			focusCell(root, target);
+			return;
+		}
+		revealRowIndex(
+			scrollerRef.current,
+			headerHeight,
+			rowItemIndex.get(target.filePath) ?? -1,
+			presentation.rowHeight,
+		);
+		window.requestAnimationFrame(() => {
+			revealElement(scrollerRef.current, queryCell(rootRef.current, target), headerHeight);
+			focusCell(rootRef.current, target);
+		});
+	}, [activeKey, focusTick, headerHeight, presentation.rowHeight, rowItemIndex, store]);
+
+	/**
+	 * Focus landing on the grid **itself** is routed to the active cell — *"focusing the grid restores the last
+	 * active cell"* — while a focus that lands on a cell, or on an open editor's input, is already where it
+	 * should be. With nothing selected the root keeps the focus: it is the tab stop, and the first arrow key
+	 * starts from the first cell anyway (`extendSelection` defaults to the top-left when there is no range).
+	 *
+	 * The `target !== currentTarget` guard is load-bearing and was found by a test, not by reading: React's
+	 * `onFocus` is `focusin`, so it bubbles — without the guard, *any* focus inside the grid asked for a re-focus
+	 * of the active cell, which blurred the editor's input the instant it mounted, which committed the empty
+	 * draft, which closed the editor. The symptom was "Enter never opens an editor"; the cause was this line.
+	 */
+	const onRootFocus = useCallback(
+		(event: ReactFocusEvent<HTMLDivElement>): void => {
+			if (event.target !== event.currentTarget) {
+				return;
+			}
+			if (store.getSnapshot().active !== null) {
+				requestFocus();
+			}
+		},
+		[store, requestFocus],
+	);
+
+	/** Whether the cell can be edited at all: the same predicate `editorFor` applies (step 18's registry). */
+	const editableField = useCallback(
+		(ref: CellRef): ResolvedField | null => {
+			const field = store
+				.getSnapshot()
+				.fields.find((candidate) => candidate.definition.id === ref.fieldId);
+			if (field === undefined || field.readOnly || !field.descriptor.editable) {
+				return null;
+			}
+			return field;
+		},
+		[store],
+	);
+
+	/**
+	 * Opens the session on a cell. Used by three intents (`Enter`/`F2`, typing, `Cmd/Ctrl+Enter`) and the
+	 * double-click in `Cell` — the difference between them is only the draft it starts with and whether the
+	 * commit fans out over the range.
+	 */
+	const openEditor = useCallback(
+		(ref: CellRef, text: string, bulk: boolean): boolean => {
+			if (editableField(ref) === null) {
+				return false;
+			}
+			bulkRef.current = bulk;
+			// If a previous editor could not commit, it stays open with its error and this call does nothing —
+			// the key was still handled (the grid refused), which is what keeps the draft from being split.
+			session.open(ref, text);
+			return true;
+		},
+		[editableField, session],
+	);
+
+	/** What the resolver needs to know right now. Read per key press: a stale context is a wrong decision. */
+	const readContext = useCallback((): KeyContext => {
+		const snapshot = store.getSnapshot();
+		if (snapshot.editing !== null) {
+			return { editing: true, checkbox: false, pageRows };
+		}
+		const ref = snapshot.active;
+		const field = ref === null ? null : editableField(ref);
+		return {
+			editing: false,
+			// The declared editor id, exactly as `registry.tsx` keys on it — never a re-derivation from the type.
+			checkbox: field !== null && field.descriptor.editor === 'checkbox',
+			pageRows,
+		};
+	}, [store, editableField, pageRows]);
+
+	/**
+	 * Runs one intent. `false` means "the grid did not act on this", which is what lets the key through untouched
+	 * (`handler.ts` prevents the default only when this answered `true`).
+	 */
+	const runIntent = useCallback(
+		(intent: GridIntent): boolean => {
+			switch (intent.id) {
+				case 'move':
+				case 'navigate-edges': {
+					const snapshot = store.getSnapshot();
+					const steps = intent.id === 'navigate-edges' ? intent.steps : 1;
+					const result =
+						steps > 1 && snapshot.active !== null
+							? pageMove(store, snapshot.active, intent.edge, steps, intent.extend)
+							: extendSelection(store, intent.edge, intent.extend);
+					if (!result.ok) {
+						return false;
+					}
+					requestFocus();
+					return true;
+				}
+				case 'edit':
+				case 'bulk-edit': {
+					const ref = store.getSnapshot().active;
+					if (ref === null) {
+						return false;
+					}
+					return openEditor(
+						ref,
+						selectCellDisplay(store.state(), ref),
+						intent.id === 'bulk-edit',
+					);
+				}
+				case 'type-to-replace': {
+					const ref = store.getSnapshot().active;
+					if (ref === null) {
+						return false;
+					}
+					return openEditor(ref, intent.text, false);
+				}
+				case 'commit-tab': {
+					const snapshot = store.getSnapshot();
+					const from = snapshot.active;
+					if (from === null) {
+						return false;
+					}
+					const target = tabStop(snapshot.order, from, intent.direction);
+					// `null` is the edge of the grid: the key stops being ours and the browser moves focus on —
+					// which is the doc's rule for `Tab` (*move within the grid, and leave the grid at the last cell*).
+					if (target === null) {
+						return false;
+					}
+					selectCell(store, target);
+					requestFocus();
+					return true;
+				}
+				case 'toggle-checkbox': {
+					const ref = store.getSnapshot().active;
+					if (ref === null) {
+						return false;
+					}
+					const field = editableField(ref);
+					if (field === null) {
+						return false;
+					}
+					return setCell(store, ref, checkboxNext(field, store, ref)).ok;
+				}
+				case 'select-all': {
+					const snapshot = store.getSnapshot();
+					const range = selectAllRange(snapshot.order, snapshot.active);
+					if (range === null) {
+						return false;
+					}
+					setSelection(store, range);
+					return true;
+				}
+				case 'clear':
+					return clearSelection(store).ok;
+				case 'escape': {
+					if (store.getSnapshot().selection === null) {
+						return false;
+					}
+					// Nothing is open (an open editor never reaches here — it owns the keyboard), so Escape means
+					// "let go of the selection". The doc's word for it is the second half of the same key.
+					setSelection(store, null);
+					return true;
+				}
+				case 'undo-redo': {
+					const result = intent.verb === 'undo' ? undo(store) : redo(store);
+					return result.ok;
+				}
+				case 'fill': {
+					const result = intent.direction === 'down' ? fillDown(store) : fillRight(store);
+					return result.ok;
+				}
+				case 'help':
+					onHelp?.();
+					return onHelp !== undefined;
+				case 'clipboard':
+					// Step 22 wires what is on the clipboard (TSV + HTML, three paste modes). Until then the key is
+					// *not handled*, so `Cmd+C` still copies the text a person selected and nothing is swallowed.
+					return false;
+				case 'commit-move':
+					// Observed, never dispatched: `handler.ts` routes it to `onCommitKey`, and the follow-up happens
+					// in `onFinish` once the editor has actually committed.
+					return false;
+				default:
+					return false;
+			}
+		},
+		[store, requestFocus, openEditor, editableField, onHelp],
+	);
+
+	/** A commit key pressed inside an open editor: recorded now, applied when the editor finishes. */
+	const onCommitKey = useCallback((intent: GridIntent): void => {
+		pendingMoveRef.current = intent.id === 'commit-move' ? intent.direction : null;
+	}, []);
+
+	/**
+	 * The one listener. Attached to the grid root (never to `document`) and detached with the view, and it is
+	 * capture-phase on purpose: the grid has to *see* `Tab` before an open editor consumes it, or the follow-up
+	 * move after a commit could never happen.
+	 */
+	useEffect(() => {
+		const root = rootRef.current;
+		if (root === null) {
+			return;
+		}
+		const attachment = attachGridKeyboard(root, {
+			context: readContext,
+			dispatch: runIntent,
+			onCommitKey,
+		});
+		return () => {
+			attachment.detach();
+		};
+	}, [readContext, runIntent, onCommitKey]);
 
 	const onActivate = useCallback(
 		(ref: CellRef, extend: boolean): void => {
@@ -300,12 +677,16 @@ export function GridView(props: GridViewProps): ReactElement {
 		<div
 			className="tablify-root"
 			ref={rootRef}
-			role="grid"
-			aria-label="Tablify grid"
-			aria-rowcount={visibleRowCount}
-			aria-colcount={columns.length}
-			// The grid is one tab stop; the roving tabindex inside it is step 19's contract.
-			tabIndex={-1}
+			{...gridRoleProps({
+				label: 'Tablify grid',
+				rowCount: visibleRowCount,
+				columnCount: columns.length,
+			})}
+			// The roving tab stop (step 19): the grid itself is the way in while nothing is selected, and the
+			// active cell takes the stop over the moment there is one — exactly one element is ever tabbable.
+			tabIndex={rootTabIndex(hasSelection)}
+			// Focus that lands on the grid rather than on a cell is routed to the active cell.
+			onFocus={onRootFocus}
 		>
 			<Toolbar store={store} {...(onNewRow === undefined ? {} : { onNewRow })} />
 
@@ -393,8 +774,115 @@ export function GridView(props: GridViewProps): ReactElement {
 			</div>
 
 			<StatusBar store={store} />
+
+			{/* One polite live region for the whole grid, mounted for the life of the view: it is the *change* in a
+			    live region that a screen reader announces, so a region re-created per render announces nothing. */}
+			<LiveRegion message={announcement} />
 		</div>
 	);
+}
+
+/**
+ * The writes a `Cmd/Ctrl+Enter` commit fans out over: one write per cell of the range, or `null` when the
+ * gesture was a plain edit.
+ *
+ * One `setCells` op, therefore one undo step and one queue batch — which is why the doc's "bottom-up" ordering
+ * does not need to be reproduced here: the op carries the whole set, so no write can see another's result.
+ */
+function bulkWrites(
+	store: GridStore,
+	bulk: boolean,
+	value: CellValue,
+): readonly CellWrite[] | null {
+	if (!bulk) {
+		return null;
+	}
+	const snapshot = store.getSnapshot();
+	const range = snapshot.selection;
+	if (range === null) {
+		return null;
+	}
+	const cells = cellsOf(range, snapshot.order);
+	if (cells.length === 0) {
+		return null;
+	}
+	return cells.map((cell) => ({ ...cell, value }));
+}
+
+/**
+ * The follow-up move after a commit: `Enter` moves down a row, `Tab`/`Shift+Tab` move sideways and wrap at the
+ * end of a row. Both are *moves* — the anchor follows the focus, so the range a commit just wrote is not left
+ * selected behind the user.
+ */
+function nudge(store: GridStore, direction: 'down' | 'forward' | 'backward'): void {
+	const snapshot = store.getSnapshot();
+	const from = snapshot.active;
+	if (from === null) {
+		return;
+	}
+	if (direction === 'down') {
+		extendSelection(store, 'down', false);
+		return;
+	}
+	const target = tabStop(snapshot.order, from, direction);
+	if (target !== null) {
+		selectCell(store, target);
+	}
+}
+
+/**
+ * A page key: the active cell moves a screenful down or up, keeping its column.
+ *
+ * One selection change rather than `steps` of them: `PageDown` on a 5,000-row view must not be twelve store
+ * dispatches and twelve renders, and the arithmetic is the same index lookup `tabStop` uses.
+ */
+function pageMove(
+	store: GridStore,
+	from: CellRef,
+	edge: Edge,
+	steps: number,
+	extend: boolean,
+): CommandResult {
+	const snapshot = store.getSnapshot();
+	const at = cellPosition(from, snapshot.order);
+	const delta = edge === 'up' ? -steps : steps;
+	if (at === null || (edge !== 'up' && edge !== 'down')) {
+		return extendSelection(store, edge, extend);
+	}
+	const row = Math.min(Math.max(0, at.row + delta), snapshot.order.rows.length - 1);
+	const filePath = snapshot.order.rows[row];
+	if (filePath === undefined) {
+		return { ok: false, reason: 'this view has no rows to move through' };
+	}
+	const target: CellRef = { filePath, fieldId: from.fieldId };
+	return extend
+		? setSelection(store, { anchor: snapshot.anchor ?? from, focus: target })
+		: selectCell(store, target);
+}
+
+/**
+ * Every cell of the view, with the *current* cell kept as the range's focus so `Cmd/Ctrl+A` selects without
+ * moving the keyboard. `core`'s `allOf` answers the whole grid with the last cell as the focus, which is right
+ * for a programmatic selection and wrong for a shortcut a person presses while looking at a cell.
+ */
+function selectAllRange(order: RangeOrder, active: CellRef | null): Range | null {
+	const whole = allOf(order);
+	if (whole === null) {
+		return null;
+	}
+	return active === null ? whole : { anchor: whole.anchor, focus: active };
+}
+
+/**
+ * What `Space` writes on a checkbox cell: the opposite of what the cell shows.
+ *
+ * The rule is `CheckboxEditor`'s, deliberately, and it is read from the column's own parser rather than from a
+ * table of words: the cell shows `Yes`/`No`, the descriptor's `parse` accepts those words and `true`/`1`/`on`,
+ * and anything it cannot parse becomes `true` — which is what a person toggling an unreadable cell means.
+ */
+function checkboxNext(field: ResolvedField, store: GridStore, ref: CellRef): boolean {
+	const parsed = field.descriptor.parse(selectCellDisplay(store.state(), ref), field.context);
+	return parsed.ok && parsed.value === true ? false : true;
 }
 
 /**

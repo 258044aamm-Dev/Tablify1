@@ -24,6 +24,9 @@
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+// `process` as an import rather than the bare global: the unit project's eslint environment does not declare
+// Node's globals, and an import says where the value comes from.
+import { cwd } from 'node:process';
 
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -507,7 +510,7 @@ describe('the size rules, as declared', () => {
 	function block(selector: string): string {
 		// `import.meta.url` arrives as a jsdom `http://` URL in the dom project, so the stylesheet is read from
 		// the repository root instead: vitest runs from there, and this is the same file the build bundles.
-		const css = readFileSync(resolve(process.cwd(), 'src/styles/grid.css'), 'utf8');
+		const css = readFileSync(resolve(cwd(), 'src/styles/grid.css'), 'utf8');
 		const start = css.indexOf(`${selector} {`);
 		expect(start, `${selector} is not declared in src/styles/grid.css`).toBeGreaterThan(-1);
 		const end = css.indexOf('}', start);

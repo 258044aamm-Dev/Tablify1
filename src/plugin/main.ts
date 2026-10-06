@@ -1,7 +1,7 @@
-import { Modal, Notice, Plugin } from 'obsidian';
+import { Notice, Plugin } from 'obsidian';
 
 import { TablifyView } from './TablifyView';
-import { KEY_BINDINGS } from './help/keyBindings';
+import { KeyboardHelpModal } from './help/KeyboardHelpModal';
 import { TablifySettingTab } from './settings/TablifySettingTab';
 import { createSettingsStore } from './settings/save';
 
@@ -13,27 +13,6 @@ export const TABLIFY_VIEW_NAME = 'Tablify grid';
 
 /** The Lucide icon name chosen in `docs/02-architecture.md` (registration example). */
 export const TABLIFY_VIEW_ICON = 'lucide-table-2';
-
-/**
- * The static keyboard reference behind the `open-keyboard-help` command. Step 19 replaces the surface
- * with the real help view; the text it renders comes from `KEY_BINDINGS`, which does not change.
- */
-export class KeyboardHelpModal extends Modal {
-	onOpen(): void {
-		// Modal.onOpen(): virtual void — obsidian.d.ts, @since 0.9.16; Modal.titleEl / Modal.contentEl
-		// are @since 0.14.5; createEl / setText are the DOM augmentations @since 1.4.4.
-		this.titleEl.setText('Tablify keyboard');
-		const list = this.contentEl.createEl('dl', { cls: 'tablify-help-list' });
-		for (const binding of KEY_BINDINGS) {
-			list.createEl('dt', { text: binding.keys });
-			list.createEl('dd', { text: binding.description });
-		}
-		this.contentEl.createEl('p', {
-			cls: 'tablify-help-note',
-			text: 'These bindings arrive with the grid. Nothing in this build accepts keyboard input yet.',
-		});
-	}
-}
 
 /**
  * The environment every column context is built from. The timezone is the machine's, which is what a person
@@ -102,6 +81,10 @@ export default class TablifyPlugin extends Plugin {
 			id: 'open-keyboard-help',
 			name: 'Open keyboard help',
 			// Modal constructor(app: App) — obsidian.d.ts, @since 0.14.5; Modal.open(): @since 0.9.16.
+			//
+			// No default hotkey, deliberately. `?` and `F1` are bound **inside the grid** (step 19's key table):
+			// a plugin-level hotkey with no modifier would fire while the user types a question mark in any note
+			// in the vault, and the grid is the surface that owns the keyboard when the grid is what has focus.
 			callback: () => {
 				new KeyboardHelpModal(this.app).open();
 			},

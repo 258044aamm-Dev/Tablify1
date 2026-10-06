@@ -208,11 +208,16 @@ export default defineConfig(
 	// browser) and drags React into the fast project. Grid behaviour is asserted in tests/dom.
 	{
 		files: ['tests/**/*.ts', 'tests/**/*.tsx'],
-		// `tests/unit/edit-session.test.ts` is the one exception, and it is narrow on purpose: step 18's prompt
-		// puts the edit session's state-machine test in the unit project, and `src/grid/editSession.ts` is a
-		// pure module — no React, no DOM, no `obsidian` import (see the file's own header). The rule below exists
-		// to keep React out of the fast project, and this file does not bring any.
-		ignores: ['tests/dom/**', 'tests/unit/edit-session.test.ts'],
+		// Three exceptions, each narrow on purpose, and each one a *pure* module of `src/grid` — no React, no
+		// DOM, no `obsidian` (the files' own headers say so): the edit session's state machine (step 18), and the
+		// keyboard's table and resolver (step 19). The rule exists to keep React out of the fast project, and none
+		// of these three brings any. `tests/unit/boundaries.test.ts` proves it still bites every other file.
+		ignores: [
+			'tests/dom/**',
+			'tests/unit/edit-session.test.ts',
+			'tests/unit/keyboard-table.test.ts',
+			'tests/unit/keybindings-match.test.ts',
+		],
 		rules: {
 			'no-restricted-imports': restrict({
 				patterns: [
@@ -225,10 +230,32 @@ export default defineConfig(
 			}),
 		},
 	},
+	// The same three files, exempted from the *import* rule above and from nothing else — which means the
+	// "tests are development tools" relaxations have to be repeated for them, because an `ignores` entry takes
+	// the whole config object away, not just one rule. The two lists are the same list; keep them identical.
+	{
+		files: [
+			'tests/unit/edit-session.test.ts',
+			'tests/unit/keyboard-table.test.ts',
+			'tests/unit/keybindings-match.test.ts',
+		],
+		rules: {
+			'@typescript-eslint/unbound-method': 'off',
+			'obsidianmd/no-nodejs-modules': 'off',
+			'obsidianmd/ui/sentence-case': 'off',
+		},
+	},
 	{
 		files: ['tests/dom/**/*.ts', 'tests/dom/**/*.tsx'],
 		rules: {
 			'no-restricted-imports': restrict({}),
+			// The same two relaxations the `tests/**/*.ts` object above applies, for the same reasons — one test
+			// environment, not two. Reading `src/styles/*.css` off disk (step 18's declared size rules) is a
+			// development-tool import; and a dom test drives a prototype method against a double on purpose
+			// (`Reflect.apply(TablifyPlugin.prototype.onload, double, [])`, the pattern `tests/unit/plugin-smoke`
+			// already uses), which is the exact shape the unbound-method rule calls a mistake.
+			'@typescript-eslint/unbound-method': 'off',
+			'obsidianmd/no-nodejs-modules': 'off',
 		},
 	},
 );
