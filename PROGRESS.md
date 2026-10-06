@@ -2,9 +2,78 @@
 
 - Milestone: M0 — Foundation (complete) · M1 — Core domain (complete) · M2 — Data layer (complete) ·
   M3 — Grid v1 (complete) · M4 — Import/export (complete) · M5 — Sync (complete) ·
-  **M6 — Release (in progress: step 27 done, step 28 the publish)**
+  **M6 — Release (prepared, blocked on in-app verification: `0.1.0` untagged)**
   Branch: main
-- Last completed step: **step 27 — the mobile and accessibility pass, at five viewports.** `docs/07` §Tier 4 grew
+- Last completed step: **step 28 — publish: everything except the three acts that are not mine to take.** The
+  README is the real one (`docs/09` §README requirements, in its order: what it is, a screenshot, install, what it
+  does, the network disclosure **verbatim in substance**, limitations, the keyboard table, licence and
+  attribution); `CHANGELOG.md` has a `0.1.0` entry written for users, including a **Not verified yet** section;
+  `docs/manual-test-log.md` has the release-verification table with every row **NOT RUN**; and the submission text
+  below is ready to paste.
+
+  **STOP, and it is the docs' own condition rather than a precaution.** `docs/06` §M6's last line is *"tag `0.1.0`
+  when the release is verified in-app on desktop **and** phone"*, and `docs/10` §the release checklist repeats it
+  (*"Verified on desktop **and** a physical phone"*). This build has run in the layout harness and in jsdom and in
+  **no** real Obsidian, so the tag, the GitHub release and the community submission are **not** taken here — the
+  release workflow exists to publish a verified build, and tagging first would make the docs' condition a
+  decoration. Nothing is lost by waiting: `bun run check` is green, the assets are one command away, and the tag
+  is a single commit plus `git tag 0.1.0`.
+
+  **Version: no bump was needed, and that is checked rather than assumed.** `docs/06` §M6 names `0.1.0` for the
+  first community release; `manifest.json`, `package.json` and `versions.json` all already say `0.1.0` and
+  `versions.json` maps it to `minAppVersion` `1.13.0`. (Step 28's own STOP clause is about a *disagreement* between
+  the docs and the release — there is none. Note also that `docs/09` §Release process says `bun run version` and
+  `docs/10` §Release process says `bun run version-bump`: the script is `scripts/version-bump.ts` and **no npm
+  script of either name exists**, so the documented command cannot run. Recorded rather than papered over; the
+  version is already correct, so nothing depended on it this time.)
+
+  **Prerequisites `docs/09` §Pre-submission checklist lists, and their state:**
+
+  | Prerequisite | State |
+  |---|---|
+  | `bun run check` green on a clean checkout (`--frozen-lockfile`) | ✅ green in CI for `e5c62df` and locally for `568fb20` |
+  | `manifest.json` / `package.json` / `versions.json` agree; tag matches exactly | ✅ all `0.1.0`; the tag is the step not taken |
+  | Release assets are three separate files | ✅ `release.yml` (step 04) attaches `main.js`, `manifest.json`, `styles.css` |
+  | Description ends with punctuation, ≤ 250 chars, no "Obsidian" | ✅ 141 chars, ends `.` |
+  | LICENSE + NOTICE committed; both copyrights present | ✅ upstream (MehulG) and this project's |
+  | README with network disclosure, limitations, screenshots | ✅ this step |
+  | Bundle within budget; sync chunk lazily imported | ✅ 463,794 B / 144,480 gzip, limits 900 KB / 300 KB |
+  | No `console.log` in shipped paths | ✅ brand-gate 197/0 and eslint 0/0 |
+  | Works in a fresh vault: install → enable → create base → edit → import → migrate | ❌ **NOT RUN** — needs a real vault |
+  | Verified on desktop **and** a physical phone | ❌ **NOT RUN** — the row the tag waits on |
+  | `.tabula` migration on a real legacy file, including rollback | ❌ **NOT RUN** — fixtures only |
+  | `CHANGELOG.md` has a real entry for the version being tagged | ✅ the `0.1.0` entry |
+
+  **The submission text, ready to paste.** Repository `https://github.com/258044aamm-Dev/Tablify`; plugin id
+  `tablify`; name **Tablify**; description (141 characters, the manifest's own): *"Spreadsheet-class grid view for
+  Bases: range selection, block paste, fill down, bulk edits, undo, and CSV/XLSX round-trips on top of your
+  notes."* And the paragraph for *"what does it do"*:
+
+  > Tablify adds a spreadsheet-class grid to Obsidian Bases. Your rows are notes and your columns are their
+  > properties, so the grid is a second way of looking at files you already have: select a range and copy it into
+  > Excel or Google Sheets (TSV and HTML both), paste a block straight back in, fill down, edit a whole column in
+  > one dialog, and undo any of it in one step — including a bulk edit that touched a hundred notes. It imports
+  > CSV, TSV and XLSX with a preview and per-column types, either creating one note per row or keeping the sheet
+  > as a single legacy `.tabula` file, and it exports a selection or a whole view back out. Optionally, one view
+  > can be linked to an Airtable base and table for pull, push and a field-by-field conflict review; that feature
+  > is off unless you configure it, and it is the only thing in the plugin that uses the network. Everything
+  > else works offline, and nothing is stored outside your vault, your `.base` file and Obsidian's secret
+  > storage.
+
+  Then accept the developer policies, and answer the two questions the dashboard asks with the same wording the
+  README uses (*no telemetry*, *no network unless you link a base*) so the review and the README cannot drift.
+
+  **Post-release watch items, none of them hypothetical:** (1) the first reviewer feedback — the automated review
+  usually passes in minutes, and a rejection names one thing to fix, which is a patch release rather than a
+  milestone; (2) the first user bug report, most likely about a property type we render differently from what
+  someone's vault already contains (a hand-written `select` list, a date with a timezone, an attachment path
+  with a space in it); (3) **mobile reports**, because the phone has had the least real exercise — keyboard
+  insets, long-press versus scroll, and safe areas are the three that only a device can settle; (4) the import
+  re-render finding from step 27, which will be the first performance complaint if a mobile user imports a few
+  hundred rows (`COALESCE the store's notification during a run` is the fix, and it needs a decision rather than
+  a patch).
+
+- Before that: **step 27 — the mobile and accessibility pass, at five viewports.** `docs/07` §Tier 4 grew
   from eighteen assertions to twenty-three; the three suites the step names were written
   (`tests/dom/a11y.test.ts`, `tests/dom/long-press.test.tsx`, `tests/dom/bulk-edit.test.ts`); the release
   screenshots exist for the first time (`docs/images/`, six images, captured by `harness/shots.mjs`); and the
@@ -135,6 +204,10 @@
   unresolved**); `main.js` **463,794 bytes / 144,480 gzip** (+4,404 raw / +1,532 gzip over step 26, both far under
   the limits); `styles.css` 25,056 bytes. And the layout suite: **`115 passed (4.0m)`** — every one of the
   twenty-three assertions at all five viewports, on the first run after the last fix, with no retries.
+
+- Files touched in **step 28**: `README.md` (the real one), `CHANGELOG.md` (the `0.1.0` entry),
+  `docs/manual-test-log.md` (the release-verification table), `PROGRESS.md`. **No `src/**` change, no version
+  change, no tag, no release, no submission** — those are the three acts the STOP above explains.
 
 - Files touched in **step 27**: new — `src/grid/pointer/longPress.ts`, `src/grid/keyboardInset.ts`,
   `src/core/view/patch.ts`, `tests/dom/{a11y,long-press,bulk-edit}.test.*`, `tests/dom/keyboard-inset.test.ts`,

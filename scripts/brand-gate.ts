@@ -92,8 +92,23 @@ const INTERNAL_FILES: { path: string; reason: string }[] = [
 const ALLOWED_LINES: { path: string; pattern: RegExp; reason: string }[] = [
 	{
 		path: 'README.md',
-		pattern: /successor to/,
+		pattern: /airtable-tabula/,
 		reason: 'upstream attribution: the MIT licence requires it',
+	},
+	{
+		path: 'README.md',
+		pattern: /sync (with|never changes your) Airtable|Airtable schema|Airtable account/,
+		reason: 'the optional sync feature and its limits, named as the integration rather than as branding (docs/09 §License and attribution)',
+	},
+	{
+		path: 'README.md',
+		pattern: /api\.airtable\.com|link a view to Airtable/,
+		reason: 'the network-use disclosure docs/09 requires, verbatim in substance: it names the host and the link',
+	},
+	{
+		path: 'CHANGELOG.md',
+		pattern: /Airtable/,
+		reason: 'the changelog entry for 0.1.0 announces the optional sync feature and states its limits, in user language',
 	},
 	{
 		path: 'NOTICE',

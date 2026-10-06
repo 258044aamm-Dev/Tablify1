@@ -74,3 +74,29 @@ targets at 44 × 40 (#7), scrollbars thick enough to grab with a thumb (#21), sa
 freeze control absent below 600 px (#22), long-press without a menu during the hold (#23) — so that a person with a
 phone is confirming, not discovering. Everything this table still says **NOT RUN** is a thing no browser in this
 container can truthfully claim.
+
+---
+
+## 0.1.0 — release verification (prepared 2026-10-06)
+
+**Status: NOT RUN — and this section is the reason the release is not tagged.** `docs/06-roadmap.md` §M6 says the
+tag waits until *"the release is verified in-app on desktop **and** phone"*, and `docs/10` §the release checklist
+has the same two rows. Neither has happened: at the time of writing, the plugin has run in the layout harness and
+in jsdom, and in **no** real Obsidian. The version each row must be stamped with is `0.1.0` (the value in
+`manifest.json`, `package.json` and `versions.json`).
+
+| Step | Version | Result | Notes |
+|---|---|---|---|
+| Installed from the release into a clean vault — desktop | 0.1.0 | **NOT RUN** | manual — needs a real vault and the three release assets |
+| Installed from the community directory — desktop | — | **NOT RUN** | not possible: the plugin is not submitted yet (see the prerequisite list in `PROGRESS.md` §step 28) |
+| Installed into a clean vault — phone | 0.1.0 | **NOT RUN** | manual — needs a real device |
+| The base opened and the grid drawn | 0.1.0 | **NOT RUN** | harness equivalent: tier-4 #1–#8 at five viewports |
+| A cell edited, and the note's frontmatter checked | 0.1.0 | **NOT RUN** | harness equivalent: tier-4 #10, #15 |
+| An import (CSV and XLSX), preview matched against the source | 0.1.0 | **NOT RUN** | the XLSX writer/reader pair is unit-tested against generated buffers; no real Excel or LibreOffice exists in the build container (step 24's report) |
+| An export, opened in a real spreadsheet | 0.1.0 | **NOT RUN** | same gap, other direction |
+| A `.tabula` migration, including the rollback | 0.1.0 | **NOT RUN** | seven committed fixtures stand in for a real legacy file |
+| A pull from a linked base (if a link is available) | 0.1.0 | **NOT RUN** | the engine is tested against a fake transport; no live base has been read |
+| The plugin disabled and re-enabled, then the vault reopened | 0.1.0 | **NOT RUN** | no `onunload` leak can be observed outside a real app |
+
+**What would change this section:** a person, a phone, a desktop machine and about twenty minutes. Nothing in
+this repository can substitute for it, which is why the rows are empty rather than green.
