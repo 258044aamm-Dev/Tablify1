@@ -79,6 +79,13 @@ container can truthfully claim.
 
 ## 0.1.0 — release verification (prepared 2026-10-06)
 
+**The build to test is the `0.1.0` pre-release:** <https://github.com/258044aamm-Dev/Tablify/releases/tag/0.1.0>.
+It is published as a **pre-release** (its own body says so) with the three assets BRAT installs from
+(`main.js` 464,705 B, `manifest.json` 359 B, `styles.css` 25,056 B, all three downloaded and checked on
+2026-10-06). BRAT: *Add beta plugin* → repository `258044aamm-Dev/Tablify` → pick `0.1.0`. Manual route: drop the
+three files in `<vault>/.obsidian/plugins/tablify/`. Nothing else is required, and no row below is filled in by
+installing it — only by using it.
+
 **Status: NOT RUN — and this section is the reason the release is not tagged.** `docs/06-roadmap.md` §M6 says the
 tag waits until *"the release is verified in-app on desktop **and** phone"*, and `docs/10` §the release checklist
 has the same two rows. Neither has happened: at the time of writing, the plugin has run in the layout harness and
@@ -87,9 +94,9 @@ in jsdom, and in **no** real Obsidian. The version each row must be stamped with
 
 | Step | Version | Result | Notes |
 |---|---|---|---|
-| Installed from the release into a clean vault — desktop | 0.1.0 | **NOT RUN** | manual — needs a real vault and the three release assets |
+| Installed from the release/BRAT into a clean vault — desktop | 0.1.0 | **NOT RUN** | manual — the pre-release above; needs a real vault |
 | Installed from the community directory — desktop | — | **NOT RUN** | not possible: the plugin is not submitted yet (see the prerequisite list in `PROGRESS.md` §step 28) |
-| Installed into a clean vault — phone | 0.1.0 | **NOT RUN** | manual — needs a real device |
+| Installed from the release/BRAT into a clean vault — phone | 0.1.0 | **NOT RUN** | manual — the pre-release above; needs a real device |
 | The base opened and the grid drawn | 0.1.0 | **NOT RUN** | harness equivalent: tier-4 #1–#8 at five viewports |
 | A cell edited, and the note's frontmatter checked | 0.1.0 | **NOT RUN** | harness equivalent: tier-4 #10, #15 |
 | An import (CSV and XLSX), preview matched against the source | 0.1.0 | **NOT RUN** | the XLSX writer/reader pair is unit-tested against generated buffers; no real Excel or LibreOffice exists in the build container (step 24's report) |
