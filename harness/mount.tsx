@@ -35,6 +35,13 @@ import {
 import { focusCell as focusCellElement } from '../src/grid/keyboard/focus';
 import { selectField } from '../src/grid/store/selectors';
 import { createDialogPort } from '../src/grid/dialogs/port';
+import { buildPlan } from '../src/core/import/plan';
+import { inferColumns } from '../src/core/import/preview';
+import { importFields } from '../src/plugin/import/host';
+import { progressText, runImport, undoImport } from '../src/plugin/import/runImport';
+import type { ImportPlan, PlannedColumn, PlanEnvironment } from '../src/core/import/plan';
+import type { ImportUndoStep } from '../src/plugin/import/runImport';
+import type { Matrix } from '../src/core/selection/clipboard';
 import { createHarnessFixture } from './fixture';
 import { app } from './obsidian-runtime';
 import { HOSTS, HOST_ORDER, paneSizeOf } from './hosts';
@@ -86,6 +93,16 @@ export type RenderCounts = {
 	readonly cells: number;
 	readonly rows: number;
 	readonly layers: number;
+};
+
+/** What {@link HarnessApi.importBlock} answers with: the runner's own summary, plus the timer's reading. */
+export type ImportReport = {
+	readonly created: number;
+	readonly failures: readonly string[];
+	readonly cancelled: boolean;
+	readonly progress: string;
+	/** Milliseconds from the first note to the last, measured here so a spec can assert a budget. */
+	readonly elapsed: number;
 };
 
 export type HarnessApi = {
@@ -180,6 +197,24 @@ export type HarnessApi = {
 	insertRow(at: number): boolean;
 	/** Removes a row by index, through `deleteRows`. `false` when there is no such row. */
 	removeRow(at: number): boolean;
+	/**
+	 * Runs a real import: **`rows × columns` through `buildPlan` + `runImport`**, against the harness's own fake
+	 * vault (files are recorded, and every created note also becomes a row in the store, exactly as the view's
+	 * `createFileForView` would). Returns the runner's own summary, so a spec asserts the count, the progress line
+	 * and the cancellation without re-deriving anything.
+	 *
+	 * The production functions do the work — `src/core/import/plan.ts`, `src/plugin/import/host.ts`,
+	 * `src/plugin/import/runImport.ts`. The harness adds no rule of its own.
+	 */
+	importBlock: (
+		rows: number,
+		columns: number,
+		options?: { readonly cancelAfter?: number },
+	) => Promise<ImportReport>;
+	/** The last `created n of N` the import reported, as the modal and the live region show it. */
+	importProgress: () => string;
+	/** Undoes the last import through the port's trash, and removes exactly the rows it created. */
+	undoLastImport: () => Promise<string>;
 	/** The three boxes assertion 1 compares, plus the pane's padding, measured right now. */
 	geometry(): {
 		readonly host: Rect;
@@ -398,6 +433,43 @@ export function boot(): HarnessApi {
 	 * this is the same act with the same count, and the count is the datum assertion 16 asserts.
 	 */
 	let createdNotes = 0;
+
+	/** The fake vault the import writes into: the paths it created, and the store rows that mirror them. */
+	const importedNotes = new Set<string>();
+	let lastImportProgress = '';
+	let lastImportUndo: ImportUndoStep | null = null;
+
+	/** A `rows × columns` sheet: a `Name` column, a status, a number and a date — a real sheet's shape. */
+	function importMatrix(rows: number, columns: number): Matrix {
+		const header = Array.from({ length: columns }, (_unused, index) =>
+			index === 0 ? 'Name' : `Column ${String(index + 1)}`,
+		);
+		const statuses = ['Todo', 'Doing', 'Done'];
+		const body = Array.from({ length: rows }, (_unused, index) => [
+			`Imported ${String(index + 1)}`,
+			...Array.from({ length: Math.max(0, columns - 1) }, (_padding, column) =>
+				column === 0
+					? (statuses[index % statuses.length] ?? 'Todo')
+					: `v${String(index)}-${String(column)}`,
+			),
+		]);
+		return [header, ...body];
+	}
+
+	/**
+	 * One imported note as a store row — the view's own half of a creation (`createFileForView`), which with no
+	 * vault is a row carrying the note's path and its `Name`. The import's own column ids (`note.Import0`…) are
+	 * not the fixture's columns, so what lands is the row and its identity: the count is the datum the spec wants.
+	 */
+	async function createImportedRow(path: string): Promise<RowId> {
+		importedNotes.add(path);
+		const at = store.getSnapshot().rows.length;
+		const cells: Record<PropertyId, CellValue> = { 'note.Owner': path };
+		const row: RowState = { filePath: path, cells };
+		addRow(store, { at, row }, 'Import row');
+		createdNotes += 1;
+		return path;
+	}
 
 	/**
 	 * The view's half of a paste, as the harness can perform it: one row per `NewRowValues`, appended, through
@@ -706,6 +778,86 @@ export function boot(): HarnessApi {
 		},
 		createdNotes(): number {
 			return createdNotes;
+		},
+		async importBlock(rows, columns, options) {
+			const started = performance.now();
+			const matrix = importMatrix(rows, columns);
+			const inferred = inferColumns(matrix, true);
+			const planned: PlannedColumn[] = inferred.columns.map((column) => ({
+				index: column.index,
+				name: column.name,
+				type: 'text',
+				inference: column,
+				included: true,
+			}));
+			const fields = importFields(planned, {
+				path: '',
+				now: () => Date.now(),
+				timezone: 'UTC',
+				locale: 'en-GB',
+			});
+			const files = new Set<string>();
+			const environment: PlanEnvironment = {
+				has: (path) => files.has(path),
+				hasFolder: () => true,
+				fields,
+			};
+			const plan: ImportPlan = buildPlan(
+				matrix,
+				{ columns: planned, hasHeader: true, folder: 'Import Rows', template: '{{Name}}' },
+				environment,
+			);
+			let created = 0;
+			const summary = await runImport({
+				plan,
+				vault: {
+					has: (path) => files.has(path),
+					hasFolder: () => true,
+					create: async (path) => {
+						files.add(path);
+						created += 1;
+						await createImportedRow(path);
+					},
+				},
+				onProgress: (done, total) => {
+					lastImportProgress = progressText(done, total);
+				},
+				shouldStop:
+					options?.cancelAfter === undefined
+						? undefined
+						: () => created >= (options.cancelAfter ?? 0),
+			});
+			lastImportProgress = summary.progress;
+			lastImportUndo = summary.undo;
+			await twoFrames();
+			return {
+				created: summary.created.length,
+				failures: summary.failures.map((failure) => failure.reason),
+				cancelled: summary.cancelled,
+				progress: summary.progress,
+				elapsed: Math.round(performance.now() - started),
+			};
+		},
+		importProgress(): string {
+			return lastImportProgress;
+		},
+		async undoLastImport(): Promise<string> {
+			const step = lastImportUndo;
+			if (step === null) {
+				return 'Nothing to remove';
+			}
+			const report = await undoImport(step, {
+				has: (path) => importedNotes.has(path),
+				trash: async (path) => {
+					importedNotes.delete(path);
+					if (store.getSnapshot().rows.includes(path)) {
+						deleteRows(store, [path]);
+					}
+				},
+			});
+			lastImportUndo = null;
+			await twoFrames();
+			return report.message;
 		},
 		pasteAnchor(): {
 			readonly row: number;

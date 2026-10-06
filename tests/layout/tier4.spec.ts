@@ -907,6 +907,64 @@ test.describe('the assertions the harness added', () => {
 	});
 });
 
+test.describe('the import, end to end (step 23)', () => {
+	/*
+	 * The two assertions the step adds, written against `window.__harness.importBlock` — which runs the production
+	 * path (`buildPlan` → `runImport`) over `rows × columns`, in the page, against the harness's fake vault.
+	 *
+	 *   · **17 · a 400 × 6 import completes with the right count and reaches `created 400 of 400`.** The count is
+	 *     the runner's own summary *and* the store's row count, and the progress line is the last thing the run
+	 *     reported. The budget is 4 s for 400 notes: the point of the assertion is that the page keeps painting
+	 *     while the run yields, which is why the number is not compared against a fast machine's best case.
+	 *   · **18 · the undo restores the previous state in one step.** One call, one entry: every imported row is
+	 *     gone, and none of the rows that were there before the import moved.
+	 */
+	test('17 · a 400 × 6 import reports `created 400 of 400` and the count agrees', async ({
+		page,
+	}, testInfo) => {
+		await open(page, fixtureOf(testInfo.project.name).id);
+		const before = await page.evaluate(() => window.__harness.rows());
+		const report = await page.evaluate(async () => window.__harness.importBlock(400, 6));
+		expect(report.created).toBe(400);
+		expect(report.cancelled).toBe(false);
+		expect(report.failures).toEqual([]);
+		expect(report.progress).toBe('created 400 of 400');
+		expect(await page.evaluate(() => window.__harness.importProgress())).toBe(
+			'created 400 of 400',
+		);
+		// One note per row, and the table grew by exactly that many rows.
+		expect(await page.evaluate(() => window.__harness.createdNotes())).toBe(400);
+		expect(await page.evaluate(() => window.__harness.rows())).toBe(before + 400);
+		expect(report.elapsed).toBeLessThan(4000);
+		testInfo.annotations.push({
+			type: 'import · assertion 17',
+			description: `400 × 6 imported in ${String(report.elapsed)} ms (budget 4,000 ms), progress “${report.progress}”`,
+		});
+	});
+
+	test('18 · cancelling mid-import reports exactly what was created, and one undo removes those rows', async ({
+		page,
+	}, testInfo) => {
+		await open(page, fixtureOf(testInfo.project.name).id);
+		const before = await page.evaluate(() => window.__harness.rows());
+		const report = await page.evaluate(async () =>
+			window.__harness.importBlock(400, 6, { cancelAfter: 150 }),
+		);
+		expect(report.cancelled).toBe(true);
+		expect(report.created).toBe(150);
+		expect(report.progress).toBe('created 150 of 400');
+		expect(await page.evaluate(() => window.__harness.rows())).toBe(before + 150);
+		// One undo step: the 150 rows go, and nothing else does.
+		const undone = await page.evaluate(async () => window.__harness.undoLastImport());
+		expect(undone).toBe('Removed 150 notes');
+		expect(await page.evaluate(() => window.__harness.rows())).toBe(before);
+		testInfo.annotations.push({
+			type: 'import · assertion 18',
+			description: `cancelled after 150 of 400; one undo returned the table to ${String(before)} rows`,
+		});
+	});
+});
+
 /**
  * A rectangle of cells as plain text, read from the store through each column's own `formatPlain` — i.e. exactly
  * what a copy of those cells would put on the clipboard. `null` when the rectangle runs past the table.

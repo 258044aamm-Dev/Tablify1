@@ -1,9 +1,79 @@
 # PROGRESS
 
 - Milestone: M0 — Foundation (complete) · M1 — Core domain (complete) · M2 — Data layer (complete) ·
-  **M3 — Grid v1 (in progress)**
+  M3 — Grid v1 (complete) · **M4 — Import/export and sync (in progress)**
   Branch: main
-- Last completed step: **step 22 — the clipboard in both directions, range selection, fill and clear.** A range
+- Last completed step: **step 23 — the import path, the multi-note undo, and bulk column editing.** The wizard is
+  three steps and one pure module: `src/core/import/preview.ts` decides *what a block is* (per column: the type,
+  the sample it read, the evidence that forced the decision, the confidence, the type it *nearly* was, and the
+  override a person may prefer), `src/core/import/plan.ts` decides *what will be written* (`estimateNotes` for the
+  counts, `buildPlan` for the ordered notes — paths, collisions, frontmatter — performing nothing), and
+  `src/plugin/import/{wizardSpec,ImportWizard,runImport,host}.ts` render it, run it, and are the only files that
+  know Obsidian is real. **The preview and the run cannot disagree** because the run consumes the plan object the
+  wizard showed: `runImport` reads no matrix, infers nothing, and names nothing, and
+  `tests/unit/import-preview.test.ts` asserts the plan's predicted paths are byte-for-byte the files `createNote`
+  actually creates for the same rows.
+
+  **The evidence is the deliverable, not the verdict.** A preview that says "text" without saying *which row*
+  stopped it being a number is a preview nobody can correct, so every column carries its sample size and the
+  offending cells: a 100-value column of 99 numbers and one `n/a` reads
+  *`Weight — text (100 sampled) 99% look like number — blocked by row 100 "n/a" → could be number`*. The inference
+  is the prototype's own (`prototype/js/io.js`), including its two select numbers (distinct ≤ max(3, 35 %) and
+  ≤ 12), with one addition the prototype did not have: the **near miss**, which is what a person overrides.
+
+  **A run that cannot finish says exactly how far it got.** 412 notes are created 25 per macrotask (`CHUNK`, with
+  the arithmetic in the file — a chunk is a few milliseconds of work, a frame is 16.7 ms, and `await` on a resolved
+  promise yields to the microtask queue that drains *before* the browser paints, so it is `setTimeout`); a cancel
+  stops at a chunk boundary and reports `created 150 of 412` plus the 150 paths; a create that fails (a note that
+  appeared at the planned path meanwhile, a folder that disappeared) is recorded per file and the remaining rows
+  still land. The run leaves **one undo step** — `ImportUndoStep` holds the created paths in creation order, and
+  `undoImport`/`createImportHistory` remove exactly those through a trash port (`FileManager.trashFile`, never
+  `Vault.delete`): an undo of an import must not be the most destructive button in the product. The store's own
+  history is deliberately not involved: its ops describe cells inside a view, and an import's effect is files the
+  view has not read yet.
+
+  Bulk column editing now has one implementation again: `src/grid/commands/bulkEdit.ts` writes the selection
+  **bottom-up** (the doc's order, so the reverse walk restores in the order a person reads), in one `setCells` op
+  (one undo step, one queue batch), and parses a dialog draft through the column's own descriptor — the promise the
+  dialog already made on screen and did not keep (`openBulkEdit` was writing the raw `string` into number columns).
+
+  `bun run check` green end to end: **1265 unit+dom tests in 44 files** (+43 tests, +2 files over step 22);
+  `eslint .` 0 errors, 0 warnings; typecheck clean; prettier clean; brand-gate 62 permitted / 0 violations;
+  manifest OK; contrast 32/32 gated checks; css-gate clean; `main.js` 406.71 KB raw / 126.30 KB gzip
+  (styles.css 21,813 bytes). The XLSX pair is still **not installed**: nothing in this step reads a spreadsheet,
+  and the wizard's source step takes text, a matrix or a file's text.
+
+  **Two STOP clauses were checked, and one of them fired.** (1) *A `.tabula` escape hatch above the threshold*:
+  `docs/01` §Import semantics promises the button and defaults the cursor to it above 250 rows, but no `.tabula`
+  **writer** exists in this build (`src/adapters/tabulaFile/` parses; the migration reads) and this step was fenced
+  away from writing one — so the wizard shows the option with the reason on it (*"not in this build"*), the warning
+  names it, the primary action is not the cursor above the threshold, and pressing it refuses in one sentence
+  rather than appearing to write a file. This is the run's one **open product decision**. (2) *`append`'s placement
+  under sorts and grouping*: the doc settles it rather than leaving it open — `docs/03` §Row creation, *"A marker
+  property is deliberately **not** written: the view's filter (typically `file.inFolder(...)`) defines membership"* —
+  so an import writes notes and touches no view state; the description says so on the option. The other reading
+  (write an order marker so imported rows land last) contradicts that sentence and is not built.
+
+  **Three things are deliberately not asserted here, and are the human's to run.** `bun run test:layout` has not
+  run since step 21's 70 passes — no browser in this sandbox by instruction — so Tier 4's two new assertions
+  (**17**: a 400 × 6 import through the harness reaches `created 400 of 400` with the count agreeing and a 4 s
+  budget; **18**: cancelling at 150 reports 150 and one undo returns the table) are **written, not executed**;
+  `harness/mount.tsx` grew `importBlock`/`importProgress`/`undoLastImport` (the production `buildPlan` +
+  `runImport` + `undoImport` against the harness's fake vault, which also adds a store row per note) for them. The
+  step's other acceptance item — *import a real CSV from Downloads into a scratch vault* — needs a running
+  Obsidian and was not performed; what ran instead is the same path over the fake vault (412 rows, the cancel, the
+  failure, the undo) plus `tests/dom`'s 187 tests, and the exact commands are in the report.
+
+- Files touched in **step 23**: new — `src/core/import/{naming,preview,plan}.ts`,
+  `src/plugin/import/{wizardSpec,ImportWizard,runImport,host}.ts`, `src/grid/commands/bulkEdit.ts`,
+  `tests/unit/{import-preview,import-run}.test.ts`; changed — `src/grid/GridView.tsx` (two call sites and the
+  local `bulkWrites` deleted, **the one edit outside the step's fence**, because the prompt's own "no second
+  implementation" rule outranks a fence that lists where new code may go), `harness/mount.tsx`,
+  `tests/layout/tier4.spec.ts`, `PROGRESS.md`. `src/adapters/notes/createNote.ts` keeps its own copies of
+  `sanitizeFileName`/`expandTemplate`/`baseNameFor` (identical, asserted equal to `noteBaseName` by a test): deleting
+  them is a one-file follow-up **outside this step's fence** and is the first thing to do in step 24.
+
+- Before that: **step 22 — the clipboard in both directions, range selection, fill and clear.** A range
   is a drag: `src/grid/selection/dragSelect.ts` is a *second* drag shape beside step 20's pointer-capture session,
   and deliberately so — a captured pointer cannot re-hit-test, and a drag past the pane's edge has to ask "what is
   under the pointer?" on every frame while the grid scrolls. `src/grid/clipboard/` is four files around one flow:
@@ -140,9 +210,12 @@
      `Command`; `@standard-schema/spec`; `docs/04` §cell-rendering and L57's stale `.theme-dark .tablify-root`
      sample; `attachment` links; `docs/09` line 33.
 
-- Next step: `prompts/step-23-undo-bulk-edit-import.md` — undo/redo through the queue, the bulk column edit
-  (`Cmd/Ctrl+Enter` and the cell menu), and the import path: CSV and XLSX in, both through the same plan-and-ask
-  flow step 22 built for the clipboard, with the `.tabula` alternative named when a file is large.
+- Next step: `prompts/step-24-export.md` — export the view: CSV and XLSX out (`read-excel-file`/`write-excel-file`
+  9.3.10 / 4.1.1, dynamic imports so neither is in `main.js` unless used), `toMatrix(cells, { mode: 'display' |
+  'raw' })` with the mode explicit, and the current view's order and filter respected — plus the one-file follow-up
+  step 23 recorded: `src/adapters/notes/createNote.ts` drops its own naming copies in favour of
+  `src/core/import/naming.ts` (step 23 was fenced away from `src/adapters/**`; the equality is asserted by a test
+  in the meantime).
 
 - Before that: **step 20 — the pointer: four drags, three menus, five dialogs, and one real bug found by
   a menu test.** One reusable pointer-capture drag session (4 px threshold, capture, `Escape`, exactly one

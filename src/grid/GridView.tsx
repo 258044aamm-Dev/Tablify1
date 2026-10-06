@@ -80,6 +80,7 @@ import {
 	undo,
 } from './store/commands';
 import { createEditSession } from './editSession';
+import { applyBulkEdit, applyBulkEditDraft } from './commands/bulkEdit';
 import { useWindow } from './useWindow';
 import type { ScrollPosition } from './useWindow';
 import { usePinnedPrimary } from './usePinnedPrimary';
@@ -322,11 +323,11 @@ export function GridView(props: GridViewProps): ReactElement {
 				// The session hands the editor's value through as `unknown`, so this is the one place a canonical
 				// value is named. Everything below works on that value and nothing re-parses it.
 				const canonical = value as CellValue;
-				const writes = bulkWrites(store, bulkRef.current, canonical);
-				const result =
-					writes === null
-						? setCell(store, ref, canonical)
-						: setCells(store, writes, 'Edit the column');
+				// One command for the whole-selection case (step 23): bottom-up order, one `setCells`, one undo
+				// step, and the count the live region announces. A plain commit stays a single-cell write.
+				const result = bulkRef.current
+					? applyBulkEdit(store, canonical, ref.fieldId)
+					: setCell(store, ref, canonical);
 				committedRef.current = result.ok;
 				return result.ok ? { ok: true } : { ok: false, reason: result.reason };
 			},
@@ -1050,7 +1051,9 @@ export function GridView(props: GridViewProps): ReactElement {
 
 	/**
 	 * The bulk-edit prompt: `Cmd/Ctrl+Enter`'s dialog half. It is one `Modal` with a text field, and the value it
-	 * collects goes to every cell of the range through `setCells` — one batch, one undo step.
+	 * collects goes to every cell of the range through {@link applyBulkEditDraft} — which parses the text with the
+	 * column's own descriptor (exactly what the dialog's hint promises), writes bottom-up, and lands as one
+	 * `setCells` op: one batch, one undo step.
 	 */
 	const openBulkEdit = useCallback((): void => {
 		const port = dialogsRef.current;
@@ -1059,10 +1062,7 @@ export function GridView(props: GridViewProps): ReactElement {
 			store,
 			fieldId: ref?.fieldId ?? '',
 			onApply: (value) => {
-				const writes = bulkWrites(store, true, value);
-				if (writes !== null) {
-					setCells(store, writes, 'Edit the column');
-				}
+				applyBulkEditDraft(store, value, ref?.fieldId ?? '');
 			},
 		});
 	}, [store]);
@@ -1810,33 +1810,6 @@ export function GridView(props: GridViewProps): ReactElement {
 			<LiveRegion message={pasteMessage === '' ? announcement : pasteMessage} />
 		</div>
 	);
-}
-
-/**
- * The writes a `Cmd/Ctrl+Enter` commit fans out over: one write per cell of the range, or `null` when the
- * gesture was a plain edit.
- *
- * One `setCells` op, therefore one undo step and one queue batch — which is why the doc's "bottom-up" ordering
- * does not need to be reproduced here: the op carries the whole set, so no write can see another's result.
- */
-function bulkWrites(
-	store: GridStore,
-	bulk: boolean,
-	value: CellValue,
-): readonly CellWrite[] | null {
-	if (!bulk) {
-		return null;
-	}
-	const snapshot = store.getSnapshot();
-	const range = snapshot.selection;
-	if (range === null) {
-		return null;
-	}
-	const cells = cellsOf(range, snapshot.order);
-	if (cells.length === 0) {
-		return null;
-	}
-	return cells.map((cell) => ({ ...cell, value }));
 }
 
 /**
