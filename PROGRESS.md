@@ -244,18 +244,17 @@
      change that breaks other suites. Recorded here as the seam it is.
   4. **Every `docs/manual-test-log.md` row is NOT RUN**, and the six screenshots are harness renders, not Obsidian
      windows. Both are stated in the files themselves.
-  5. **CI has never run the layout suite to completion.** Checked while step 27 was being verified, on the tip
-     commit: run `37447818892` (`e5c62df`) has every gate step **green** — `bun install`, typecheck, lint,
-     format:check, test, build, contrast, css:gate, size — and then sits in *"Layout suite"* with no conclusion;
-     the four runs before it are `completed / cancelled`, because `concurrency: cancel-in-progress` cancels the run
-     a push supersedes and this suite outlives the gap between pushes. So the local gate has been the only
-     thing verifying the layout, which is exactly backwards from the intent. **Measured clean run on this
-     container: `115 passed (4.0m)`** — one worker, no failures, no retries (the runs before it were slow for two
-     unrelated reasons: two 90-second Playwright timeouts waiting on the defects listed above, and the gate
-     running concurrently on the same CPU). Four minutes cannot explain a hundred minutes of *in_progress* on the
-     CI runner, so the recommendation is no longer "shard it" but "**give the step a `timeout-minutes`**": a
-     layout stage that cannot finish must fail loudly rather than hold a workflow open, and only then is the
-     useful question — shard, or fewer projects — worth answering. The stale step name (*"thirteen assertions"*)
+  5. **The layout stage's CI record, first read wrongly and then corrected with a measurement.** While step 27 was
+     being verified, run `37447818892` (`e5c62df`) showed every gate step **green** — `bun install`, typecheck,
+     lint, format:check, test, build, contrast, css:gate, size — and then sat in *"Layout suite"* with no
+     conclusion, with the four runs before it `completed / cancelled`. The first reading of that was "the suite is
+     too slow for CI", and it was wrong. The next push answered it: run **`37459798546` (`568fb20`) is
+     `completed / success`** — the whole job in **3m44s**, the layout step itself in **2m20s**, faster than this
+     container's `115 passed (3.7m)`. What the stale run actually showed is a **queue artefact**:
+     `concurrency: cancel-in-progress` cancels the run a push supersedes, and pushing faster than a suite takes
+     leaves the new run waiting behind a cancellation that has not taken effect. So no sharding is needed and the
+     suite is not a bottleneck; what the release still owes this job is a **`timeout-minutes`**, so a stage that
+     cannot finish fails loudly instead of holding a workflow open. The stale step name (*"thirteen assertions"*)
      was corrected to twenty-three in the same pass, because a label that lies is worse than no label.
 
 - Before that: **step 26 — sync, end to end: the three-way diff, the plan, the pull and the push, the

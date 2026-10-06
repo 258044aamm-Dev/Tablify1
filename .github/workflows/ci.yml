@@ -60,12 +60,13 @@ jobs:
             - name: Install Chromium for the layout harness
               run: bunx playwright install --with-deps chromium
 
-            # Twenty-three assertions × five viewports, one worker: "115 passed (4.0m)" on the workstation that
-            # built step 27. It is nevertheless the one stage of this workflow that has never reached a
-            # conclusion — every earlier run was cancelled by the next push (`cancel-in-progress` above) while
-            # this step was still running. Four minutes locally against a hundred on a runner is not a budget
-            # problem, so the release step owes this job an explicit `timeout-minutes`: a stage that cannot
-            # finish should fail loudly instead of holding the workflow open. Recorded in `PROGRESS.md` §step 27.
+            # Twenty-three assertions × five viewports, one worker. Measured both sides: "115 passed (3.7m)" on
+            # the workstation that built step 27, and **2m20s for this step** on the runner (job 3m44s) in run
+            # 37459798546 — the first run of this workflow to reach a conclusion, because every earlier one was
+            # cancelled by the next push while this step was still going (`cancel-in-progress` above, which
+            # cancels rather than queues). Not a budget problem, then — but the release still owes this job an
+            # explicit `timeout-minutes`, so that a stage which cannot finish fails loudly. See `PROGRESS.md`
+            # §step 27, finding 5.
             - name: Layout suite (twenty-three assertions × five viewports)
               run: bun run test:layout
 
