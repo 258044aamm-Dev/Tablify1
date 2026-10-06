@@ -112,17 +112,22 @@ const identityZone = zone('identity');
 const semanticZone = zone('semantic');
 const hostZone = zone('host');
 
-const semanticTokens = [...declarations(blocks(semanticZone, ':root')).keys()];
+/**
+ * The semantic zone is two selectors, not one, and the split is load-bearing: tokens whose *value* is one of the
+ * host's variables (`--radius-s`, `--font-text`, `--font-ui-*`) must be declared **on `body`**, because a
+ * custom property's `var()` is substituted where the property is declared — `:root` is above the element the
+ * theme declares its variables on, so those eight computed to nothing and the grid shipped 0 px radii (found by
+ * the layout harness, 2026-10-06; `harness/hosts.ts` documents the same fact from the host's side).
+ */
+const semanticRoots = declarations(blocks(semanticZone, 'body'));
+const semanticTokens = [...semanticRoots.keys()];
 const hostTokens = new Set(declarations(blocks(hostZone, 'body.tablify-host-theme')).keys());
 
 /** mode → every declaration in play, in cascade order (identity, then semantic, then the mode's overrides). */
-const lightTokens = new Map([
-	...declarations(blocks(identityZone, ':root')),
-	...declarations(blocks(semanticZone, ':root')),
-]);
+const lightTokens = new Map([...declarations(blocks(identityZone, ':root')), ...semanticRoots]);
 const darkTokens = new Map([
 	...lightTokens,
-	...declarations(blocks(identityZone, ':root.theme-dark')),
+	...declarations(blocks(identityZone, 'body.theme-dark')),
 ]);
 const hostModeTokens = new Map([
 	...lightTokens,
@@ -168,10 +173,17 @@ describe('the zones and the cascade', () => {
 	it('scopes the host mapping to body, which is what makes it win without a specificity fight', () => {
 		// A custom property is inherited from the *nearest* declaring ancestor, not from the most specific
 		// selector: the grid's elements sit inside body, and body is nearer than :root. So the mapping must
-		// be declared on `body` (once), and the dark palette must stay on `:root.theme-dark` (once each).
+		// be declared on `body` (once), and the dark palette must stay on `body.theme-dark` (once) — which
+		// is also where Obsidian puts the class, and where the host's own variables live.
 		expect(blocks(hostZone, 'body.tablify-host-theme')).toHaveLength(1);
-		expect(blocks(identityZone, ':root.theme-dark')).toHaveLength(1);
-		expect(hostZone).not.toContain(':root.theme-dark');
+		expect(blocks(identityZone, 'body.theme-dark')).toHaveLength(1);
+		expect(hostZone).not.toContain('theme-dark');
+		// And the semantic layer must not be back on `:root`: a token declared there substitutes the light
+		// palette before `body.theme-dark` is ever reached, which is the bug the harness found.
+		expect(blocks(semanticZone, ':root')).toEqual([]);
+		// And nothing anywhere may declare the palette `:root.theme-dark` again: that selector matches only
+		// when the class is on `<html>`, which Obsidian never does.
+		expect(tokensCss).not.toContain(':root.theme-dark');
 	});
 });
 
@@ -248,7 +260,7 @@ describe('motion', () => {
 	});
 
 	it('uses the documented easing curves verbatim, and never a bare ease-in', () => {
-		const easing = declarations(blocks(semanticZone, ':root'));
+		const easing = declarations(blocks(semanticZone, 'body'));
 		expect(easing.get('--tablify-ease-out')).toBe('cubic-bezier(0.23, 1, 0.32, 1)');
 		expect(easing.get('--tablify-ease-in-out')).toBe('cubic-bezier(0.77, 0, 0.175, 1)');
 		expect(easing.get('--tablify-ease-drawer')).toBe('cubic-bezier(0.32, 0.72, 0, 1)');
@@ -261,7 +273,7 @@ describe('motion', () => {
 
 describe('the numbers docs/04 fixes', () => {
 	it('keeps a 44 px tap target, 16 px inputs and a 40 px medium row', () => {
-		const base = declarations(blocks(semanticZone, ':root'));
+		const base = declarations(blocks(semanticZone, 'body'));
 		const px = (token: string): number => parseFloat(base.get(token) ?? '');
 		expect(px('--tablify-tap')).toBeGreaterThanOrEqual(44);
 		expect(px('--tablify-input-fs')).toBeGreaterThanOrEqual(16);

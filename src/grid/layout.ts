@@ -19,6 +19,12 @@ import type { RowDensity } from './store/window';
 /** Below this many pixels of pane, nothing is pinned (`docs/08` §P21, `docs/04` §the viewport matrix). */
 export const NARROW_PANE_PX = 600;
 
+/**
+ * Below this much toolbar, the secondary actions collapse into the `⋯` menu (`docs/04` §Touch). It is the
+ * toolbar's own width, not the device's: a 420 px sidebar is narrow on any screen.
+ */
+export const TOOLBAR_COLLAPSE_PX = 520;
+
 /** The width of a column nobody has resized. */
 export const DEFAULT_COLUMN_WIDTH = 160;
 
@@ -27,6 +33,14 @@ export const COLUMN_MIN_WIDTH = 64;
 
 /** The widest a column may be dragged, and the cap on a width that arrives from a sidecar. */
 export const COLUMN_MAX_WIDTH = 900;
+
+/**
+ * The width of the gutter (the row-number column) when the token cannot be read. `--tablify-gutter-w` is the
+ * real source; this is the fallback for the instant before the first paint, exactly like `FALLBACK_HEADER_HEIGHT`.
+ * It is needed as a *number* because the pinned column's inset is arithmetic: gutter + the primary column's
+ * width, which is what the scrolling lanes are shifted by so they start **after** the pinned column.
+ */
+export const FALLBACK_GUTTER_WIDTH = 56;
 
 /**
  * The header band's height when the token cannot be read. `--tablify-header-h` is the real source (it is

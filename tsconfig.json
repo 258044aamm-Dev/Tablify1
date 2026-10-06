@@ -23,7 +23,10 @@
 		"tests/**/*.ts",
 		"tests/**/*.tsx",
 		"scripts/**/*.ts",
-		"vitest.config.ts"
+		"harness/**/*.ts",
+		"harness/**/*.tsx",
+		"vitest.config.ts",
+		"playwright.config.ts"
 	],
 	"exclude": ["prototype", "node_modules", "dist", "coverage", "main.js"]
 }

@@ -72,8 +72,13 @@
 }
 /* @identity end */
 
-/* @identity begin — dark: the same hues, re-cut for a warm charcoal page */
-:root.theme-dark {
+/* @identity begin — dark: the same hues, re-cut for a warm charcoal page.
+
+   Declared on **`body`**, not on `:root`: Obsidian puts the theme class on the body element (every community
+   CSS snippet is written `body.theme-dark …`), so a root-scoped selector never matched in a real vault and the
+   grid painted its light palette in the dark theme. The layout harness's `desktop-dark` viewport caught it —
+   its screenshot was byte-identical to `desktop`'s before this line changed. */
+body.theme-dark {
 	--tablify-ink: #ece3d8;
 	--tablify-ink-muted: #b3a698;
 	--tablify-ink-faint: #8b7f74;
@@ -98,10 +103,21 @@
 }
 /* @identity end */
 
-/* @semantic begin — the one vocabulary components use. Nothing here is a literal:
-   each token points at the identity layer, which is why both modes are served by
-   a single declaration. */
-:root {
+/* @semantic begin — the one vocabulary components use. Nothing here is a literal: every token points at the
+   identity layer, which is why both modes are served by a single declaration.
+
+   Declared on **`body`**, and that is the whole mechanism: a custom property's `var()` is substituted where the
+   property is *declared*, not where it is used. The light palette lives on `:root` and the dark one on
+   `body.theme-dark`, so a semantic token declared on `:root` substituted the light value at the root element and
+   inherited the *result* downward — which is why the dark theme changed nothing but the header band until the
+   layout harness rendered `desktop-dark` and produced a screenshot byte-identical to `desktop`'s. On `body`, the
+   substitution happens on the element the theme class is on, and both modes resolve.
+
+   The host-facing aliases (`--radius-s`, `--font-text`, `--font-ui-*`) need the same treatment for the same
+   reason: Obsidian declares those on `body` too, so `:root` sat above them. `body` is also what the *dialogs*
+   inherit from — Obsidian appends a modal to `document.body`, so a modal's content is a sibling of the grid,
+   not a descendant of `.tablify-root`. */
+body {
 	/* surfaces */
 	--tablify-surface: var(--tablify-parchment); /* the grid background */
 	--tablify-surface-raised: var(--tablify-raised); /* header, toolbar, a dialog's body */
@@ -146,7 +162,7 @@
 }
 
 /* ── motion (docs/04 §Motion, paced by the frequency table) ───────────────── */
-:root {
+body {
 	--tablify-ease-out: cubic-bezier(0.23, 1, 0.32, 1); /* anything entering the screen */
 	--tablify-ease-in-out: cubic-bezier(
 		0.77,
@@ -172,7 +188,7 @@
 }
 
 /* ── space, radius, type, geometry ────────────────────────────────────────── */
-:root {
+body {
 	--tablify-sp-1: 4px; /* icon-to-label, the tightest gap */
 	--tablify-sp-2: 6px; /* controls inside the toolbar */
 	--tablify-sp-3: 8px; /* the toolbar's own padding, cell padding */
@@ -182,20 +198,8 @@
 	--tablify-sp-7: 24px;
 	--tablify-sp-8: 32px;
 
-	--tablify-radius-s: var(--radius-s); /* inputs, buttons, cells that round at all */
-	--tablify-radius-m: var(--radius-m); /* dialogs and popovers */
 	--tablify-radius-pill: 999px; /* chips, status pills, scrollbar thumbs */
 
-	--tablify-font-text: var(
-		--font-text
-	); /* everything in the grid, unless a rule says otherwise */
-	--tablify-font-mono: var(--font-monospace); /* numbers, ids, the query field */
-	--tablify-font-display: var(
-		--font-text
-	); /* the wordmark and headings; the embedded face lands here */
-	--tablify-fs-xs: var(--font-ui-smaller); /* header labels, the status bar */
-	--tablify-fs-m: var(--font-ui-small); /* secondary text, numbers */
-	--tablify-fs-l: var(--font-ui-medium); /* cell contents, the default */
 	--tablify-fs-xl: 20px; /* a dialog's title */
 	--tablify-fs-display: 28px; /* the wordmark */
 	--tablify-lh-tight: 1.25; /* headings and single-line cells */
@@ -221,6 +225,32 @@
 	--tablify-wordmark-h: 18px; /* the wordmark's slot in the toolbar (brand.css sizes the drawing) */
 	--tablify-keyboard-inset: 0px; /* written by the view from `window.visualViewport` (docs/04 §Mobile) */
 }
+/* The host-facing aliases — the eight tokens whose *value* is a variable Obsidian owns. They are declared
+   on `body` rather than on `:root`, and that is not a style choice:
+   a custom property's `var()` is substituted where the property is **declared**, so `:root { --x: var(--radius-s) }`
+   computes at the root element — where a theme's `--radius-s` (declared on `body`) does not exist yet — and
+   inherits downward as invalid. The result was buttons and inputs with a 0 px radius in a real vault, which no
+   jsdom test could see: jsdom does not substitute `var()` at all. The layout harness rendered it, and
+   `tests/layout/__screenshots__/desktop.png` is the regression test.
+
+   `body` is also the right scope for the *dialogs*: Obsidian appends a modal to `document.body`, so a modal's
+   content is a sibling of the grid, not a descendant of `.tablify-root`, and it has to inherit these too. */
+body {
+	--tablify-radius-s: var(--radius-s); /* inputs, buttons, cells that round at all */
+	--tablify-radius-m: var(--radius-m); /* dialogs and popovers */
+
+	--tablify-font-text: var(
+		--font-text
+	); /* everything in the grid, unless a rule says otherwise */
+	--tablify-font-mono: var(--font-monospace); /* numbers, ids, the query field */
+	--tablify-font-display: var(
+		--font-text
+	); /* the wordmark and headings; the embedded face lands here */
+	--tablify-fs-xs: var(--font-ui-smaller); /* header labels, the status bar */
+	--tablify-fs-m: var(--font-ui-small); /* secondary text, numbers */
+	--tablify-fs-l: var(--font-ui-medium); /* cell contents, the default */
+}
+
 /* @semantic end */
 
 /* @host begin — "Follow my Obsidian theme". Every semantic token is redeclared: nothing

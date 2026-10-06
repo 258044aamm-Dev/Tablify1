@@ -50,7 +50,12 @@ import { StatusBar } from './StatusBar';
 import { Row } from './rows/Row';
 import type { ColumnView } from './rows/Row';
 import { Toolbar } from './Toolbar';
-import { DEFAULT_COLUMN_WIDTH, FALLBACK_HEADER_HEIGHT, resolvePresentation } from './layout';
+import {
+	DEFAULT_COLUMN_WIDTH,
+	FALLBACK_GUTTER_WIDTH,
+	FALLBACK_HEADER_HEIGHT,
+	resolvePresentation,
+} from './layout';
 import { paneWidthOf, readHeaderHeight, readPxToken } from './measure';
 import {
 	selectCellDisplay,
@@ -179,6 +184,11 @@ export function GridView(props: GridViewProps): ReactElement {
 	// disagree. Until that read happens (a jsdom test, or the instant before the first paint) the documented
 	// fallback applies — the same 40 px the token holds.
 	const [headerHeight, setHeaderHeight] = useState(FALLBACK_HEADER_HEIGHT);
+	/**
+	 * The gutter's width, read once from the DOM like the header band's: the pinned column's inset is
+	 * `gutter + primary width`, and that arithmetic has to agree with the CSS the frozen lane is drawn with.
+	 */
+	const [gutterWidth, setGutterWidth] = useState(FALLBACK_GUTTER_WIDTH);
 	/** Bumped when focus has to move; the layout effect below is the only consumer. See `requestFocus`. */
 	const [focusTick, setFocusTick] = useState(0);
 	/**
@@ -201,6 +211,7 @@ export function GridView(props: GridViewProps): ReactElement {
 		if (measured > 0) {
 			setHeaderHeight(measured);
 		}
+		setGutterWidth(readPxToken(rootRef.current, '--tablify-gutter-w', FALLBACK_GUTTER_WIDTH));
 	}, []);
 
 	const items = useStore(store, selectLaneItems);
@@ -336,6 +347,19 @@ export function GridView(props: GridViewProps): ReactElement {
 		[columns, pinned],
 	);
 	const columnOffset = pinned ? 1 : 0;
+
+	/**
+	 * How far the **scrolling** lanes are pushed right so they begin after the pinned column.
+	 *
+	 * The frozen lane is an overlay: it draws the gutter and the primary column on top of the row lane. Without
+	 * this inset the scrolling lane still starts at x = 0, so its first column is *underneath* the frozen lane
+	 * and the second is half-hidden by it — the header said "DUE" where the table was showing the third column,
+	 * and a whole column was unreachable. The layout harness measured it (assertion 14 in `tests/layout/tier4.spec.ts`).
+	 *
+	 * It is `left`, not a margin: the lane's own transform is the scroll offset, written sixty times a second by
+	 * `syncScroll`, and a second transform on the same element would fight it.
+	 */
+	const pinnedInset = pinned ? gutterWidth + (pinnedColumns[0]?.width ?? 0) : 0;
 
 	/**
 	 * The scroll frame needs the fill handle's placer, and the frame is set up *before* it (the frame owns the
@@ -1310,9 +1334,14 @@ export function GridView(props: GridViewProps): ReactElement {
 	const rowsStyle = useMemo<CSSProperties>(
 		() => ({
 			top: `${String(headerHeight)}px`,
+			left: `${String(pinnedInset)}px`,
 			transform: `translateY(${String(rowWindow.offsetY)}px)`,
 		}),
-		[headerHeight, rowWindow.offsetY],
+		[headerHeight, rowWindow.offsetY, pinnedInset],
+	);
+	const headerStyle = useMemo<CSSProperties>(
+		() => ({ left: `${String(pinnedInset)}px` }),
+		[pinnedInset],
 	);
 
 	return (
@@ -1336,7 +1365,11 @@ export function GridView(props: GridViewProps): ReactElement {
 			// (`src/grid/menus/`) and shown through Obsidian's `Menu`.
 			onContextMenu={onContextMenu}
 		>
-			<Toolbar store={store} {...(onNewRow === undefined ? {} : { onNewRow })} />
+			<Toolbar
+				store={store}
+				initialPaneWidth={initialPaneWidth}
+				{...(onNewRow === undefined ? {} : { onNewRow })}
+			/>
 
 			<div className="tablify-grid-area" ref={areaRef}>
 				{/*
@@ -1379,7 +1412,11 @@ export function GridView(props: GridViewProps): ReactElement {
 					</div>
 				</div>
 
-				<div className="tablify-layer tablify-header" ref={headerLayerRef}>
+				<div
+					className="tablify-layer tablify-header"
+					ref={headerLayerRef}
+					style={headerStyle}
+				>
 					<HeaderLane
 						columns={scrollingColumns}
 						columnOffset={columnOffset}

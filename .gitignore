@@ -12,6 +12,10 @@ coverage/
 playwright-report/
 test-results/
 
+# The harness's own bundle: built by `bun run harness:build` from harness/mount.tsx and served
+# from disk. The screenshots it produces ARE committed (tests/layout/__screenshots__/).
+harness/build/
+
 # Local configuration
 *.local
 data.json

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Tablify layout harness</title>
+		<!--
+			Load order is Obsidian's: the host theme, then the plugin's own stylesheet. The stub declares
+			only host variables (`--background-primary`, `--text-normal`, …) and the `theme-light`/`theme-dark`
+			classes; `styles.css` is the built artefact of `src/styles/**`, so the page renders the real thing.
+			`styles.css` is written by `bun run harness:build` before the page is served.
+		-->
+		<link rel="stylesheet" href="/harness/obsidian-stub.css" />
+		<link rel="stylesheet" href="/styles.css" />
+	</head>
+	<body>
+		<!-- The host frame is built by the page (see `harness/mount.tsx`): one fixture per load, chosen by
+		     `?host=`, so a cell revealed inside the phone fixture cannot scroll the page. -->
+		<script type="module" src="/harness/build/harness.js"></script>
+	</body>
+</html>

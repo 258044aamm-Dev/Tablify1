@@ -42,52 +42,29 @@ jobs:
             - run: bun run css:gate
             - run: bun run size
 
-            # ---------------------------------------------------------------------------------------------
-            # The layout harness arrives in step 21 (harness/, playwright.config.ts, the thirteen Tier-4
-            # assertions per viewport). Until those files exist there is nothing to run, and pretending
-            # otherwise would be worse than saying nothing. So the gap is announced in two places a human
-            # cannot miss — an `::warning::` annotation on the run and a line in the job summary — and it
-            # retires itself the moment the harness lands.
+            # The layout gate: a browser, the real components, and thirteen assertions per viewport
+            # (`docs/07` §Tier 4). `bun run test:layout` builds the plugin *and* the harness bundle first, so the
+            # page always renders the current `styles.css`.
             #
-            # Step 21 must delete this guard (the `harness_present` step and the two `if:` conditions below)
-            # so the layout suite runs unconditionally from then on.
-            # ---------------------------------------------------------------------------------------------
-            - name: Check whether the layout harness exists yet
-              id: harness
-              run: |
-                  if [ -f playwright.config.ts ] && [ -d harness ]; then
-                    echo "present=true" >> "$GITHUB_OUTPUT"
-                  else
-                    echo "present=false" >> "$GITHUB_OUTPUT"
-                    echo "::warning title=Layout gate not running::The Playwright harness does not exist yet (step 21). The layout suite is NOT being skipped silently — this guard is temporary and step 21 removes it."
-                    {
-                      echo "### Layout gate not running"
-                      echo ""
-                      echo "The Playwright harness (\`playwright.config.ts\`, \`harness/\`) arrives in step 21."
-                      echo "The layout suite will run automatically once it exists; this guard is temporary."
-                    } >> "$GITHUB_STEP_SUMMARY"
-                  fi
-
-            # bun.lock pins @playwright/test, so this cache key changes exactly when Playwright does.
+            # Step 21 removed the temporary "does the harness exist yet?" guard that stood here: the files exist,
+            # so the suite runs unconditionally, and a failing assertion fails the build.
             - name: Cache Playwright's browsers
-              if: steps.harness.outputs.present == 'true'
               uses: actions/cache@v4
               with:
                   path: ~/.cache/ms-playwright
+                  # Keyed on bun.lock, so a dependency change invalidates it and nothing else does.
                   key: playwright-${{ runner.os }}-${{ hashFiles('bun.lock') }}
                   restore-keys: |
                       playwright-${{ runner.os }}-
 
             - name: Install Chromium for the layout harness
-              if: steps.harness.outputs.present == 'true'
               run: bunx playwright install --with-deps chromium
 
             - name: Layout suite (thirteen assertions per viewport)
-              if: steps.harness.outputs.present == 'true'
               run: bun run test:layout
 
             - name: Upload the Playwright report
-              if: always() && steps.harness.outputs.present == 'true'
+              if: always()
               uses: actions/upload-artifact@v4
               with:
                   name: playwright-report

@@ -9,7 +9,7 @@
  * every token through its `var()` aliases, and computes the WCAG 2.1 ratio for four modes:
  *
  *   light       the identity palette plus the semantic layer, as declared on `:root`
- *   dark        the same, with every `:root.theme-dark` block applied over it
+ *   dark        the same, with every `body.theme-dark` block applied over it
  *   host-light  `body.tablify-host-theme` over `:root`, resolved against HOST_FIXTURE.light
  *   host-dark   the same, against HOST_FIXTURE.dark
  *
@@ -181,9 +181,13 @@ const merged = (...maps: Map<string, string>[]): Map<string, string> => {
 
 const lightTokens = merged(
 	tokenMap(blocksFor(identityZone, ':root')),
-	tokenMap(blocksFor(semanticZone, ':root')),
+	// `body`, not `:root`: the semantic layer is declared on `body` so that its `var()` aliases see the dark
+	// palette (and Obsidian's own variables) — see `src/styles/tokens.css`.
+	tokenMap(blocksFor(semanticZone, 'body')),
 );
-const darkTokens = merged(lightTokens, tokenMap(blocksFor(identityZone, ':root.theme-dark')));
+// `body.theme-dark`, not `:root.theme-dark`: Obsidian puts the theme class on the body element, and so does
+// the harness's stub theme. See `tests/unit/tokens.test.ts` and `src/styles/tokens.css`.
+const darkTokens = merged(lightTokens, tokenMap(blocksFor(identityZone, 'body.theme-dark')));
 const hostBase = merged(lightTokens, tokenMap(blocksFor(hostZone, 'body.tablify-host-theme')));
 const fixture = (theme: Record<string, string>): Map<string, string> =>
 	new Map(Object.entries(theme));
