@@ -38,11 +38,23 @@ const TYPES = {
 /** The file a URL asks for, or `null` when it escapes the root or does not exist. */
 function fileFor(urlPath) {
 	const decoded = decodeURIComponent(urlPath.split('?')[0] ?? '/');
-	// `/` and `/harness/` both mean "the page": the URLs inside it are absolute (`/harness/…`, `/styles.css`),
-	// so they resolve from the repository root whatever the entry point was.
-	const relative = decoded === '/' ? 'harness/index.html' : decoded.replace(/^\/+/, '');
-	const withIndex = decoded.endsWith('/') ? `${relative}index.html` : relative;
-	const candidate = resolve(ROOT, normalize(withIndex));
+	/*
+	 * `/` and `/harness/` both mean "the page": the URLs inside it are absolute (`/harness/…`, `/styles.css`),
+	 * so they resolve from the repository root whatever the entry point was.
+	 *
+	 * The three cases are spelled out rather than folded together, because folding them is how this got the
+	 * directory case wrong once: appending `index.html` to a path that had *already* been rewritten to a file
+	 * name produced `harness/index.htmlindex.html`, which is a 404 for the page and — because Playwright's
+	 * `webServer` reuses a running server — a suite that hangs on `waitForFunction` with no obvious cause.
+	 */
+	const relative = decoded.replace(/^\/+/, '');
+	const path =
+		decoded === '/'
+			? 'harness/index.html'
+			: decoded.endsWith('/')
+				? `${relative}index.html`
+				: relative;
+	const candidate = resolve(ROOT, normalize(path));
 	if (candidate !== ROOT && !candidate.startsWith(`${ROOT}/`)) {
 		return null;
 	}

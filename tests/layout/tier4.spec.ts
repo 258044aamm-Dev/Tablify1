@@ -584,31 +584,63 @@ test.describe('the interactions', () => {
 		await page.keyboard.press('Escape');
 	});
 
-	test('11 · a 400 × 6 write completes inside the 2 s budget', async ({ page }, testInfo) => {
+	test('11 · a 400 × 6 paste through the UI completes inside the 2 s budget', async ({
+		page,
+	}, testInfo) => {
 		await page.evaluate(() => window.__harness.setRows(5000));
+		/*
+		 * The whole path, in the order a person takes it: the anchor, a real `paste` event carrying the block as
+		 * TSV, the dialog the size earns, the confirm. Step 21 measured the *write* (2,400 values through one
+		 * command); this measures the feature — parse, plan, ask, apply — against the same budget.
+		 */
+		const anchor = await page.evaluate(() => window.__harness.pasteAnchor());
+		expect(
+			await page.evaluate(
+				async (at) => window.__harness.focusCell(at.row, at.column),
+				anchor,
+			),
+		).toBe(true);
+		const text = await page.evaluate(() => window.__harness.matrixTsv(400, 6));
+		const started = Date.now();
+		const accepted = await page.evaluate((payload) => window.__harness.pastePayload(payload), {
+			text,
+			html: '',
+		});
+		expect(accepted, 'the grid consumed the paste event').toBe(true);
+		const dialog = await page.evaluate(() => window.__harness.dialogText());
+		expect(dialog).toContain('Paste 400 × 6 block');
+		expect(dialog).toContain('2,400 cell(s) updated');
+		expect(await page.evaluate(() => window.__harness.dialogConfirm())).toBe(true);
 		const measured = await page.evaluate(async () => {
-			const started = performance.now();
-			const written = window.__harness.fillMatrix(400, 6);
-			// Two frames: the op is dispatched synchronously, the render it causes is not.
 			await new Promise((resolve) =>
 				window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)),
 			);
-			return { ms: performance.now() - started, written };
+			return performance.now();
 		});
-		expect(measured.written).toBe(2400);
-		expect(measured.ms, `${measured.ms.toFixed(1)} ms for 2,400 cells`).toBeLessThan(2000);
-		// The values are in the grid, not only in an op: read one back from the DOM.
-		const landed = await page.evaluate(() => {
-			const row = document.querySelectorAll('.tablify-rows .grid-row')[0];
-			const cell = row?.querySelector('[data-field="note.Owner"]');
-			return cell?.textContent ?? null;
-		});
-		// The window is still at the top, so the first rendered row is row 0 — and its Owner cell holds what
-		// the write put there.
-		expect(landed).toBe('v0-0');
+		expect(measured).toBeGreaterThan(0);
+		const elapsed = Date.now() - started;
+		expect(elapsed, `${String(elapsed)} ms for a 2,400-cell paste`).toBeLessThan(2000);
+		// The values are in the cells, not only in an op — read from the store, as plain text, which is what a
+		// copy of the cell would write.
+		expect(
+			await page.evaluate((at) => window.__harness.cellPlain(at.row, at.column + 1), anchor),
+		).toBe('v0-1');
+		expect(
+			await page.evaluate(
+				(at) => window.__harness.cellPlain(at.row + 399, at.column + 5),
+				anchor,
+			),
+		).toBe('v399-5');
+		// Two thousand four hundred cells, and **no notes**: this mode fills the rows the table already has, and
+		// the fake source's own count says so.
+		expect(await page.evaluate(() => window.__harness.createdNotes())).toBe(0);
+		expect(await page.evaluate(() => window.__harness.rows())).toBe(5000);
+		expect(await page.evaluate(() => window.__harness.announcement())).toBe(
+			'2,400 cell(s) pasted',
+		);
 		testInfo.annotations.push({
 			type: 'budget · assertion 11',
-			description: `2,400 cells in ${measured.ms.toFixed(1)} ms (budget 2,000 ms)`,
+			description: `2,400 cells pasted in ${String(elapsed)} ms (budget 2,000 ms)`,
 		});
 	});
 
@@ -737,4 +769,168 @@ test.describe('the assertions the harness added', () => {
 			expect(right ?? 0).toBeLessThanOrEqual(measured.scrollingLeft ?? 0);
 		}
 	});
+
+	test('15 · a copy → paste round-trip through the UI preserves every value', async ({
+		page,
+	}, testInfo) => {
+		/*
+		 * The committed regression guard for the clipboard: values out, values back, through **the events a
+		 * browser fires** — the grid's own `copy` listener, and a `paste` event carrying each flavour.
+		 *
+		 * Two of the four cells are the ones that would have broken in a naive implementation, and they are the
+		 * reason this is a separate assertion rather than one more row of number 11:
+		 *   · `=SUM(A1:A2)` — a leading `=` makes a spreadsheet evaluate the cell, so it must be quoted in the TSV
+		 *     and marked `mso-number-format` in the HTML, and it must come back as *text*;
+		 *   · `line one\nline two` — a newline inside a cell is the character both formats use for structure
+		 *     (a TSV row separator, an HTML whitespace collapse), so it must survive as a newline and not as a
+		 *     row break or a space.
+		 */
+		await page.evaluate(() => window.__harness.setRows(40));
+		const anchor = await page.evaluate(() => window.__harness.pasteAnchor());
+		// Column 11 is `note.Notes` (longText); 12 and 13 are `note.Link` and `note.Contact`. Text-shaped
+		// columns, so what comes back is comparable as plain text.
+		/*
+		 * The block, spelled the way a spreadsheet puts it on the clipboard: tab-separated rows, a quoted cell
+		 * whose content contains a literal newline, and a quoted leading `=` (TSV's own escape). Written out here
+		 * rather than produced by `toTsv`, for two reasons: the spec may not import `src/**` (it measures the
+		 * page), and a spec fed its own writer's output would be testing the pair rather than the product — which
+		 * is exactly what `tests/unit/clipboard-roundtrip.test.ts` is for.
+		 */
+		const source = [
+			'"=SUM(A1:A2)"\t"line one\nline two"\t007',
+			'🎉 party\tafter\ttrailing',
+		].join('\n');
+		await page.evaluate(
+			async (at) => window.__harness.focusCell(at.row, at.column + 1),
+			anchor,
+		);
+		expect(
+			await page.evaluate((p) => window.__harness.pastePayload(p), {
+				text: source,
+				html: '',
+			}),
+			'the grid consumed the paste event',
+		).toBe(true);
+		// Six cells, well inside the table: no dialog, and the live region says what happened.
+		expect(await page.evaluate(() => window.__harness.announcement())).toBe('6 cell(s) pasted');
+		const pasted = await readBlock(page, anchor.row, anchor.column + 1, 2, 3);
+		expect(pasted[0]?.[0]).toBe('=SUM(A1:A2)');
+		expect(pasted[0]?.[1]).toBe('line one\nline two');
+
+		// Select the block just pasted and copy it — a real `copy` event, the grid's own listener.
+		await page.evaluate(
+			async (at) => window.__harness.focusCell(at.row, at.column + 1),
+			anchor,
+		);
+		await page.keyboard.press('Shift+ArrowRight');
+		await page.keyboard.press('Shift+ArrowRight');
+		await page.keyboard.press('Shift+ArrowDown');
+		const copied = await page.evaluate(() => window.__harness.copyRange());
+		expect(copied.prevented, 'the grid handled the copy').toBe(true);
+		// Both flavours, and each one carries the two dangerous cells in its own way.
+		expect(copied.text).toContain('"=SUM(A1:A2)"');
+		expect(copied.html).toContain('mso-number-format');
+		expect(copied.html).toContain('line&nbsp;one<br>line&nbsp;two');
+		expect(await page.evaluate(() => window.__harness.announcement())).toBe(
+			'6 cell(s) copied.',
+		);
+
+		// Paste the text flavour ten rows down, and the HTML flavour ten rows below that: the same six values
+		// must land twice.
+		for (const [offset, flavour] of [
+			[10, 'text'],
+			[20, 'html'],
+		] as const) {
+			await page.evaluate(async (args) => window.__harness.focusCell(args.row, args.column), {
+				row: anchor.row + offset,
+				column: anchor.column + 1,
+			});
+			const payload =
+				flavour === 'text'
+					? { text: copied.text, html: '' }
+					: { text: '', html: copied.html };
+			expect(
+				await page.evaluate((p) => window.__harness.pastePayload(p), payload),
+				`the grid consumed the ${flavour} paste`,
+			).toBe(true);
+			const back = await readBlock(page, anchor.row + offset, anchor.column + 1, 2, 3);
+			expect(back, `the ${flavour} flavour preserved every value`).toEqual(pasted);
+		}
+		testInfo.annotations.push({
+			type: 'round-trip · assertion 15',
+			description: `TSV ${String(copied.text.length)} chars, HTML ${String(copied.html.length)} chars; both flavours re-pasted`,
+		});
+	});
+
+	test('16 · append-as-rows creates one note per pasted row, and the counts agree', async ({
+		page,
+	}, testInfo) => {
+		/*
+		 * The clause the dialog exists for: *never create notes without the confirmation dialog*. A block taller
+		 * than the table cannot land without creating rows, so the dialog opens even under the `expand` setting,
+		 * the plan's own count is on screen before anything happens, and — after the confirm — the rows the fake
+		 * source was asked to create are exactly the rows the dialog promised.
+		 */
+		await page.evaluate(() => window.__harness.setRows(6));
+		const anchor = await page.evaluate(() => window.__harness.pasteAnchor());
+		await page.evaluate(async (at) => window.__harness.focusCell(at.row, at.column), anchor);
+		const text = await page.evaluate(() => window.__harness.matrixTsv(5, 2));
+		expect(
+			await page.evaluate((p) => window.__harness.pastePayload(p), { text, html: '' }),
+		).toBe(true);
+		const dialog = await page.evaluate(() => window.__harness.dialogText());
+		expect(dialog).toContain('Paste 5 × 2 block');
+		// Two rows land in the table that exists, three become notes — the numbers the dialog states.
+		expect(dialog).toContain('4 cell(s) updated');
+		expect(dialog).toContain('3 note(s) created');
+		const before = await page.evaluate(() => window.__harness.rows());
+		expect(before).toBe(6);
+		expect(await page.evaluate(() => window.__harness.dialogChoose('Append as new rows'))).toBe(
+			true,
+		);
+		await page.evaluate(
+			() =>
+				new Promise((resolve) =>
+					window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)),
+				),
+		);
+		// Append, not fill: every one of the five rows is a note, and the table grows by five.
+		expect(await page.evaluate(() => window.__harness.createdNotes())).toBe(5);
+		expect(await page.evaluate(() => window.__harness.rows())).toBe(11);
+		expect(await page.evaluate(() => window.__harness.announcement())).toBe(
+			'5 note(s) created',
+		);
+		testInfo.annotations.push({
+			type: 'note creation · assertion 16',
+			description: '5 pasted rows → 5 notes created, 0 cells overwritten',
+		});
+	});
 });
+
+/**
+ * A rectangle of cells as plain text, read from the store through each column's own `formatPlain` — i.e. exactly
+ * what a copy of those cells would put on the clipboard. `null` when the rectangle runs past the table.
+ */
+async function readBlock(
+	page: Page,
+	row: number,
+	column: number,
+	rows: number,
+	columns: number,
+): Promise<(string | null)[][]> {
+	const block = await page.evaluate(
+		(args) => {
+			const values: (string | null)[][] = [];
+			for (let r = 0; r < args.rows; r += 1) {
+				const line: (string | null)[] = [];
+				for (let c = 0; c < args.columns; c += 1) {
+					line.push(window.__harness.cellPlain(args.row + r, args.column + c));
+				}
+				values.push(line);
+			}
+			return values;
+		},
+		{ row, column, rows, columns },
+	);
+	return block;
+}

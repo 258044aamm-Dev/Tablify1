@@ -107,7 +107,19 @@ import {
 	tabStop,
 } from './keyboard/focus';
 import { announcementOf, gridRoleProps, LiveRegion } from './a11y/roles';
-import { allOf, cellPosition, cellsOf, normalize, rowRange } from '../core/selection/range';
+import { createClipboardHost } from './clipboard/host';
+import { matrixOfSelection, payloadHtml, payloadTsv } from './clipboard/matrix';
+import { needsDialog, planPaste, readAndPlan } from './clipboard/pastePlan';
+import { applyPlan, pasteSentence } from './clipboard/wiring';
+import { startRangeDrag, useCoarsePointer } from './selection/dragSelect';
+import {
+	allOf,
+	cellPosition,
+	cellsOf,
+	columnRange,
+	normalize,
+	rowRange,
+} from '../core/selection/range';
 import type { EditSession } from './editSession';
 import type { GridPresentation } from './layout';
 import type { GridStore } from './store/types';
@@ -119,6 +131,10 @@ import type { CommandResult } from './store/commands';
 import type { Edge, Range, RangeOrder } from '../core/selection/range';
 import type { DialogPort } from './dialogs/port';
 import type { GridDialogId, GridMenuPorts, GridRowPorts } from './menus/context';
+import type { ClipboardHost } from './clipboard/host';
+import type { ClipboardPayload } from './clipboard/matrix';
+import type { PasteModeId, PasteSetting } from './clipboard/pastePlan';
+import type { CreateRows } from './clipboard/wiring';
 
 export type GridViewProps = {
 	readonly store: GridStore;
@@ -162,11 +178,28 @@ export type GridViewProps = {
 	 * is given, so this is how a change made *inside* a dialog reaches the next render.
 	 */
 	readonly onPresentation?: ((patch: Partial<GridPresentation>) => void) | undefined;
+	/**
+	 * How a pasted block lands: the three settings that decide the dialog, and the one capability only the view
+	 * has — **creating notes**. Omitted entirely, a paste still fills cells and says that it could not create
+	 * rows; the settings' defaults (`expand` + the doc's threshold) are assumed so a host that has not been
+	 * wired yet behaves like the shipped defaults rather than like a build with the feature switched off.
+	 */
+	readonly paste?: PasteOptions | undefined;
+};
+
+/** The view's half of a paste (see `GridViewProps.paste`). */
+export type PasteOptions = {
+	/** `import.clipboardPasteMode`: ask every time, grow the table, or stay inside the selection. */
+	readonly mode: PasteSetting;
+	readonly warnOnLargeImport: boolean;
+	readonly largeImportThreshold: number;
+	/** Creates the notes a paste asks for, and answers with the rows they became. */
+	readonly createRows?: CreateRows | undefined;
 };
 
 export function GridView(props: GridViewProps): ReactElement {
 	const { store, presentation: patch, initialPaneWidth = 0, onNewRow, onClearFilters } = props;
-	const { resolveLink, onHelp } = props;
+	const { resolveLink, onHelp, paste } = props;
 	const presentation = useMemo(() => resolvePresentation(patch), [patch]);
 
 	const rootRef = useRef<HTMLDivElement | null>(null);
@@ -235,6 +268,20 @@ export function GridView(props: GridViewProps): ReactElement {
 	);
 	/** The polite announcement (`docs/04`: "412 cells updated in 137 notes"), derived from the write report. */
 	const announcement = useStore(store, announcementOf);
+	/**
+	 * A message the **clipboard** wants announced ("2,400 cells pasted · 400 notes created"), or `''`.
+	 *
+	 * The live region's normal source is the write report on the snapshot; a paste is the one action whose most
+	 * important sentence is not in that report — how many *notes* it made, and whether the row-creation half
+	 * could run at all. So this overrides the region for one message, which is the same mechanism the report
+	 * uses: a change in a region that never unmounts.
+	 */
+	const [pasteMessage, setPasteMessage] = useState('');
+	/** The browser's clipboard, created once per mount (it closes over one document). */
+	const clipboardHost: ClipboardHost = useMemo(() => createClipboardHost(), []);
+	/** Whether a finger drag selects instead of scrolling — `docs/04` §Touch's explicit toggle. */
+	const [rangeSelect, setRangeSelect] = useState(false);
+	const coarsePointer = useCoarsePointer();
 
 	const pinned = usePinnedPrimary(areaRef, presentation.frozenPrimary, initialPaneWidth);
 
@@ -585,6 +632,135 @@ export function GridView(props: GridViewProps): ReactElement {
 	 * Runs one intent. `false` means "the grid did not act on this", which is what lets the key through untouched
 	 * (`handler.ts` prevents the default only when this answered `true`).
 	 */
+	/**
+	 * **Copy.** Builds both flavours from the selection and puts them on the clipboard.
+	 *
+	 * The event path (below) is the primary one and is best: the browser hands us a `clipboardData` and both
+	 * flavours go on it synchronously, with no permission and no prompt. This function is what the *menu*, the
+	 * keyboard chord when no event fires, and the toolbar use — it goes through `ClipboardHost`, which reports
+	 * which path ran so the grid can say "use Ctrl+C instead" when the asynchronous API was refused.
+	 */
+	const copySelection = useCallback(
+		async (verb: 'copy' | 'cut'): Promise<void> => {
+			const snapshot = store.getSnapshot();
+			const matrix = matrixOfSelection(store.state(), snapshot.order, snapshot.selection);
+			if (matrix.length === 0) {
+				setPasteMessage('Nothing is selected to copy.');
+				return;
+			}
+			const path = await clipboardHost.write({
+				tsv: payloadTsv(matrix),
+				html: payloadHtml(matrix),
+			});
+			if (path === 'unavailable') {
+				setPasteMessage('The clipboard is not available here. Use Ctrl/Cmd+C instead.');
+				return;
+			}
+			const cells = matrix.reduce((sum, row) => sum + row.length, 0);
+			if (verb === 'copy') {
+				setPasteMessage(`${cells.toLocaleString('en-GB')} cell(s) copied.`);
+				return;
+			}
+			// `cut` is a copy **then** a clear: the two are separate on purpose, so a clear that fails leaves the
+			// copied values on the clipboard rather than losing them (`docs/07` §Tier 1's round-trip rule).
+			const cleared = clearSelection(store);
+			setPasteMessage(
+				cleared.ok
+					? `${cells.toLocaleString('en-GB')} cell(s) cut.`
+					: `${cells.toLocaleString('en-GB')} cell(s) copied, but the cells could not be cleared: ${cleared.reason}`,
+			);
+		},
+		[store, clipboardHost],
+	);
+
+	/** Puts a payload on the grid's own `copy` event, which is the path that carries both flavours for free. */
+	const fillCopyEvent = useCallback(
+		(event: ClipboardEvent): boolean => {
+			const data = event.clipboardData;
+			if (data === null) {
+				return false;
+			}
+			const snapshot = store.getSnapshot();
+			const matrix = matrixOfSelection(store.state(), snapshot.order, snapshot.selection);
+			if (matrix.length === 0) {
+				return false;
+			}
+			event.preventDefault();
+			data.setData('text/plain', payloadTsv(matrix));
+			data.setData('text/html', payloadHtml(matrix));
+			const cells = matrix.reduce((sum, row) => sum + row.length, 0);
+			setPasteMessage(`${cells.toLocaleString('en-GB')} cell(s) copied.`);
+			return true;
+		},
+		[store],
+	);
+
+	/**
+	 * **Paste.** A payload goes through `readAndPlan` — HTML first, then TSV, then CSV — and then either the
+	 * dialog or straight to `applyPlan`. Nothing here writes: `applyPlan` takes the plan, which is what makes
+	 * "never create notes without the confirmation dialog" a property of the code rather than of the review.
+	 */
+	const pastePayload = useCallback(
+		(payload: ClipboardPayload): void => {
+			const snapshot = store.getSnapshot();
+			const base = {
+				state: store.state(),
+				order: snapshot.order,
+				anchor: snapshot.active,
+				setting: paste?.mode ?? 'expand',
+				largeThreshold: paste?.largeImportThreshold ?? 250,
+			};
+			const { read, plan } = readAndPlan({ ...base, payload });
+			if (read.flavour === 'empty') {
+				setPasteMessage('The clipboard holds nothing readable.');
+				return;
+			}
+			const port = dialogsRef.current;
+			const run = (mode: PasteModeId): void => {
+				const chosen = planPaste({ ...base, matrix: read.matrix, mode });
+				void applyPlan(store, chosen, { createRows: paste?.createRows }).then((outcome) => {
+					setPasteMessage(pasteSentence(outcome));
+				});
+			};
+			if (needsDialog(plan, base.setting)) {
+				if (port === null) {
+					// The rule this branch exists for: **no confirmation dialog, no created notes.** A host that
+					// cannot offer the dialog cannot offer the choice, and a choice made for someone else — a
+					// thousand notes nobody agreed to — is exactly what the dialog is for.
+					setPasteMessage(
+						'This paste needs a choice, and this view cannot show the dialog. Use Ctrl/Cmd+V in the grid.',
+					);
+					return;
+				}
+				port.pasteBlock({
+					base: { ...base, matrix: read.matrix },
+					setting: base.setting,
+					warnOnLargeImport: paste?.warnOnLargeImport ?? true,
+					largeImportThreshold: base.largeThreshold,
+					onChoose: run,
+				});
+				return;
+			}
+			// No dialog: `cells` is the only mode that means anything without a choice (filling from the anchor),
+			// and `append`/`create` are the two answers the dialog exists to offer.
+			run('cells');
+		},
+		[store, paste],
+	);
+
+	/** The context-menu **Paste**: the only way in that has to *read* the clipboard rather than receive it. */
+	const pasteFromClipboard = useCallback((): void => {
+		void clipboardHost.read().then((read) => {
+			if (read === null) {
+				setPasteMessage(
+					'The clipboard is empty, or reading it was refused. Use Ctrl/Cmd+V instead.',
+				);
+				return;
+			}
+			pastePayload(read.payload);
+		});
+	}, [clipboardHost, pastePayload]);
+
 	const runIntent = useCallback(
 		(intent: GridIntent): boolean => {
 			switch (intent.id) {
@@ -679,10 +855,17 @@ export function GridView(props: GridViewProps): ReactElement {
 				case 'help':
 					onHelp?.();
 					return onHelp !== undefined;
-				case 'clipboard':
-					// Step 22 wires what is on the clipboard (TSV + HTML, three paste modes). Until then the key is
-					// *not handled*, so `Cmd+C` still copies the text a person selected and nothing is swallowed.
-					return false;
+				case 'clipboard': {
+					// Copy and cut go through the host (the event path is the *other* way in, and it is better:
+					// see `fillCopyEvent`). Paste has no keyboard path at all — the browser's own `paste` event
+					// carries both flavours, and intercepting `Cmd+V` to read a text-only clipboard would be a
+					// downgrade. The key is therefore *not handled* here, which leaves the event free to arrive.
+					if (intent.verb === 'paste') {
+						return false;
+					}
+					void copySelection(intent.verb);
+					return true;
+				}
 				case 'commit-move':
 					// Observed, never dispatched: `handler.ts` routes it to `onCommitKey`, and the follow-up happens
 					// in `onFinish` once the editor has actually committed.
@@ -691,7 +874,7 @@ export function GridView(props: GridViewProps): ReactElement {
 					return false;
 			}
 		},
-		[store, requestFocus, openEditor, editableField, onHelp],
+		[store, requestFocus, openEditor, editableField, onHelp, copySelection],
 	);
 
 	/** A commit key pressed inside an open editor: recorded now, applied when the editor finishes. */
@@ -714,10 +897,57 @@ export function GridView(props: GridViewProps): ReactElement {
 			dispatch: runIntent,
 			onCommitKey,
 		});
+		/**
+		 * The clipboard's **event** path — the primary one, and the only path that carries `text/html` in both
+		 * directions without a permission prompt. `copy` and `cut` are filled in from the selection; `paste` is
+		 * read here and planned by the same code the menu uses, so there is exactly one paste semantics.
+		 *
+		 * An open editor keeps its own clipboard behaviour: `event.target` inside `.cell-editor` means the person
+		 * is copying *text they typed*, not the grid's range, and swallowing that would be the worse bug.
+		 */
+		const insideEditor = (event: Event): boolean =>
+			event.target instanceof Element && event.target.closest('.cell-editor') !== null;
+		const onCopy = (event: ClipboardEvent): void => {
+			if (insideEditor(event)) {
+				return;
+			}
+			fillCopyEvent(event);
+		};
+		const onCut = (event: ClipboardEvent): void => {
+			if (insideEditor(event)) {
+				return;
+			}
+			const copied = fillCopyEvent(event);
+			if (copied) {
+				clearSelection(store);
+			}
+		};
+		const onPaste = (event: ClipboardEvent): void => {
+			if (insideEditor(event)) {
+				return;
+			}
+			const data = event.clipboardData;
+			if (data === null) {
+				return;
+			}
+			const html = data.getData('text/html');
+			const text = data.getData('text/plain');
+			if (html === '' && text === '') {
+				return;
+			}
+			event.preventDefault();
+			pastePayload({ html, text });
+		};
+		root.addEventListener('copy', onCopy);
+		root.addEventListener('cut', onCut);
+		root.addEventListener('paste', onPaste);
 		return () => {
 			attachment.detach();
+			root.removeEventListener('copy', onCopy);
+			root.removeEventListener('cut', onCut);
+			root.removeEventListener('paste', onPaste);
 		};
-	}, [readContext, runIntent, onCommitKey]);
+	}, [readContext, runIntent, onCommitKey, fillCopyEvent, pastePayload, store]);
 
 	/**
 	 * Places the fill handle over the selection's bottom-right cell.
@@ -850,6 +1080,10 @@ export function GridView(props: GridViewProps): ReactElement {
 			onDuplicateRows: rowsRef.current.onDuplicateRows,
 			onDeleteRows: rowsRef.current.onDeleteRows,
 			onDialog: openFieldDialog,
+			onCopy: (verb) => {
+				void copySelection(verb);
+			},
+			onPaste: pasteFromClipboard,
 			onSelectRows: (paths) => {
 				for (const path of paths) {
 					// A range over whole rows: the selection the gutter's own checkbox makes.
@@ -860,7 +1094,7 @@ export function GridView(props: GridViewProps): ReactElement {
 				}
 			},
 		}),
-		[openRowDetails, openBulkEdit, openFieldDialog, store],
+		[openRowDetails, openBulkEdit, openFieldDialog, store, copySelection, pasteFromClipboard],
 	);
 
 	/** Opens the header menu at the pointer (a header click, or a right-click on a header). */
@@ -1149,6 +1383,34 @@ export function GridView(props: GridViewProps): ReactElement {
 		[store, previewFill],
 	);
 
+	/**
+	 * Starts a range drag from the cell under the press. The cell's own `pointerdown` has already moved the
+	 * active cell (and, with Shift held, set the range's focus), so the drag needs nothing from the event but a
+	 * pointer and the anchor the range started from — the selection as it stands *after* that press.
+	 *
+	 * Auto-scrolling past the pane's edge is the reason this is not step 20's `dragSession`: see the header of
+	 * `src/grid/selection/dragSelect.ts`.
+	 */
+	const startCellRangeDrag = useCallback((): void => {
+		const scroller = scrollerRef.current;
+		if (scroller === null) {
+			return;
+		}
+		const selection = store.getSnapshot().selection;
+		if (selection === null) {
+			return;
+		}
+		const anchor = selection.anchor;
+		startRangeDrag({
+			doc: scroller.ownerDocument,
+			scroller,
+			cellAt: (x, y) => cellAtPoint(scroller.ownerDocument, x, y),
+			onExtend: (ref) => {
+				setSelection(store, { anchor, focus: ref });
+			},
+		});
+	}, [store]);
+
 	/** Starts a scroll-thumb drag, or pages the track when the press missed the thumb. */
 	const startScrollDrag = useCallback(
 		(axis: 'x' | 'y', element: HTMLElement, event: PointerEvent): void => {
@@ -1281,12 +1543,53 @@ export function GridView(props: GridViewProps): ReactElement {
 			const header = node.closest('[data-field]');
 			if (header instanceof HTMLElement && node.closest('.hcell') === header) {
 				const fieldId = header.dataset['field'];
-				if (fieldId !== undefined) {
-					startColumnReorder(header, fieldId, event.nativeEvent);
+				if (fieldId === undefined) {
+					return;
 				}
+				/*
+				 * **Shift+press on a header selects the whole column.** A plain press starts the reorder drag, and
+				 * a plain press that never moves opens the header menu (asserted in `tests/dom/pointer.test.tsx`),
+				 * so the column selection needs a modifier of its own — and the prototype left exactly this one
+				 * free: `prototype/js/grid.js` §mousedown reads
+				 * `if (e.button === 0 && !e.shiftKey) beginColumnDrag(...)`, with no branch for the Shift case.
+				 */
+				if (event.shiftKey) {
+					event.preventDefault();
+					const range = columnRange(fieldId, store.getSnapshot().order);
+					if (range !== null) {
+						setSelection(store, range);
+					}
+					return;
+				}
+				startColumnReorder(header, fieldId, event.nativeEvent);
+				return;
+			}
+			/*
+			 * A press on a cell: the range drag. On a fine pointer it always runs — dragging across cells is how a
+			 * range is made with a mouse. On a coarse one it runs only in the **Select range** mode, because a
+			 * finger drag on the grid is how you scroll (`docs/04` §Touch), and because the mode's whole reason to
+			 * exist is that a scroll and a selection gesture cannot both be a drag.
+			 */
+			if (
+				event.button === 0 &&
+				(rangeSelect || !coarsePointer) &&
+				node.closest('[data-cell]') !== null
+			) {
+				event.preventDefault();
+				startCellRangeDrag();
 			}
 		},
-		[startColumnResize, startRowReorder, startFillDrag, startScrollDrag, startColumnReorder],
+		[
+			startColumnResize,
+			startRowReorder,
+			startFillDrag,
+			startScrollDrag,
+			startColumnReorder,
+			startCellRangeDrag,
+			rangeSelect,
+			coarsePointer,
+			store,
+		],
 	);
 
 	const onActivate = useCallback(
@@ -1305,6 +1608,15 @@ export function GridView(props: GridViewProps): ReactElement {
 		},
 		[store],
 	);
+
+	/**
+	 * The touch range-selection mode (`docs/04` §Touch). It is view state rather than store state on purpose: it
+	 * is a mode of the *gesture*, not of the table, and nothing about it is undoable or written anywhere. The
+	 * drag that reads it lives in `onRootPointerDown`.
+	 */
+	const onToggleRangeSelect = useCallback((): void => {
+		setRangeSelect((on) => !on);
+	}, []);
 
 	const onToggleRow = useCallback(
 		(filePath: RowId, checked: boolean): void => {
@@ -1368,6 +1680,8 @@ export function GridView(props: GridViewProps): ReactElement {
 			<Toolbar
 				store={store}
 				initialPaneWidth={initialPaneWidth}
+				rangeSelect={rangeSelect}
+				onToggleRangeSelect={onToggleRangeSelect}
 				{...(onNewRow === undefined ? {} : { onNewRow })}
 			/>
 
@@ -1493,7 +1807,7 @@ export function GridView(props: GridViewProps): ReactElement {
 
 			{/* One polite live region for the whole grid, mounted for the life of the view: it is the *change* in a
 			    live region that a screen reader announces, so a region re-created per render announces nothing. */}
-			<LiveRegion message={announcement} />
+			<LiveRegion message={pasteMessage === '' ? announcement : pasteMessage} />
 		</div>
 	);
 }

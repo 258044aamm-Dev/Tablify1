@@ -178,6 +178,20 @@ export default defineConfig(
 		},
 	},
 	/*
+	 * One shipped file carries the same exemption as the harness and the dom tests, and it is the single place
+	 * in `src/**` where the rule is off: `src/grid/clipboard/host.ts` **is** the clipboard's fallback, and it has
+	 * to work on a document that has not been augmented (`tests/**`'s jsdom, and any host that is not Obsidian).
+	 * Its `createTextarea` calls the host's `createEl` whenever the document has one and only then falls back,
+	 * which is the behaviour the rule is asking for — expressed in code, because "if available" is not a shape a
+	 * lint rule can see. `tests/dom/clipboard-host.test.ts` drives both branches.
+	 */
+	{
+		files: ['src/grid/clipboard/host.ts'],
+		rules: {
+			'obsidianmd/prefer-create-el': 'off',
+		},
+	},
+	/*
 	 * Architectural boundaries, enforced as lint errors (AGENTS.md §boundaries, docs/02 §Layers).
 	 *
 	 * One trap worth stating, because it bit this repository on 2026-10-05: `no-restricted-imports` is
@@ -337,6 +351,11 @@ export default defineConfig(
 		files: ['tests/dom/**/*.ts', 'tests/dom/**/*.tsx'],
 		rules: {
 			'no-restricted-imports': restrict({}),
+			// The same relaxation the harness block carries, for the same reason: a dom test builds real elements
+			// with `document.createElement` because Obsidian's `createEl` is *installed by the app* and jsdom has
+			// no app. `obsidianmd/prefer-create-el` cannot express "prefer it when it is there", which is what
+			// `src/grid/clipboard/host.ts` does in code.
+			'obsidianmd/prefer-create-el': 'off',
 			// The same two relaxations the `tests/**/*.ts` object above applies, for the same reasons — one test
 			// environment, not two. Reading `src/styles/*.css` off disk (step 18's declared size rules) is a
 			// development-tool import; and a dom test drives a prototype method against a double on purpose

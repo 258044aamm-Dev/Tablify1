@@ -23,6 +23,7 @@ import { redo, undo } from './store/commands';
 import { useStore } from './store/selectors';
 import { paneWidthOf } from './measure';
 import { TOOLBAR_COLLAPSE_PX } from './layout';
+import { useCoarsePointer } from './selection/dragSelect';
 import { showMenu } from './menus/items';
 import { toolbarMenuItems } from './menus/toolbarMenu';
 import type { GridStore } from './store/types';
@@ -36,6 +37,16 @@ export type ToolbarProps = {
 	 * frame from painting three buttons and then taking one away — the same reason `GridView` takes it.
 	 */
 	readonly initialPaneWidth?: number | undefined;
+	/**
+	 * The touch range-selection mode, owned by the view (the drag that reads it is the view's).
+	 *
+	 * It is rendered **only on a coarse pointer**: `docs/04` §Touch gives this toggle a reason — a finger drag on
+	 * the grid is how you scroll, so selecting a range has to be asked for — and on a mouse that reason does not
+	 * exist, because the drag already selects. A button that appeared on the desktop would be a mode nobody has a
+	 * use for.
+	 */
+	readonly rangeSelect?: boolean | undefined;
+	readonly onToggleRangeSelect?: (() => void) | undefined;
 };
 
 /** True when the toolbar is too narrow for its own buttons: below `TOOLBAR_COLLAPSE_PX`, and only then. */
@@ -84,9 +95,18 @@ function useCollapsed(toolbar: RefObject<HTMLElement | null>, initialWidth: numb
 }
 
 export function Toolbar(props: ToolbarProps): ReactElement {
-	const { store, onNewRow, initialPaneWidth = 0 } = props;
+	const {
+		store,
+		onNewRow,
+		initialPaneWidth = 0,
+		rangeSelect = false,
+		onToggleRangeSelect,
+	} = props;
 	const barRef = useRef<HTMLDivElement | null>(null);
 	const collapsed = useCollapsed(barRef, initialPaneWidth);
+	const coarse = useCoarsePointer();
+	// The mode exists only where a drag would otherwise scroll, and only when the view can actually toggle it.
+	const rangeToggle = coarse && onToggleRangeSelect !== undefined;
 	const rows = useStore(store, (snapshot) => snapshot.rows.length);
 	const canUndo = useStore(store, (snapshot) => snapshot.canUndo);
 	const canRedo = useStore(store, (snapshot) => snapshot.canRedo);
@@ -108,11 +128,23 @@ export function Toolbar(props: ToolbarProps): ReactElement {
 					onUndo,
 					onRedo,
 					onNewRow: onNewRow ?? null,
+					rangeSelect: rangeToggle ? rangeSelect : null,
+					onToggleRangeSelect: onToggleRangeSelect ?? (() => undefined),
 				}),
 				{ kind: 'event', event: event.nativeEvent },
 			);
 		},
-		[canUndo, canRedo, undoLabel, onUndo, onRedo, onNewRow],
+		[
+			canUndo,
+			canRedo,
+			undoLabel,
+			onUndo,
+			onRedo,
+			onNewRow,
+			rangeToggle,
+			rangeSelect,
+			onToggleRangeSelect,
+		],
 	);
 
 	return (
@@ -157,6 +189,17 @@ export function Toolbar(props: ToolbarProps): ReactElement {
 					</button>
 				</>
 			)}
+			{!collapsed && rangeToggle ? (
+				<button
+					className={`tablify-btn${rangeSelect ? ' is-on' : ''}`}
+					type="button"
+					aria-pressed={rangeSelect}
+					title="Drag across cells to select a range instead of scrolling"
+					onClick={onToggleRangeSelect}
+				>
+					Select range
+				</button>
+			) : null}
 			<span className="tablify-toolbar-spacer" />
 			<span className="tablify-count">{rows} rows</span>
 		</div>

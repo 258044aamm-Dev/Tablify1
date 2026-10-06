@@ -390,7 +390,7 @@ describe('the grid keyboard', () => {
 		expect(press(rootEl(), 'Tab', { shiftKey: true })).toBe(false);
 	});
 
-	it('leaves Cmd+C alone until the clipboard arrives (step 22)', () => {
+	it('handles the copy chords itself, and leaves paste to the browser (step 22)', () => {
 		const { store } = makeFixture();
 		mount(store);
 		act(() => {
@@ -398,7 +398,17 @@ describe('the grid keyboard', () => {
 				new PointerEvent('pointerdown', { bubbles: true }),
 			);
 		});
-		expect(press(rootEl(), 'c', { metaKey: true })).toBe(false);
+		/*
+		 * Copy and cut are the grid's: `Cmd/Ctrl+C` is caught so that the *event* path can put both flavours on
+		 * the clipboard (`fillCopyEvent`), and cut is the same copy followed by the clear.
+		 *
+		 * Paste is deliberately **not** handled, and this assertion is the reason it is worth stating: the browser's
+		 * own `paste` event carries `text/html` as well as `text/plain`, and reading the clipboard ourselves would
+		 * mean getting the text flavour only — a downgrade. So `Cmd/Ctrl+V` stays the browser's, and the grid
+		 * listens for the event that comes out of it.
+		 */
+		expect(press(rootEl(), 'c', { metaKey: true })).toBe(true);
+		expect(press(rootEl(), 'x', { ctrlKey: true })).toBe(true);
 		expect(press(rootEl(), 'v', { ctrlKey: true })).toBe(false);
 	});
 

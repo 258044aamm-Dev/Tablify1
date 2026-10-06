@@ -96,6 +96,12 @@ function makeFixture(): {
 		onDeleteRows: rowPorts.onDeleteRows,
 		onDialog: (id, argument) =>
 			calls.push(`dialog:${id}${argument === undefined ? '' : `:${argument}`}`),
+		onCopy: (verb) => {
+			calls.push(`copy:${verb}`);
+		},
+		onPaste: () => {
+			calls.push('paste');
+		},
 		onSelectRows: (paths) => calls.push(`select:${paths.join(',')}`),
 	};
 	return { store, calls, ports };
@@ -108,9 +114,14 @@ function contextOf(args: {
 	readonly fieldId?: string;
 	readonly filePath?: string;
 	readonly selection?: boolean;
+	/** Selects exactly one cell instead of a range — the case Cut and Paste are disabled for. */
+	readonly single?: boolean;
 }): { readonly bounds: MenuBounds; readonly fieldId: string; readonly filePath: string } {
-	const { store, ports, fieldId = 'note.Count', filePath = ROWS[1] ?? '' } = args;
-	if (args.selection !== false) {
+	const { store, ports, fieldId = 'note.Count', filePath = ROWS[1] ?? '', single = false } = args;
+	if (single) {
+		selectCell(store, { filePath: ROWS[1] ?? '', fieldId: 'note.Count' });
+	}
+	if (!single && args.selection !== false) {
 		selectCell(store, { filePath: ROWS[0] ?? '', fieldId: 'note.Name' });
 		setSelection(store, {
 			anchor: { filePath: ROWS[0] ?? '', fieldId: 'note.Name' },
@@ -150,7 +161,7 @@ describe('the cell menu', () => {
 		expect(specs.filter((spec) => spec.separatorBefore === true)).toHaveLength(3);
 	});
 
-	it('disables the clipboard items with their reason, and the row items the view cannot do', () => {
+	it('leaves the clipboard items live on a multi-cell selection, and disables the row items the view cannot do', () => {
 		const { store, ports } = makeFixture();
 		const { bounds, fieldId, filePath } = contextOf({ store, ports });
 		const specs = cellMenuItems({
@@ -162,15 +173,37 @@ describe('the cell menu', () => {
 			ports,
 		});
 		const byId = new Map(specs.map((spec) => [spec.id, spec]));
-		// Step 22's clipboard, step 21's file operations: disabled, each with a sentence saying why.
-		expect(byId.get('copy')?.disabled).toBe(true);
-		expect(byId.get('copy')?.reason).toContain('step 22');
+		// Step 22's clipboard is here: on a two-row × two-column selection, all three items are live, and a copy
+		// is offered even on a column the grid may not write to (copying out of a read-only cell is the point).
+		expect(byId.get('copy')?.disabled).toBeUndefined();
+		expect(byId.get('cut')?.disabled).toBe(false);
+		expect(byId.get('paste')?.disabled).toBe(false);
+		// Step 21's file operations are still the view's, and still say why they cannot run.
 		expect(byId.get('duplicate-rows')?.disabled).toBe(true);
 		expect(byId.get('duplicate-rows')?.reason).toContain('creating a note');
-		// A two-row × two-column selection: fill and clear are both live, and neither is disabled.
+		// And fill and clear are live, as they were.
 		expect(byId.get('fill-down')?.disabled).toBe(false);
 		expect(byId.get('clear-cells')?.disabled).toBe(false);
 		expect(byId.get('bulk-edit')?.disabled).toBe(false);
+	});
+
+	it('disables Cut and Paste on a single cell, with the prototype’s reason', () => {
+		const { store, ports } = makeFixture();
+		const { bounds, fieldId, filePath } = contextOf({ store, ports, single: true });
+		const specs = cellMenuItems({
+			store,
+			filePath,
+			field:
+				store.getSnapshot().fields.find((field) => field.definition.id === fieldId) ?? null,
+			bounds,
+			ports,
+		});
+		const byId = new Map(specs.map((spec) => [spec.id, spec]));
+		// Copy is always available — one cell is a thing one copies; cut and paste need a range to be about.
+		expect(byId.get('copy')?.disabled).toBeUndefined();
+		expect(byId.get('cut')?.disabled).toBe(true);
+		expect(byId.get('paste')?.disabled).toBe(true);
+		expect(byId.get('paste')?.reason).toContain('single cell is typed into');
 	});
 
 	it('disables the column-dependent items for a read-only column, and says so', () => {
@@ -215,7 +248,9 @@ describe('the cell menu', () => {
 			bounds,
 			ports,
 		});
-		expect(runMenuItem(specs, 'copy')).toBe(false);
+		// `duplicate-rows` is the one that stays disabled — the view cannot create a note. `copy` was the example
+		// until step 22, and it is now a live item: the assertion moved with the feature.
+		expect(runMenuItem(specs, 'duplicate-rows')).toBe(false);
 	});
 });
 
@@ -458,7 +493,11 @@ describe('reaching a real Menu', () => {
 		const stub = openedMenus.at(-1);
 		expect(stub?.items.map((item) => item.title)).toEqual(specs.map((spec) => spec.title));
 		expect(stub?.items[0]?.icon).toBe('copy');
-		expect(stub?.items[0]?.disabled).toBe(true);
+		// The disabled flags travel with the specs, whatever they are: comparing the two lists is what keeps the
+		// inventory honest now that the clipboard's items are live and only the view's own gaps are disabled.
+		expect(stub?.items.map((item) => item.disabled)).toEqual(
+			specs.map((spec) => spec.disabled ?? false),
+		);
 		expect(stub?.separators).toHaveLength(3);
 		expect(stub?.shownAt).toEqual({ x: 40, y: 60 });
 	});
@@ -470,9 +509,11 @@ describe('reaching a real Menu', () => {
 		showMenu(specs, { kind: 'position', x: 0, y: 0 });
 		const stub = openedMenus.at(-1);
 		expect(stub?.shownAt).toEqual({ x: 0, y: 0 });
-		const copy = stub?.items[0];
+		// `field: null` in this describe's fixture: Duplicate rows is disabled (no note creation), Clear cells is
+		// live, and the double refuses the click for exactly the reason the real `MenuItem` does.
+		const disabled = stub?.items.find((item) => item.title === 'Duplicate rows');
 		const clear = stub?.items.find((item) => item.title === 'Clear cells');
-		expect(copy?.click()).toBe(false);
+		expect(disabled?.click()).toBe(false);
 		expect(clear?.click()).toBe(true);
 		expect(store.getSnapshot().canUndo).toBe(true);
 	});

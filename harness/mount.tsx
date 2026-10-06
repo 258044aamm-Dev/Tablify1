@@ -33,12 +33,18 @@ import {
 	setViewConfig,
 } from '../src/grid/store/commands';
 import { focusCell as focusCellElement } from '../src/grid/keyboard/focus';
+import { selectField } from '../src/grid/store/selectors';
+import { createDialogPort } from '../src/grid/dialogs/port';
 import { createHarnessFixture } from './fixture';
+import { app } from './obsidian-runtime';
 import { HOSTS, HOST_ORDER, paneSizeOf } from './hosts';
 import type { HostFixture, HostId } from './hosts';
 import type { GridStore } from '../src/grid/store/types';
 import type { ViewConfig } from '../src/core/view/pipeline';
-import type { CellWrite, RowState } from '../src/core/ops/types';
+import type { App } from 'obsidian';
+import type { NewRowValues } from '../src/grid/clipboard/pastePlan';
+import type { CellValue, PropertyId } from '../src/core/types';
+import type { CellWrite, RowId, RowState } from '../src/core/ops/types';
 
 /** Rows the page starts with: enough to fill every viewport and to scroll. */
 const DEFAULT_ROWS = 40;
@@ -105,7 +111,17 @@ export type HarnessApi = {
 	renderCounts(): RenderCounts;
 	/** Resets the counts: anything seen next was caused by what happens after this call. */
 	mark(): void;
+	/**
+	 * The rows the **store** holds right now — not the number `setRows` last built. A paste that creates rows
+	 * changes this without touching the fixture, and "the correct note count in the fake source" is a claim about
+	 * exactly that difference (assertions 11 and 16).
+	 */
 	rows(): number;
+	/**
+	 * One cell's value as plain text, read through the column's own `formatPlain` — i.e. *exactly* what a copy of
+	 * that cell would put on the clipboard, and exactly what a paste of that text back must produce.
+	 */
+	cellPlain(row: number, column: number): string | null;
 	/** The first row's id in view order, so a spec can name a row without reading the fixture. */
 	firstRow(): string;
 	/**
@@ -118,6 +134,44 @@ export type HarnessApi = {
 	 * half that can be slow — 2,400 values, one command, one undo step, one queue batch.
 	 */
 	fillMatrix(rows: number, columns: number): number;
+	/**
+	 * The same `rows × columns` block as **TSV**, with `fillMatrix`'s value convention: `v{r}-{c}` for the
+	 * fixture's text-shaped columns — which is what makes it parseable by the six columns starting at
+	 * `PASTE_ANCHOR_COLUMN` (see the constant). Built here rather than in the spec so a spec never has to know
+	 * how a cell is spelled.
+	 */
+	matrixTsv(rows: number, columns: number): string;
+	/**
+	 * Dispatches a real `paste` event carrying both flavours, as a spreadsheet's own copy does. Returns whether
+	 * the grid consumed it (i.e. `preventDefault` was called) — a paste it refused is a paste that would have
+	 * gone to the browser.
+	 */
+	pastePayload(payload: { readonly html: string; readonly text: string }): boolean;
+	/**
+	 * Dispatches a real `copy` event and reads back both flavours the grid put on it. The grid's `copy` listener
+	 * is what a browser fires for `Ctrl/Cmd+C` in the grid, so this is the same code path a person uses.
+	 */
+	copyRange(): { readonly prevented: boolean; readonly text: string; readonly html: string };
+	/** The polite live region's sentence, right now. */
+	announcement(): string;
+	/** The open dialog's text (title, choices and counts), or `''` when no dialog is open. */
+	dialogText(): string;
+	/** Clicks the choice named `name` (its own label), then the primary action. False when either is missing. */
+	dialogChoose(name: string): boolean;
+	/** Clicks the open dialog's primary action. False when no dialog is open. */
+	dialogConfirm(): boolean;
+	/** Notes the paste path asked the "view" to create. Assertion 16 compares it with the live region. */
+	createdNotes(): number;
+	/**
+	 * Where a pasted block starts, and the six columns it lands in — so a spec names the anchor without a magic
+	 * index. The column ids are the fixture's own, and the reason they are these six is written on
+	 * {@link PASTE_ANCHOR_COLUMN}.
+	 */
+	pasteAnchor(): {
+		readonly row: number;
+		readonly column: number;
+		readonly columns: readonly string[];
+	};
 	/**
 	 * Inserts a synthetic row at an index, through the store's own `addRow` command. The *view* is what creates
 	 * a note in the product (`createFileForView`); the harness has no vault, and assertion 12 is about the
@@ -164,6 +218,80 @@ function twoFrames(): Promise<void> {
 			});
 		});
 	});
+}
+
+/**
+ * The columns a pasted block lands in: `note.Tags` (multiSelect), `note.Notes` (longText), `note.Link`,
+ * `note.Contact`, `note.Phone` and `note.File` — the six the fixture has that accept arbitrary text
+ * (`parsePlain` measured over all twenty; `note.Due` would refuse `v0-0` and a paste into it would be counted as
+ * skipped rather than written). The anchor cell is the first of them.
+ */
+const PASTE_ANCHOR_COLUMN = 10;
+
+/** The six text-shaped columns, in order, so a spec can name a target without arithmetic. */
+const PASTE_COLUMN_IDS = [
+	'note.Tags',
+	'note.Notes',
+	'note.Link',
+	'note.Contact',
+	'note.Phone',
+	'note.File',
+] as const;
+
+/** `fillMatrix`'s value for one cell, as text. */
+function cellText(row: number, column: number): string {
+	return `v${String(row)}-${String(column)}`;
+}
+
+/** The `rows × columns` block as TSV: the same values `fillMatrix` writes, through the clipboard. */
+function tsvMatrix(rows: number, columns: number): string {
+	const lines: string[] = [];
+	for (let r = 0; r < rows; r += 1) {
+		const cells: string[] = [];
+		for (let c = 0; c < columns; c += 1) {
+			cells.push(cellText(r, c));
+		}
+		lines.push(cells.join('\t'));
+	}
+	return lines.join('\n');
+}
+
+/**
+ * A `ClipboardEvent` carrying `data`. The init dictionary is the documented way to hand an event its clipboard
+ * (Chromium supports it); the `defineProperty` below is only for an engine that ignores it, and it is written as
+ * a fallback rather than as the path because it bypasses the constructor.
+ */
+function clipboardEvent(kind: 'copy' | 'paste', data: DataTransfer): ClipboardEvent {
+	const event = new ClipboardEvent(kind, {
+		clipboardData: data,
+		bubbles: true,
+		cancelable: true,
+	});
+	if (event.clipboardData === null) {
+		Object.defineProperty(event, 'clipboardData', { value: data });
+	}
+	return event;
+}
+
+/** One clipboard event at the grid's root, whichever flavour is non-empty. */
+function dispatchClipboard(
+	kind: 'paste',
+	payload: { readonly html: string; readonly text: string },
+): boolean {
+	const data = new DataTransfer();
+	if (payload.html !== '') {
+		data.setData('text/html', payload.html);
+	}
+	if (payload.text !== '') {
+		data.setData('text/plain', payload.text);
+	}
+	const event = clipboardEvent(kind, data);
+	const root = document.querySelector('.tablify-root');
+	if (root === null) {
+		return false;
+	}
+	root.dispatchEvent(event);
+	return event.defaultPrevented;
 }
 
 /** The simulated chrome and the mount point, built once per page load. */
@@ -234,7 +362,6 @@ export function boot(): HarnessApi {
 
 	const sizes = paneSizeOf(host);
 	const counters = { commits: 0, cells: 0, rows: 0, layers: 0 };
-	let rowCount = DEFAULT_ROWS;
 	let firstName = '';
 	let reactRoot: Root | null = null;
 	let store: GridStore = mount(DEFAULT_ROWS);
@@ -267,6 +394,43 @@ export function boot(): HarnessApi {
 	});
 
 	/**
+	 * Notes the harness's fake source created for a paste. The real view creates a *note* per row; with no vault
+	 * this is the same act with the same count, and the count is the datum assertion 16 asserts.
+	 */
+	let createdNotes = 0;
+
+	/**
+	 * The view's half of a paste, as the harness can perform it: one row per `NewRowValues`, appended, through
+	 * the store's own `addRow` — the frontmatter the real view would write becomes the row's cells here.
+	 *
+	 * `applyPlan` calls this **once for the whole list** before it writes anything, so a cancel means this is
+	 * never called and a failure is reported rather than half-applied.
+	 */
+	async function createRows(values: readonly NewRowValues[]): Promise<readonly RowId[]> {
+		const created: RowId[] = [];
+		for (const cells of values) {
+			const record: Record<PropertyId, CellValue> = {};
+			for (const [fieldId, value] of cells) {
+				record[fieldId] = value;
+			}
+			const at = store.getSnapshot().rows.length;
+			let path = `Tasks/Pasted ${String(createdNotes)}.md`;
+			let attempt = 0;
+			while (store.getSnapshot().rows.includes(path)) {
+				attempt += 1;
+				path = `Tasks/Pasted ${String(createdNotes)} (${String(attempt)}).md`;
+			}
+			const row: RowState = { filePath: path, cells: record };
+			if (addRow(store, { at, row }, 'Paste row').ok) {
+				createdNotes += 1;
+				created.push(path);
+			}
+		}
+		await twoFrames();
+		return created;
+	}
+
+	/**
 	 * Inserts a synthetic row at an index, through the store's own `addRow` command. Two callers: the API
 	 * (assertion 12) and the toolbar's **New row** button, which the product's toolbar only renders when the
 	 * view hands it a way to create a note — a fixture that left the button out would be measuring a toolbar
@@ -286,6 +450,16 @@ export function boot(): HarnessApi {
 		const row: RowState = { filePath: path, cells };
 		return addRow(store, { at, row }, 'Insert row').ok;
 	}
+
+	/**
+	 * One port for the page: it closes over the app, exactly as `TablifyView`'s does.
+	 *
+	 * The cast is the harness's only one, and it exists because `harness/obsidian-runtime.ts` is a *stand-in* for
+	 * the host module: its `app` is the three fields the dialogs touch (they are built with `document` and hand the
+	 * app to `Modal`'s constructor, which the shim implements). Writing out the other eight `App` members as
+	 * no-ops would be a longer, more convincing lie than one assertion with this comment.
+	 */
+	const dialogs = createDialogPort(app as App);
 
 	/** The store, the React root, and the first frame. Returns the store so `setRows` can replace it. */
 	function mount(rows: number): GridStore {
@@ -312,6 +486,22 @@ export function boot(): HarnessApi {
 					onNewRow={() => {
 						insertAt(0);
 					}}
+					/*
+					 * The dialogs, through the same port `TablifyView` builds (the harness `obsidian` module has a
+					 * real `Modal`, so the paste dialog is a real modal in the page — assertion 16 clicks it).
+					 */
+					dialogs={dialogs}
+					/*
+					 * The paste settings the shipped view passes: the defaults, plus the one capability only a view
+					 * has. Without `createRows` a paste that wanted rows would say it could not create them, and
+					 * assertion 16 would be measuring a refusal.
+					 */
+					paste={{
+						mode: 'expand',
+						warnOnLargeImport: true,
+						largeImportThreshold: 250,
+						createRows,
+					}}
 				/>
 			</Profiler>,
 		);
@@ -319,6 +509,10 @@ export function boot(): HarnessApi {
 	}
 
 	const scroller = (): HTMLElement | null => document.querySelector('.tablify-scroller');
+
+	/** The row the store holds for a path, as the state does — one lookup, in one place. */
+	const stateRow = (filePath: RowId): RowState | undefined =>
+		store.state().table.rows.find((row) => row.filePath === filePath);
 
 	void twoFrames().then(() => {
 		const layer = document.querySelector('.tablify-rows');
@@ -346,7 +540,6 @@ export function boot(): HarnessApi {
 		ready,
 		setRows(n: number): number {
 			firstName = '';
-			rowCount = n;
 			store.dispose();
 			store = mount(n);
 			observer.disconnect();
@@ -412,7 +605,21 @@ export function boot(): HarnessApi {
 			counters.layers = 0;
 		},
 		rows(): number {
-			return rowCount;
+			return store.getSnapshot().rows.length;
+		},
+		cellPlain(row: number, column: number): string | null {
+			const snapshot = store.getSnapshot();
+			const filePath = snapshot.order.rows[row];
+			const fieldId = snapshot.order.fields[column];
+			if (filePath === undefined || fieldId === undefined) {
+				return null;
+			}
+			const value = stateRow(filePath)?.cells[fieldId] ?? null;
+			const field = selectField(store.state(), fieldId);
+			if (field === undefined) {
+				return null;
+			}
+			return field.descriptor.formatPlain(value, field.context);
 		},
 		insertRow(at: number): boolean {
 			return insertAt(at);
@@ -448,6 +655,64 @@ export function boot(): HarnessApi {
 		},
 		firstRow(): string {
 			return firstName;
+		},
+		matrixTsv(rows: number, columns: number): string {
+			return tsvMatrix(rows, columns);
+		},
+		pastePayload(payload: { readonly html: string; readonly text: string }): boolean {
+			return dispatchClipboard('paste', payload);
+		},
+		copyRange(): { readonly prevented: boolean; readonly text: string; readonly html: string } {
+			const data = new DataTransfer();
+			const event = clipboardEvent('copy', data);
+			const root = document.querySelector('.tablify-root');
+			root?.dispatchEvent(event);
+			return {
+				prevented: event.defaultPrevented,
+				text: data.getData('text/plain'),
+				html: data.getData('text/html'),
+			};
+		},
+		announcement(): string {
+			return document.querySelector('.tablify-live')?.textContent ?? '';
+		},
+		dialogText(): string {
+			return document.querySelector('.modal-container .modal-content')?.textContent ?? '';
+		},
+		dialogChoose(name: string): boolean {
+			const choices = Array.from(document.querySelectorAll('.tablify-dlg-choice'));
+			let found: HTMLButtonElement | null = null;
+			for (const choice of choices) {
+				const label = choice.querySelector('.tablify-dlg-choice-name')?.textContent ?? '';
+				if (choice.instanceOf(HTMLButtonElement) && label === name) {
+					found = choice;
+				}
+			}
+			if (found === null) {
+				return false;
+			}
+			found.click();
+			return this.dialogConfirm();
+		},
+		dialogConfirm(): boolean {
+			const primary = document.querySelector<HTMLButtonElement>(
+				'.tablify-dlg-btn.is-primary',
+			);
+			if (primary === null) {
+				return false;
+			}
+			primary.click();
+			return true;
+		},
+		createdNotes(): number {
+			return createdNotes;
+		},
+		pasteAnchor(): {
+			readonly row: number;
+			readonly column: number;
+			readonly columns: readonly string[];
+		} {
+			return { row: 0, column: PASTE_ANCHOR_COLUMN, columns: [...PASTE_COLUMN_IDS] };
 		},
 		geometry(): {
 			readonly host: Rect;

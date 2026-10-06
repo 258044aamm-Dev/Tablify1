@@ -70,6 +70,15 @@
 	transition: transform var(--tablify-dur-press) var(--tablify-ease-out);
 }
 
+/* A mode that is **on** (the touch range-selection toggle). The accent is the whole
+   signal — an outline and the label, never a second filled button, because
+   "one filled button per surface" is what makes the primary action findable.
+   The state is on `aria-pressed` too, so colour is not the only carrier. */
+.tablify-btn.is-on {
+	border-color: var(--tablify-accent);
+	color: var(--tablify-accent);
+}
+
 /* ── focus: one ring, everywhere in the plugin ──────────────────────────────
    `outline` rather than a box-shadow, so it survives clipping, zoom and forced
    colours; `:focus-visible` rather than `:focus`, so a mouse click does not

@@ -3,7 +3,67 @@
 - Milestone: M0 — Foundation (complete) · M1 — Core domain (complete) · M2 — Data layer (complete) ·
   **M3 — Grid v1 (in progress)**
   Branch: main
-- Last completed step: **step 21 — the layout harness: a real browser, five viewport fixtures, and the thirteen
+- Last completed step: **step 22 — the clipboard in both directions, range selection, fill and clear.** A range
+  is a drag: `src/grid/selection/dragSelect.ts` is a *second* drag shape beside step 20's pointer-capture session,
+  and deliberately so — a captured pointer cannot re-hit-test, and a drag past the pane's edge has to ask "what is
+  under the pointer?" on every frame while the grid scrolls. `src/grid/clipboard/` is four files around one flow:
+  `matrix.ts` (the range as text, through each column's own `formatPlain`), `pastePlan.ts` (the three paste modes
+  as pure data), `host.ts` (the browser: `navigator.clipboard` → a hidden textarea + `execCommand` → unavailable,
+  reporting which path ran) and `wiring.ts` (read → plan → ask → apply). Copy, cut and paste reach the grid through
+  its own `copy`/`cut`/`paste` listeners — the event path is primary, because the browser hands it both flavours
+  with no permission prompt — and the cell menu's three clipboard items are live as of this step (Cut and Paste on
+  a multi-cell selection only, which is the prototype's own rule).
+
+  **Three properties are code, not review, and each has a test.** A paste never creates notes without the dialog
+  (`needsDialog` is true whenever the plan would create a row, whatever `import.clipboardPasteMode` says); **no
+  dialog available means no paste** — never a silent auto-mode (the view says so in the live region instead); and
+  nothing is written until a plan is applied (`applyPlan` takes the plan, so a cancel is a plan nobody applied: no
+  ops, no notes, no undo step). The three modes are the prototype's own words — *Fill cells from the selection*,
+  *Append as new rows*, *Create rows from the block* — and `create` falls back to `cells` when the first row is
+  not a header, the only reading under which the mode is never a no-op. `Cmd/Ctrl+V` is deliberately **not**
+  handled: the browser's own paste event carries `text/html`, and reading the clipboard ourselves would silently
+  downgrade to the text flavour.
+
+  Clear is type-aware, and the measured table is a table with **one row**: for all sixteen registered descriptors
+  `toYaml(null) === null`, so a cleared cell deletes the frontmatter key (`docs/03` §write rules 3) — including the
+  three that could plausibly have needed a representation (`checkbox`, `multiSelect`, `rating`, which render an
+  absent key as unchecked / empty / no stars; all three delete). `tests/unit/clear-table.test.ts` holds that over
+  the frozen registry, so a type that *does* need a value on clear fails a test instead of quietly writing `''`.
+  One wording change came out of the clipboard tests: the undo label is counted — `Paste 4 cells` — matching
+  `Clear 4 cells` and `Fill down 12 cells` from the commands layer.
+
+  `bun run check` green end to end: **1222 unit+dom tests in 42 files** (+36 tests, +4 files over step 21);
+  `eslint .` 0 errors, 0 warnings; typecheck clean; prettier clean; brand-gate 62 permitted / 0 violations;
+  manifest OK; contrast 32/32 gated checks; css-gate clean (51 colour literals, all inside the identity layer);
+  `main.js` 405.86 KB raw / 126.03 KB gzip (styles.css 21,813 bytes).
+
+  **Tier 4: three assertions were rewritten, and they have not been executed.** Assertion 11 now drives a real
+  400 × 6 paste through the UI (anchor, a real `paste` event, the dialog, the confirm) against the same 2 s budget;
+  assertion 15 is the committed copy → paste regression guard — both flavours, and the two values a naive build
+  breaks (`=SUM(A1:A2)` arriving as text, and a cell containing a newline); assertion 16 asserts that append-as-
+  rows creates exactly one note per pasted row and that the live region agrees with the source's own count. The
+  sandbox this step was built in has **no browser** (the recycle took the Playwright install and this machine's
+  chromium dependencies, and by instruction the browser suite is the human's to run), so `bun run test:layout` has
+  not run since step 21's 70 passes. Everything below the browser line is covered: the paste flow runs end to end
+  in jsdom through the real dialog code (`tests/dom/paste-flow.test.tsx`), and both formats are exercised against
+  captured payloads (`tests/unit/clipboard-roundtrip.test.ts`).
+
+  One real bug came out of trying to run it: `harness/serve.mjs` rewrote `/` to `harness/index.html` **and then**
+  appended `index.html` for a directory request, so `/` and `/?host=…` were 404s on any server that was already
+  running — which Playwright's `reuseExistingServer` turns into a suite that hangs on `waitForFunction` with no
+  obvious cause. Fixed, with the three cases spelled out and the reason folding them is how it broke.
+
+- Files touched in **step 22**: new — `src/grid/clipboard/{matrix,pastePlan,host,wiring}.ts`,
+  `src/grid/selection/dragSelect.ts`, `src/grid/dialogs/PasteBlockDialog.ts`,
+  `tests/unit/{clipboard-roundtrip,clear-table}.test.ts`, `tests/dom/{paste-flow,clipboard-host}.test.tsx`
+  (the second is `.ts`; both are named here as the step's new test files); changed —
+  `src/grid/GridView.tsx`, `src/grid/Toolbar.tsx`, `src/grid/menus/{cellMenu,context,toolbarMenu}.ts`,
+  `src/grid/dialogs/port.ts`, `src/grid/store/commands.ts`, `src/styles/{brand,grid}.css`, `styles.css`,
+  `harness/{mount.tsx,serve.mjs}`, `tests/layout/tier4.spec.ts`, `tests/dom/{keyboard,menus}.test.tsx`,
+  `eslint.config.mts` (the `createEl` exemption, one file and one rule, with the reason), `PROGRESS.md`. Nothing
+  outside `src/grid/**`, `src/styles/**`, `tests/**`, `harness/**`, `eslint.config.mts` and `PROGRESS.md`.
+
+- Before that: **step 21 — the layout harness: a real browser, five viewport fixtures, and the thirteen
   assertions of `docs/07` §Tier 4.** `harness/` is a page that mounts the **real** `GridView` against the fixture
   `RowSource` (no component is reimplemented), with a simulated Obsidian around it: a `theme-light`/`theme-dark`
   class on `body`, where a vault puts it; a stub theme that declares only *host* variables; a mount point with a
@@ -80,9 +140,9 @@
      `Command`; `@standard-schema/spec`; `docs/04` §cell-rendering and L57's stale `.theme-dark .tablify-root`
      sample; `attachment` links; `docs/09` line 33.
 
-- Next step: `prompts/step-22-clipboard.md` — the clipboard: copy/cut/paste of a range, `text/html` **and**
-  `text/plain` both written and both read (the HTML flavour is the one spreadsheets trust), the three paste modes,
-  and the fill/clear commands sharing the one `setCells` write path assertion 11 already measures.
+- Next step: `prompts/step-23-undo-bulk-edit-import.md` — undo/redo through the queue, the bulk column edit
+  (`Cmd/Ctrl+Enter` and the cell menu), and the import path: CSV and XLSX in, both through the same plan-and-ask
+  flow step 22 built for the clipboard, with the `.tabula` alternative named when a file is large.
 
 - Before that: **step 20 — the pointer: four drags, three menus, five dialogs, and one real bug found by
   a menu test.** One reusable pointer-capture drag session (4 px threshold, capture, `Escape`, exactly one

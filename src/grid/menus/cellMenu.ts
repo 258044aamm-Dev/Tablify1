@@ -6,10 +6,10 @@
  * menu: cell, row, column or selection actions") and never enumerates items (a doc gap recorded in
  * `PROGRESS.md`). Pluralisation follows the prototype: *"Copy 2×3"*, *"Delete rows"*, *"Insert row above"*.
  *
- * Three items are disabled **because the feature that serves them lands in a later step**, and their `reason`
- * says which: `copy`/`cut`/`paste` are the clipboard (step 22). They are present rather than absent because a
- * menu that grows an item every milestone is a menu whose muscle memory breaks every milestone — and because the
- * inventory test is the contract.
+ * The clipboard's three items are live as of step 22, and two details of theirs are the prototype's: **Cut** and
+ * **Paste** stay disabled unless the target is more than one cell (*"Paste needs a multi-cell selection; a single
+ * cell is typed into"* is the prototype's own reason), and the count in the title (*"Copy 2×3"*) is the
+ * selection's shape rather than its cell count.
  */
 import { clearSelection, fillDown, fillRight } from '../store/commands';
 import { menuIds } from './items';
@@ -39,35 +39,45 @@ export function cellMenuItems(context: CellMenuContext): readonly MenuItemSpec[]
 	const rows = bounds.rowPaths;
 	const rowLabel = rows.length === 1 ? 'row' : 'rows';
 	const readOnly = field === null || field.readOnly || !field.descriptor.editable;
-	const clipboardReason = 'The clipboard lands in step 22 (copy/cut/paste, three paste modes).';
 
 	const specs: MenuItemSpec[] = [
 		{
 			id: 'copy',
 			title: multi ? `Copy ${count}` : 'Copy',
 			icon: 'copy',
-			disabled: true,
-			reason: clipboardReason,
-			run: () => undefined,
+			// A copy is not a write: it is offered even on a read-only column, because copying a value out of a
+			// note the grid may not edit is exactly what a person does with one.
+			run: () => {
+				ports.onCopy('copy');
+			},
 		},
 		{
 			id: 'cut',
 			title: 'Cut',
 			icon: 'scissors',
-			disabled: true,
-			reason: clipboardReason,
-			run: () => undefined,
+			// Cut is a copy **then** a clear, so a read-only target has nothing to cut.
+			disabled: !multi || readOnly,
+			reason: !multi
+				? 'Cut needs a multi-cell selection; cutting one cell is typing over it.'
+				: readOnly
+					? 'This column is read-only, so there is nothing to cut from it.'
+					: undefined,
+			run: () => {
+				ports.onCopy('cut');
+			},
 		},
 		{
 			id: 'paste',
 			title: 'Paste',
 			icon: 'clipboard-paste',
 			// The prototype enables Paste only for a multi-cell target: pasting one value into one cell is typing.
-			disabled: true,
+			disabled: !multi,
 			reason: multi
-				? clipboardReason
+				? undefined
 				: 'Paste needs a multi-cell selection; a single cell is typed into.',
-			run: () => undefined,
+			run: () => {
+				ports.onPaste();
+			},
 		},
 		{
 			id: 'insert-row-above',

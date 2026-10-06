@@ -17,12 +17,14 @@ import { buildDialog } from './base';
 import { bulkEditSpec } from './BulkEditDialog';
 import { fieldConfigSpec } from './FieldConfigDialog';
 import { optionManagerSpec } from './OptionManagerDialog';
+import { pasteBlockSpec } from './PasteBlockDialog';
 import { rowDetailsSpec } from './RowDetailsDialog';
 import { viewOptionsSpec } from './ViewOptionsDialog';
 import type { App } from 'obsidian';
 import type { DialogSpec } from './base';
 import type { GridPresentation } from '../layout';
 import type { GridStore } from '../store/types';
+import type { PasteModeId, PastePlanInput, PasteSetting } from '../clipboard/pastePlan';
 import type { PropertyId } from '../../core/types';
 import type { RowId } from '../../core/ops/types';
 
@@ -42,6 +44,17 @@ export type DialogPort = {
 		readonly fieldId: PropertyId;
 	}) => void;
 	readonly rowDetails: (input: { readonly store: GridStore; readonly filePath: RowId }) => void;
+	/**
+	 * How a pasted block lands. The grid hands over the block, the anchor and the settings; this port owns the
+	 * `App`, so `GridView` never has to (it may not import `obsidian`).
+	 */
+	readonly pasteBlock: (input: {
+		readonly base: Omit<PastePlanInput, 'mode'>;
+		readonly setting: PasteSetting;
+		readonly warnOnLargeImport: boolean;
+		readonly largeImportThreshold: number;
+		readonly onChoose: (mode: PasteModeId) => void;
+	}) => void;
 	/** One value, every cell of the selection — `Cmd/Ctrl+Enter`'s dialog half. */
 	readonly bulkEdit: (input: {
 		readonly store: GridStore;
@@ -105,6 +118,18 @@ export function createDialogPort(app: App): DialogPort {
 		},
 		rowDetails: (input) => {
 			tracked(rowDetailsSpec({ store: input.store, filePath: input.filePath }));
+		},
+		pasteBlock: (input) => {
+			tracked(
+				pasteBlockSpec({
+					app,
+					base: input.base,
+					setting: input.setting,
+					warnOnLargeImport: input.warnOnLargeImport,
+					largeImportThreshold: input.largeImportThreshold,
+					onChoose: input.onChoose,
+				}),
+			);
 		},
 		bulkEdit: (input) => {
 			tracked(

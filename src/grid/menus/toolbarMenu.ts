@@ -13,6 +13,11 @@
  *
  * Steps 22–24 add Import, Export and Sync to this same list: they are exactly the "occasional" actions an
  * overflow menu exists for, and the spec list is the one place to add them.
+ *
+ * **The one toggle here is the touch range-selection mode.** `docs/04` §Touch: *"Range selection — explicit
+ * toolbar toggle (a drag would fight scrolling), then drag sets the range."* On a phone the toolbar is also
+ * collapsed (389 px < 520 px), so if the toggle lived only as a button it would be unreachable on the very
+ * device it exists for — hence it appears in this menu **and** as a button when the toolbar has room.
  */
 import type { MenuItemSpec } from './items';
 
@@ -26,6 +31,9 @@ export type ToolbarMenuContext = {
 	readonly onRedo: () => void;
 	/** The view's create-a-note action, or `null` when this view cannot create notes. */
 	readonly onNewRow: (() => void) | null;
+	/** Whether the touch range-selection mode is on. `null` when the pointer is fine and a drag already selects. */
+	readonly rangeSelect: boolean | null;
+	readonly onToggleRangeSelect: () => void;
 };
 
 /**
@@ -66,5 +74,17 @@ export function toolbarMenuItems(context: ToolbarMenuContext): readonly MenuItem
 			},
 		},
 	];
+	if (context.rangeSelect !== null) {
+		items.push({
+			id: 'select-range',
+			title: 'Select range',
+			icon: 'box-select',
+			checked: context.rangeSelect,
+			separatorBefore: true,
+			run: () => {
+				context.onToggleRangeSelect();
+			},
+		});
+	}
 	return items;
 }

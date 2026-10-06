@@ -46,6 +46,10 @@ export type GridMenuPorts = {
 	readonly onDialog: (id: GridDialogId, argument?: string) => void;
 	/** Select these rows, as the gutter menu's first item does. */
 	readonly onSelectRows: (paths: readonly RowId[]) => void;
+	/** Copy the selection as TSV **and** HTML. The grid owns it (the clipboard is browser work, not a file op). */
+	readonly onCopy: (verb: 'copy' | 'cut') => void;
+	/** Paste from the clipboard: the only menu item that has to *read* it rather than receive it. */
+	readonly onPaste: () => void;
 };
 
 /** The dialogs the grid owns, by id — one list, so a menu cannot ask for a dialog that does not exist. */
