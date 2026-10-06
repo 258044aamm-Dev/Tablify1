@@ -1,60 +1,81 @@
-# AGENTS.md — implementation rules
+# AGENTS.md — repository rules and refactor boundary
 
-Instructions for any coding agent (or human) working in this repository. These are constraints, not suggestions. If a task appears to require breaking one, stop and raise it as a decision in `docs/08-decisions.md`.
+Instructions for any agent or human working in this repository. The current `0.1.0` source is still Bases-backed; the native `.tablify` architecture below is the target for separately authorized implementation. In the user’s current `/Plan only mode`, change documentation only when explicitly requested; do not edit application code, tests, styles, package/manifest/version files, release assets, or vault data.
 
-## Commands
+## Source-of-truth order
+
+1. The user’s latest explicit instruction and confirmed product scope.
+2. `docs/08-decisions.md` for confirmed decisions and phase-blocking open ADRs.
+3. `docs/01-spec.md`, `docs/02-architecture.md`, `docs/03-data-model-and-migration.md`, and `docs/reference/native-tablify/**` for the future target (all clearly status-labelled).
+4. Current source, `package.json`, manifest, and current release history for what is actually implemented.
+5. Historical prompts/progress/logs only as history; they do not override the native refactor direction.
+
+If current code and target docs differ, state whether a claim refers to `0.1.0` or the planned refactor. Never describe a planned feature as implemented.
+
+## Current commands
 
 ```bash
-bun install                 # install (bun.lock is the lockfile; never commit node_modules)
-bun run dev                 # esbuild watch → main.js
-bun run build               # tsc --noEmit && esbuild production bundle
-bun run typecheck           # tsc --noEmit only
-bun run lint                # eslint .
-bun run lint:fix            # eslint . --fix
-bun run format              # prettier --write .
-bun run test                # vitest run (unit + integration)
-bun run test:watch          # vitest
-bun run test:layout         # playwright test (layout harness)
-bun run check               # typecheck && lint && test && build  ← run before every commit
+bun install --frozen-lockfile
+bun run dev
+bun run build
+bun run typecheck
+bun run lint
+bun run test
+bun run test:layout
+bun run check
 ```
 
-## Architectural boundaries (enforced by lint, do not `eslint-disable`)
+`bun run check` is the current package gate; CI additionally runs the Playwright layout suite. Use the current `package.json` as truth if a copied command differs. Do not claim a gate passed unless the command was run and its result is available.
 
+## Architectural boundaries
+
+Current source boundaries are lint-enforced and must be preserved while the refactor is planned:
+
+```text
+src/core/**       pure TypeScript; no Obsidian, React, DOM, filesystem, or network
+src/grid/**       React/UI; no direct persistence or adapter-specific source imports
+src/adapters/**   persistence/data adapters; no React
+src/sync/**       provider/network logic; no React; invoked only by explicit sync actions
+src/plugin/**     Obsidian workspace, file-view, lifecycle, settings, and composition glue
 ```
-src/core/**      pure TypeScript. MUST NOT import obsidian, react, or any DOM API.
-src/grid/**      React. MUST NOT import obsidian except for Menu/Modal/Notice from a
-                 single re-export in src/plugin/obsidian.ts.
-src/adapters/**  the only code that reads/writes data. MUST NOT import react.
-src/sync/**      network. MUST NOT import react. MUST be dynamically imported.
-src/plugin/**    Obsidian glue. The only layer allowed to touch the workspace API.
+
+The future native direction is:
+
+```text
+plugin FileView → database repository/session → validated DatabaseState
+                                       └───────→ active-table projection → grid
 ```
 
-Import direction is one-way: `plugin → adapters → core`, `plugin → grid → core`. Never the reverse. Cross-layer reach-arounds are the single most common way this codebase will rot.
+Stable database/table/field/row/view IDs are data identity. File path is only a current host location. All `.tablify` writes go through a serialized database repository and operation/store path; core never uses Obsidian APIs. Exact write API and atomicity must be verified before implementation.
 
-## Conventions
+## Legacy code policy during transition
 
-- **TypeScript:** `strict` plus `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `verbatimModuleSyntax`, `noUnusedLocals`, `noUnusedParameters`. No `any`; use `unknown` + narrowing. No non-null `!` on values that can be null at runtime.
-- **Field types:** every field type is one file in `src/core/fieldTypes/`. Never add a `switch (field.type)` outside that directory. If you need type-specific behaviour elsewhere, extend the registry's descriptor instead.
-- **State:** components read state through selector hooks (`useCell`, `useRow`, `useSelection`). Never pass a document down as a prop; never pass more than **8 props** to a component.
-- **DOM writes:** all mutations go through `core/ops/**` and are applied by the store as commands. A component never mutates state directly.
-- **Async:** adapters expose one async `flush()` per write batch. Never `await` inside a render or a keystroke handler — enqueue.
-- **CSS:** add classes to `src/grid/styles/*.css` using tokens from `tokens.css`. No literal colours, no `!important`, no selectors deeper than two levels.
-- **Naming:** user-facing strings are sentence case; command ids are `verb-noun` (`tablify:insert-row-below`), never containing the plugin id twice.
-- **Tests:** new behaviour in `core/` or `adapters/` requires a unit test in the same commit. A layout or interaction fix requires a Playwright harness case in the same commit.
+- Existing `BasesSource`, `BasesView`, note/frontmatter storage, and `.tabula` parser remain only because they are part of the current 0.1.0 build. Do not add new features to them under the native plan.
+- No new Bases mode, Bases fallback, `.base` migration, `.tabula` support, or note-row import path is part of the target.
+- Do not treat Airtable’s remote “base”/`baseId` terminology as Obsidian Bases integration; Airtable sync is retained by user decision.
+- Do not remove legacy code until the replacement exists and the R6 acceptance gate authorizes cutover.
 
-## Never do
+## Engineering conventions
 
-1. `!important` in CSS, or a hardcoded colour outside `brand.css`.
-2. A layout that depends on a parent's computed height chain. The grid root is `position: absolute; inset: 0` inside the host container.
-3. `window.addEventListener` / `document.addEventListener` — use `registerDomEvent` or React's `useEffect` cleanup.
-4. `workspace.requestSaveLayout()` outside genuine layout changes (never on a keystroke).
-5. Write to a `TFile` directly. Writes go through `adapters/bases` so they are debounced, batched and undoable.
-6. Read or write an Airtable token except through `SecretStorage`.
-7. Add a runtime dependency without recording it in `docs/08-decisions.md`. Bundle size affects Obsidian **mobile startup** — this is a product constraint, not a preference.
-8. Ship a release whose git tag differs from `manifest.json` `version`, or that includes a `v` prefix.
-9. Change `manifest.json` `id` after the first public release. Ever.
-10. Reference another company's trademark (Anthropic, Claude, Airtable, Notion) in the plugin name, description, README or settings copy.
+- TypeScript strictness, no `any`, no unsafe non-null assertions, no silent catches, and no weakened/skipped tests.
+- Field-specific behavior belongs in the field registry or a typed core operation; avoid duplicated `switch(field.type)` logic.
+- React components use selectors/commands; they do not mutate persisted state directly.
+- Async writes use an explicit queue/flush contract; do not await in render paths.
+- CSS uses tokens, no `!important`, and the responsive/accessibility contract in `docs/04-design-system-and-layout.md`.
+- Runtime dependencies require an ADR with version, need, and bundle/mobile impact.
+- Secrets use only Obsidian `SecretStorage`; no telemetry or unapproved network calls.
+
+## API verification
+
+Before using an Obsidian API, cite the pinned symbol in `node_modules/obsidian/obsidian.d.ts`, including `@since`, and check the relevant official docs. For the future custom file view, prove extension routing, load/unload, rename/modify events, and write behavior against an actual supported Obsidian app. Do not use the old Bases spike as evidence for FileView behavior.
+
+## Documentation and decision rules
+
+- Future product contracts must say “planned/not implemented” until code ships.
+- Preserve historical `CHANGELOG.md`, `PROGRESS.md`, `0.1.0` tag/release, and manual-test outcomes. Correct false present-tense claims without rewriting history.
+- Resolve open design questions in an ADR before the dependent phase. Recommendations in a phase guide are not user approval.
+- Do not alter `manifest.json`, `package.json`, `versions.json`, `bun.lock`, `main.js`, or release tags as a side effect of a documentation task.
 
 ## Definition of done
 
-A change is done when: `bun run check` passes, the boundary lint is clean, the layout harness is green at all three viewports, `docs/` reflects any decision made, and the change is shippable on its own (no half-migrated state).
+For code work (only after authorized): scope fence matches `git diff --stat`; `bun run check` and applicable `bun run test:layout` are green; manual gates are recorded; docs match actual shipped behavior; no compatibility/migration claim is invented. For documentation-only work: cross-links resolve, current-vs-target status is explicit, and `git diff --check` passes. Never commit or tag unless explicitly asked.

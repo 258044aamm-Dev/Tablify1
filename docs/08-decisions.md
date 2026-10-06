@@ -1,87 +1,74 @@
-# 08 — Decision log
+# 08 — Decision record for the native `.tablify` refactor
 
-Format: **ID · decision · source · consequence.** `source: user` = answered directly; `source: delegated` = "choose the best", decided here and open to veto; `source: open` = needs an answer before the phase that depends on it.
+This file is the durable product/engineering decision ledger. “Confirmed” records a user decision. “Proposed” is a safe default to evaluate, not a user-approved product choice. “Open” must be resolved in an ADR before the phase listed. The detailed sequence is in [`docs/reference/native-tablify/`](reference/native-tablify/README.md).
 
-Anything with `status: open` must be resolved by the phase noted, or the phase cannot start.
+## Product decisions
 
----
-
-## Product
-
-| ID | Decision | Source | Consequence |
+| ID | Decision | Status/source | Consequence |
 |---|---|---|---|
-| P1 | Display name **Tablify**, plugin id **`tablify`** | user | `tabula` is taken in the community directory (an existing plugin wraps a `tabula` binary); `tablify` is clear there. **The id is permanent after the first public release.** |
-| P2 | **Bases-first**, with `.tabula` retained as a frozen legacy adapter and one-way importer | user | Rows became notes. The grid fills Obsidian's container, so the mobile height-chain bug class is structurally gone. The escape hatch keeps non-note data (and huge imports) possible. |
-| P3 | **One view type: the grid.** No kanban/cards/list/map, and no CSV export | delegated | Verified: Bases 1.14 already ships table, cards, list, map, **kanban** and native CSV export. Differentiation is spreadsheet depth, not layout count. Revisit only if Bases' kanban leaves a real gap. |
-| P4 | CSV/XLSX **import and export**, plus clipboard copy/paste in both directions | user | The full `import/spreadsheet.ts` matrix parsers survive (rewritten into `import/matrix`), and a writer is added for XLSX. |
-| P5 | Row-notes: configurable, defaulting to a dedicated folder + `{{template}}` filename | user | Note creation is a first-class service with preview, dedupe and progress. |
-| P6 | Rich types stay human-readable: plain YAML + a `fieldOptions` sidecar in the view config | user | Select colours/rating max/currency symbol travel with the `.base`; frontmatter stays hand-editable. Option identity is the label, so renaming is a bulk rewrite with preview. |
-| P7 | Sync: **one base+table pair per view**, schema extensible to many later | delegated | Simple conflict model now (one key space per record). Storage shape is a map keyed by link, so multi-link is additive later. |
-| P8 | Conflicts: **per-field diff, never silent** | user | Requires `snapshot` hashes in `.tablify/links/*.json`. Bulk take-local/take-remote provided for ergonomics. |
-| P9 | Airtable **schema is never modified** | user | Read-only on fields/tables. Local properties with no remote counterpart are skipped and reported. |
-| P10 | Import asks, with a row-count threshold warning and a `.tabula` alternative | user | Preview dialog is mandatory; above the threshold the `.tabula` option is the default. |
-| P11 | `autoNumber` **dropped**; `createdTime`/`lastModifiedTime` read from `file.ctime`/`file.mtime` | delegated | Removes three stored field types and their bookkeeping. A Row-number column derived from view order replaces auto-numbering. Reported in the migration summary. |
-| P12 | `percent` stores **25 for 25 %** (not 0.25); `duration` stores **seconds** | delegated | Human-first, diverging deliberately from Airtable's 0.25 convention. Documented in the README; sync maps between the two. |
-| P13 | **No marker property** on created notes | delegated | Membership is defined by the view's own filter. Keeps notes clean and avoids the plugin claiming ownership of hand-edited notes. Optional "tag new rows" setting, default off. |
-| P14 | Author metadata = your GitHub handle; `LICENSE` keeps upstream copyright **plus** yours; a `NOTICE` credits `MehulG/airtable-tabula` | user | MIT requires retaining the original notice. The fork's lineage is disclosed, not hidden. |
-| P15 | **Fresh repository** `tablify`; the fork stays archived | user | No inherited history (23 of 30 commits were agent-authored churn) and no upstream remote to accidentally merge. `REFACTOR-PLAN.md` in the fork is the audit record. |
-| P16 | **Hard fork** — never merge upstream again | delegated | Upstream sat at 0.1.6 with 0 commits while the fork carried 30; a merge has no value and real risk. |
-| P17 | Brand direction: warm clay/parchment palette shipped as **our own tokens** | user (clarified) | ⚠️ The identity must not reference any third-party brand: no company names in tokens, classes, README or settings; no logos or mark imitation; no implied affiliation. Token structure in `docs/04`. |
-| P18 | `minAppVersion` = the **lowest version actually tested**; the API floor is **1.10.2** if `createFileForView()` is used (verified: `BasesView` itself is `@since 1.10.0`, `createFileForView` and `getEvaluatedFormula` are `@since 1.10.2`) | delegated | Current app stable is 1.14.4; the `obsidian` types package latest is 1.13.1. Declaring a floor without testing on it is a lie the reviewers and users pay for: start at the tested version and lower it deliberately after verification. |
-| P19 | `isDesktopOnly: false`; desktop **and** mobile are first-class | user | Drives the layout contract, the touch rules, the bundle budget and the harness viewport matrix. |
-| P20 | Pace: full-time · handoff: **docs-only** (you or your agent implements from this set) | user | These docs are written as an implementation contract, not as notes: interfaces, thresholds, budgets and acceptance criteria are all specified. |
-| P21 | **Pinning is a wide-pane affordance, never a mobile one.** The first column is pinned only while the pane the view owns is at least **600 px** wide; below that nothing is pinned — the row-number/checkbox gutter, the primary column and every other column scroll together as a single lane. The freeze option (View settings and the view menu) is **hidden**, not greyed out, while the rule is active. | user | On a 389 px phone the pinned strip (74 px gutter + 290 px primary column) left ~11 px of scrolling area, so every other column appeared to vanish *under* the first one — horizontal scrolling was unusable. Threshold is on the **pane**, not the device, so a narrow desktop leaf gets the same treatment; the rule follows resizes live. Prototype: `NARROW_W` in `prototype/js/grid.js`. |
+| P1 | Keep product name **Tablify**, current repository, and plugin id **`tablify`**. Do not fork into a new identity or rewrite tag `0.1.0`. | Confirmed by user; current repo/tag verified | Keep release identity stable; select a new distinct version for a future refactored release. |
+| P2 | Obsidian remains the plugin host; Bases is removed as an integration. | Confirmed by user | Replace `BasesView`/registration/source with a custom `.tablify` file view; no Bases compatibility mode. |
+| P3 | `.tablify` versioned JSON is the sole native editable database format; one file holds multiple tables. | Confirmed by user | Schema, stable IDs, multi-table operations and file repository are the critical path. |
+| P4 | No `.base` migration, Bases fallback/view mode, or assumption that users need old Bases-data migration. | Confirmed by user | Old `.base`/note content stays untouched and unsupported by the new plugin. No converter in roadmap. |
+| P5 | Remove legacy `.tabula` read/migrate support. | Confirmed by user | Delete reader/migration/UI branches and fixtures when native path replaces current storage. No `.tabula` mode. |
+| P6 | Linked records are in the first stable release. | Confirmed by user | Stable row/table IDs, relation validation, editor, navigation, deletion rules, sync mapping. |
+| P7 | Formulas, lookups, and rollups are deferred. | Confirmed by user | No computed-field engine in v1; do not imply formulas are inherited from Bases. |
+| P8 | Attachment fields store vault-relative paths; no binary embedding. | Confirmed by user | Missing-file UI is required; cross-vault asset portability is not guaranteed. |
+| P9 | Preserve current grid feature parity. | Confirmed by user | Selection, clipboard, editing, bulk operations, undo, views, accessibility, mobile and performance remain gates. |
+| P10 | Keep CSV/TSV/XLSX import and export. | Confirmed by user | Add CSV export; it is no longer delegated to native Bases. Formats are interchange, not native storage. |
+| P11 | Include Airtable sync in the first stable release with manual pull/push and field-by-field conflict review. | Confirmed by user | Reuse provider-neutral diff/client work and re-key the local port to database/table/row/field IDs. |
+| P12 | No Airtable auto-sync; preserve safe conflict review and no remote schema mutation. | Existing behavior to retain; scope confirmation includes manual/conflict review | Network only on explicit action; token remains in `SecretStorage`; deletions/unsupported mappings are reported. |
+| P13 | No legacy data importer is a requirement. | Confirmed by user | Keep old data untouched. Internal `.tablify` schema-version upgrades are still required and are not old-data migration. |
 
-## Engineering
+## Current-release truth
 
-| ID | Decision | Source | Consequence |
+`0.1.0` remains a Bases-backed GitHub prerelease. It has a tag and release; manual real-vault and physical-device verification is still recorded as `NOT RUN`. The target docs describe future work. Keep `manifest.json`, `package.json`, and README claims truthful to the code until a native-format build ships. Do not revise old changelog/progress history to make it appear the new format was present earlier.
+
+## Proposed data-model defaults (not yet user-approved)
+
+| ID | Proposal | Phase to resolve |
+|---|---|---|
+| D1 | Stable IDs for database/table/field/row/view/option; labels are not identity. | R1 |
+| D2 | Select cells store option IDs; options carry labels/colors/order. | R1 |
+| D3 | A link field targets one table and stores an ordered list of row IDs; single-link is a cardinality constraint if needed. | R1/R4 |
+| D4 | Row deletion clears inbound links in one undoable operation; table deletion is blocked while inbound relations remain. Never cascade-delete silently. | R3 |
+| D5 | Saved views are table-scoped and stored in the database file; workspace active table/view state does not write to the file. | R1/R2 |
+| D6 | Explicit row order is persisted; sort/group presentation is distinct from source order. | R1/R4 |
+| D7 | Preserve unknown keys within a supported schema version; future versions open read-only and are never rewritten. | R1/R2 |
+| D8 | One local table links to one Airtable table; different local tables may link independently. | R5 |
+| D9 | Existing Airtable link files keyed by `.base` path + view name are not migrated by default; leave them untouched and create fresh links for native tables. | R5; ask before changing |
+| D10 | External changes to a dirty database are detected and trigger reload/keep-copy/conflict UX; no silent last-writer-wins. | R2 |
+
+## Engineering decisions to retain unless a measured need changes them
+
+| ID | Decision | Status | Consequence |
 |---|---|---|---|
-| E1 | **Bun 1.4.x** for install/scripts; **esbuild 0.25+** for the bundle; `tsc --noEmit` as the type gate | user (bun) / delegated (esbuild) | Bun does not replace esbuild: the Obsidian bundle needs CJS output with `obsidian`/`electron`/CodeMirror externals and a banner. CI uses `oven-sh/setup-bun@v2` + `--frozen-lockfile` with `bun.lock` committed. |
-| E2 | TypeScript `strict` **plus** `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `verbatimModuleSyntax`, `noUnusedLocals/Parameters` | delegated | The old build ran `noImplicitAny` + `strictNullChecks` only, with `allowJs: true`. |
-| E3 | ESLint 9 flat config + `eslint-plugin-obsidianmd` + `typescript-eslint`; **Prettier added on top (divergence from the official template, which formats via ESLint only)** | delegated | Verified against the real `obsidian-sample-plugin`: it ships `eslint.config.mts` built on `defineConfig` + `globalIgnores` + `projectService` + `obsidianmd.configs.recommended`, with ESLint `^9.39.4`, `typescript-eslint` `^8.59.1`, `@eslint/js`, `globals`, `jiti`. Adopt **that** as the base config and append our strict + boundary rules rather than hand-rolling from `strictTypeChecked`. Also adopt the template's `.editorconfig` (tabs, 4-space width, single quotes) and make Prettier match it. Includes the architectural boundary rules (`core` cannot import Obsidian/React; adapters cannot import React). `eslint-disable` on boundary rules is forbidden by `AGENTS.md`. |
-| E4 | **React 19** | user | Bundled inside `main.js`; no host dependency. |
-| E5 | **Hand-rolled store** on `useSyncExternalStore` + narrow selector hooks + command log | user | Zero dependency, full control over the optimistic overlay and undo. Cost: ~200 lines to own and test (tier-3 tests in the plan). |
-| E6 | **Plain CSS** with a two-tier token system; no CSS framework | user | `!important` banned; literal colours only inside `brand.css`. |
-| E7 | **Own row windowing**, no virtualizer dependency | delegated | *Reverses the earlier suggestion of `@tanstack/react-virtual`.* Fixed per-density row heights make the visible range arithmetic; the library would add a dependency for ~150 lines of range math, and bundle size affects mobile startup. Revisit only if variable row heights become a requirement — and record it here if so. |
-| E8 | Vitest + Playwright harness committed in-repo + CI gates on every PR | user | The previous "harness"/"functest" was never committed, which is why layout regressions returned. Committing it is the fix. |
-| E9 | Dependency policy: every runtime dependency is a decision row here; bundle budgets are enforced in CI | delegated | Runtime deps: `react`, `react-dom`, `read-excel-file` (**9.3.10**, verified on npm), `write-excel-file` (**4.1.1**, verified on npm, published 2026-06-08). Dev versions verified: `esbuild` 0.25.5, `eslint` ^9.39.4, `eslint-plugin-obsidianmd` **0.4.2**, `typescript-eslint` ^8.59.1, `typescript` ^5.8.3, `@types/node` ^22, `obsidian` types 1.13.1. |
-| E10 | **No telemetry, no analytics, no remote calls except the user's own Airtable account** | policy | Developer-policy requirement and a listing requirement. |
-| E11 | `main.js` is gitignored and exists only as a release asset | delegated | Keeps 1.4 MB build artifacts out of history. |
-| E12 | Versioning: `0.x` until the field-type set and `.base` option schema freeze, then `1.0.0` | delegated | Tags equal `manifest.version` exactly, no `v` prefix. |
+| E1 | Bun + locked `bun.lock`; esbuild for plugin bundle; `tsc --noEmit` for types. | Existing repo | Keep `bun run check` and CI scripts; no package-manager switch in this refactor. |
+| E2 | Strict TypeScript and no `any`/unsafe non-null assertions. | Existing repo | Keep current lint/type fences; add only documented narrow exceptions. |
+| E3 | React 19 grid, hand-rolled store/selectors, plain CSS tokens. | Existing repo | Reuse current grid; no state library, CSS framework, or virtualizer dependency without an ADR. |
+| E4 | Core has no Obsidian/React/DOM; adapters have no React; sync has no React. | Existing repo architecture | Extend boundaries to database repository and custom file view; never let the core call host APIs. |
+| E5 | Automated unit/DOM/layout gates plus real-device release verification. | Existing repo | Keep CI and manual logs; browser harness is not proof of real FileView/phone behavior. |
+| E6 | Secrets through Obsidian `SecretStorage`; no telemetry; explicit network disclosure. | Existing repo/policy | Keep credentials out of database, plugin settings, sidecars, exports, logs. |
+| E7 | Keep current plugin id and never overwrite an existing tag. | Existing release constraint | `0.1.0` is preserved; refactor uses a new version/tag. |
 
-## Open questions
+## Open decisions — phase blockers
 
-| ID | Question | Needed by | Default if unanswered |
-|---|---|---|---|
-| O1 | **Brand assets** — palette values, light/dark variants, logo/wordmark, ribbon icon | M3 (before polish) | Ship the placeholder tokens in `docs/04` (contrast-checked); swap values later. Structure does not change. |
-| O2 | Exact strings for `author` / `authorUrl` / optional `fundingUrl` | M0 | `author: "258044aamm-Dev"`, `authorUrl: https://github.com/258044aamm-Dev`, no `fundingUrl`. |
-| O3 | Confirm the `percent` (25) and `duration` (seconds) conventions — or keep Airtable parity (0.25) | M1 | As decided in P12 (human-first). |
-| O4 | Does v0.1.0 ship the **legacy `.tabula` view**, or only the migration command? | M6 | Ship the migration command; the legacy view lands in 0.2.0 if it slows the release. |
-| O5 | XLSX writer choice (`write-excel-file` vs a minimal OOXML writer) | M4 | `write-excel-file` if it stays under the 60 KB single-dependency budget. |
-| O6 | Kanban, ever? | post-1.0 | No. Bases ships one. |
+| Question | Recommended default | Needed by |
+|---|---|---|
+| Link cardinality and inverse fields? | One field targets one table; ordered list representation; decide if inverse is explicit or generated. | R1/R4 |
+| Broken/dangling link parsing? | Preserve reference and show repair state; do not delete during read. | R1 |
+| Table/row deletion rules? | No silent cascade; row deletion removes inbound refs atomically/undoably; table deletion blocked until inbound links resolved. | R3 |
+| Drag reorder under sort/group? | Hide/disable reorder when it cannot have clear semantics, or define a stable explicit order operation. | R4 |
+| `null` vs absent vs empty string/list? | Field-specific canonical rules with exact tests. | R1 |
+| External edit while dirty? | Stop write and offer reload or keep-copy/compare path. | R2 |
+| Old sync sidecar conversion? | No conversion by default; preserve files and make new links. | R5 |
+| App-version floor? | Keep current manifest floor until custom FileView APIs are verified on the oldest supported desktop and phone. | R2/R6 |
+| Import replace field/schema behavior? | Preview every destructive change; require confirmation. | R5 |
+| Document-size/write threshold? | Measure parse/serialize/write on target-sized fixtures before setting limits. | R2/R5 |
 
-## Risk register
+## Decision protocol
 
-| Risk | Likelihood | Impact | Mitigation |
-|---|---|---|---|
-| Bases API behaves differently than documented under rapid vault change | medium | high | Spike in M2 before building on it; keep `BasesSource` thin so a workaround is local; keep the legacy view as a functioning fallback. |
-| Rows-as-notes doesn't suit some of your data | low (your data is small) | medium | The `.tabula` adapter stays; big imports can stay file-based. Re-evaluate at M4 with real data. |
-| Write queue loses or clobbers edits | low | **critical** | Tier-2 tests (per-file serialization, partial-failure reporting, flush guarantees); `processFrontMatter` only; two-pane and external-edit tests before beta. |
-| Mobile WebView variance | medium | medium | Harness with five viewports, including the historical 389 px squeeze; manual device matrix per release; no `100vh`, no percentage chains, no zoom tricks. |
-| Bundle growth slows mobile startup | medium | medium | Enforced budgets in CI; one dependency decision at a time; sync dynamically imported. |
-| Obsidian changes the Bases API | medium | medium | `minAppVersion` + `versions.json` per release; watch the changelog; isolate the integration to `plugin/basesView.ts`. |
-| Trademark/branding complaint | low | high | P17 and `docs/09`: no third-party marks anywhere, own palette under own names, no implied affiliation. |
-| Bus factor: one maintainer | high (certain) | high | Everything documented, tested and reproducible: `AGENTS.md`, ADRs, committed harness, CI gates. |
-
-## Rejected alternatives (and why)
-
-| Rejected | Why |
-|---|---|
-| Keep own-storage as the primary product | It keeps the plugin competing with a core feature on layout while owning a bug class (the height chain) that consumed most of the fork's history. Kept as an adapter instead. |
-| Bases-only, delete `.tabula` | Breaks the one workflow that notes cannot serve: importing large sheets without creating hundreds of files. |
-| Retain upstream plugin `id` | It is owned by upstream in the directory; ids cannot change after release. |
-| "Airtable Tabula" / an Anthropic-referencing identity | Trademark exposure on a public listing. Same trap, avoided twice. |
-| `@tanstack/react-virtual` | See E7. |
-| Zustand / Redux | The store is ~200 lines with two consumers (grid, overlays); a library adds a dependency and a mental model without removing work. |
-| Tailwind / CSS-in-JS | Theme-variable theming is the requirement; utilities fight that and bloat the bundle. |
-| YAML/JSON schema library (zod/valibot) | The only serialized surface we own is `fieldOptions` and the sync link file — both small enough to validate by hand, and the rest of the data model is Obsidian's. Revisit if a third serialized format appears. |
+- Add an ADR before implementing any open decision; include source (`user`, `verified`, `proposed`), rejected alternatives, and tests that prove the behavior.
+- A recommendation in the phase guides is not user approval.
+- Do not change confirmed scope (Bases removal, no migration, `.tablify` only, linked records v1, deferred formulas, spreadsheet interchange, manual Airtable sync) without asking the user.
+- Do not use “plan only” authorization to alter source code, tests, CSS, manifest/package metadata, version tags, release assets, or vault data.

@@ -1,5 +1,7 @@
 # Prototype audit — scrolling + every interaction
 
+> **Historical prototype evidence only:** these defects, fixes, and browser results apply to the legacy static prototype and do not prove native `.tablify` behavior or current-plugin acceptance. Preserve the report as history.
+
 **Question asked:** *"Currently, the horizontal and vertical scrolling is not working. Also, find out is there any interaction that is not working."*
 
 **Answer:** scrolling was broken by one layout defect (fixed and measured below), and the full interaction sweep that followed found **16 further defects**, and a follow-up round added a 17th (the pinned column on a phone) — including one that made the import wizard impossible to finish and a keyboard-focus bug that killed every shortcut after closing a menu. All are fixed in the product code, and 16 of the 17 now have a check that fails if they come back — the seventeenth (modal keyboard guard) asserts a *non-event*, so it is verified by hand and labelled as such below.

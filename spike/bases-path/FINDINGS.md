@@ -1,10 +1,12 @@
 # Step 10 — the Bases spike: findings
 
+> **Historical API evidence for the retired Bases path:** these findings do not verify custom FileView APIs or native `.tablify` persistence. Preserve this record only; future R2 work must use pinned declarations and its own app proof.
+
 **Status: HALF RUN, and honestly labelled.** The declaration half is finished and verified against the shipped
 types. The runtime half **cannot be run from the agent's environment** — it needs a real Obsidian vault, a real
 `.base` file and a human at the keyboard — so every row that needs a running app says `PENDING-RUN` with the
 exact command that produces it. **Step 11 stays gated on the human confirming this report**, as
-`prompts/step-10-bases-spike.md` requires.
+`../../docs/reference/archive/bases-first-prompts-2026-10/step-10-bases-spike.md` requires.
 
 - Declarations read from: `node_modules/obsidian/obsidian.d.ts`, version **1.13.1** (root devDependency;
   `node -e "require('./node_modules/obsidian/package.json').version"` → `1.13.1`).

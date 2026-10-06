@@ -1,191 +1,137 @@
-# 03 — Data model, sync state and migration
+# 03 — Native data model, Airtable link metadata, and compatibility
 
-## Row identity
+> **Status:** target contract for the `.tablify` refactor. It is not the current `0.1.0` storage behavior. The current code is Bases/note-backed; no `.tablify` database-file reader or writer exists yet. Freeze the exact v1 schema in R1 before implementation.
 
-**A row is a file.** `RowId` is the file path (`Projects/Rows/Alpha.md`).
+## 1. Native file and identity
 
-- Renames: `vault.on("rename")` re-keys the sync record map. Obsidian keeps links valid; we must keep the Airtable linkage valid too.
-- Deletes: a deleted file removes its row. Sync never deletes remote records from a local delete without explicit confirmation.
-- Duplicate files with the same visible name are fine — identity is the path, not the name.
-
-## Property model
-
-## Column mapping (verified against the official Bases syntax docs)
-
-The column set comes from the Bases view, not from the plugin:
-
-| Concept | Source |
-|---|---|
-| Visible columns + order | `config.getOrder()` → `BasesPropertyId[]` (e.g. `["file.name", "note.Status"]`) |
-| Sort | `config.getSort()` → `BasesSortConfig[]`; `data` arrives presorted |
-| Grouping | `BasesQueryResult.groupedData` |
-| Global + per-view filters | `.base` file `filters:` and `views[].filters:` (strings, or `{and|or|not: […]}` objects) |
-| Formulas | `.base` `formulas:`; read via `entry.getValue("formula.…")` |
-
-The plugin contributes only what Bases does not have: per-field presentation metadata (`fieldOptions`), grid view options, and the row-level operations.
-
-| Concept | Where it lives |
-|---|---|
-| Which properties are columns, and their order | `.base` view config (`config.getOrder()` and friends) — travels with the base |
-| Property name (frontmatter key) | The note's frontmatter |
-| Field type + per-field options (select colours, rating max, currency symbol) | `.base` view config, single `fieldOptions` entry (below) |
-| Read-only status | Derived: `file.*`, formula properties, unmapped keys |
-| Sync linkage | `.tablify/links/*.json` (machine state, not secret) |
-| Airtable token | `SecretStorage` — never in a vault file, never in `data.json` |
-
-### `fieldOptions` shape
-
-Keyed by **prefixed Bases property id** (`note.<Name>`, `file.<name>`, `formula.<name>`) — bare property names are ambiguous between sources, which is exactly what `BasesPropertyId` exists to prevent. Stored as one serialized string via `config.set("fieldOptions", …)` so it travels with the `.base` file and survives vault sync:
+One `.tablify` file is one logical database containing multiple tables. A JSON shape proposal (illustrative, not a released schema):
 
 ```json
 {
+  "format": "tablify",
   "version": 1,
-  "fields": {
-    "note.Status":     { "type": "singleSelect", "options": [ { "id": "o1", "name": "Todo", "color": "gray" } ] },
-    "note.Tags":       { "type": "multiSelect",  "options": [ { "id": "o2", "name": "urgent", "color": "red" } ] },
-    "note.Effort":     { "type": "duration",     "unit": "seconds" },
-    "note.Budget":     { "type": "currency",     "symbol": "$", "precision": 2 },
-    "note.Confidence": { "type": "rating",       "max": 5 },
-    "note.Notes":      { "type": "longText" }
-  }
+  "databaseId": "db_…",
+  "name": "Project tracker",
+  "tables": [
+    {
+      "id": "tbl_…",
+      "name": "Tasks",
+      "fields": [],
+      "rows": [],
+      "views": []
+    }
+  ]
 }
 ```
 
-- Unknown or missing entries fall back to `core/fieldTypes` defaults keyed off the YAML value shape — the plugin must never hard-fail on a hand-edited base.
-- Option **identity is the label**, not an id, because the frontmatter stores labels. Renaming an option is a bulk property rewrite with a preview (and a sync implication).
-
-## Field type → frontmatter mapping
-
-The governing rule: **frontmatter must stay human-readable and hand-editable.** Canonical values are chosen so that opening a note in a text editor shows something a person would have typed.
-
-| Type | Stored in frontmatter | Notes |
+| Entity | Stable identifier | Rename/move rule |
 |---|---|---|
-| `text` | `string` | |
-| `longText` | `string` | Multi-line values use YAML block scalars |
-| `number` | `number` | |
-| `checkbox` | `boolean` | |
-| `date` | `"YYYY-MM-DD"` string | Maps to Obsidian's Date property type |
-| `datetime` | ISO 8601 string; include the UTC offset when a time is present | Rendered in local time |
-| `url` | `string` | Maps to Obsidian's URL property type |
-| `email`, `phone` | `string` | No format coercion on write; validate on edit only |
-| `singleSelect` | `string` (the option **label**) | Colours/order live in `fieldOptions` |
-| `multiSelect` | `string[]` of labels | Chosen over tags: keeps a property, not the tag namespace |
-| `rating` | `number` | `max` in `fieldOptions` |
-| `currency` | `number` | Symbol/precision render-only |
-| `percent` | `number`, where 25 means 25% | Human-first. Airtable stores 0.25; we deliberately diverge and document it |
-| `duration` | `number` seconds, rendered `h:mm:ss` | Alternative (ISO 8601 durations) rejected for readability |
-| `attachment` | `string` path, or `"[[link]]"` when inside the vault, or `string[]` | Links render clickable in Obsidian; external paths stay plain strings |
-| `autoNumber` | **dropped** | Meaningless with file-backed rows. Replaced by a derived "Row number" column from view order. Reported during migration |
-| `createdTime` | **not stored** — read from `file.ctime` | Bases/file metadata already provides it |
-| `lastModifiedTime` | **not stored** — read from `file.mtime` | Same |
+| Database | `databaseId` | File rename/move does not change identity. |
+| Table | `tableId` | Table name is a label; relations reference the ID. |
+| Field | `fieldId` | Field name/order can change without rewriting cell identity. |
+| Row | `rowId` | Row label and position are not identity. |
+| View | `viewId` | View name is a label; query refers to field IDs. |
+| Select option | `optionId` | Label/color changes do not rewrite cell values. |
 
-Read-only cells (`file.*`, formulas, unmapped keys) render disabled with a tooltip explaining why.
+The file path is a host-level location, not a record ID. The core must not use `filePath` for stable row identity or sort tie-breaks.
 
-## Frontmatter write rules
+## 2. Database, table, field, row, and view contract
 
-1. **`fileManager.processFrontMatter()` only.** Never `vault.modify()` for a property change; another pane may be editing the same note.
-2. **Preserve everything unknown.** The writer mutates only the keys it owns.
-3. **Clearing deletes the key** rather than writing `""`/`null` — keeps notes clean. (Accepted cost: "explicitly empty" is indistinguishable from "absent".)
-4. **Property names are taken from field names**, trimmed, with internal whitespace collapsed. Collisions are resolved by suffixing ` 2`, ` 3`, … and reported.
-5. **Reserved/meaningful names warn.** `tags`, `aliases`, `cssclasses` have special Obsidian meaning; using them as grid columns is allowed but the importer warns.
-6. **No objects in frontmatter.** If a field type would need a nested object, the mapping is wrong — extend `fieldOptions` instead.
+- `format` is a discriminator; `version` is the document schema version, independent of plugin version.
+- Table order, field order, option order, row order, and view order must be explicit if user-visible. JSON object-key order is not a product contract.
+- Fields contain `id`, `name`, `type`, and validated type-specific settings. Stable field IDs persist through rename/reorder.
+- Rows contain `id`, a field-ID-keyed cell map, and record-level timestamps if the product exposes created/modified time. Store or derive row metadata deliberately; do not repeat the database file’s `ctime`/`mtime` as row values.
+- Views are table-scoped and contain saved filters/search, sort/group configuration, hidden columns, column order/width, row density, and other supported grid presentation.
+- Plugin-wide preferences (theme-following, motion, default row height, diagnostics) remain in Obsidian plugin settings. Active table/view selection belongs to workspace state where possible and should not cause a database write on focus.
 
-## Row creation (paste and import)
+## 3. Cell-value mapping proposal
 
-```
-folder:   <setting: default row folder>  (default: "<base name> Rows")
-filename: <setting: template>            (default: "{{Name}}" → falls back to "Row {{n}}")
-frontmatter: only properties with non-default values are written
-collisions: append " 2", " 3", … and report the count
-optional:   tag new rows (setting, default off) — the .base view's own filter defines
-            membership, so no marker property is written by default
-```
+The current field registry has scalar types and time fields. The new JSON contract should retain their useful semantics while replacing YAML serialization. Exact `null`/omission rules are an R1 ADR.
 
-A marker property is deliberately **not** written: the view's filter (typically `file.inFolder(...)`) defines membership. This keeps notes clean and avoids the plugin claiming ownership of notes the user also edits by hand.
+| Field | Suggested stored value | Notes |
+|---|---|---|
+| `text`, `longText`, `url`, `email`, `phone` | JSON string | Preserve exact content; long text may contain newlines. |
+| `number`, `rating`, `currency`, `percent`, `duration` | finite JSON number | Keep current conventions: `25` = 25%; duration is seconds. Currency symbol/precision are field settings. |
+| `checkbox` | boolean | `false` is a value, not absence. |
+| `date` | `YYYY-MM-DD` | Date-only; no timezone shift. |
+| `datetime` | ISO-8601 string | Define normalization and display timezone separately. |
+| `singleSelect` | `optionId` | Labels/colors/order live in field metadata. |
+| `multiSelect` | ordered `optionId[]` | Validate/deduplicate according to the field contract. |
+| `attachment` | ordered vault-relative path list | References only; no embedded bytes. Missing files remain visible as missing. |
+| `link` | ordered target `rowId[]` | Field metadata identifies `targetTableId`; cardinality/inverse behavior is an ADR. |
+| `createdTime`, `lastModifiedTime` | read-only row metadata values | Not derived from the whole database file’s Obsidian timestamps. |
 
-## Sync state
+Define semantics for absent cell key, `null`, empty string, empty arrays, `false`, and `0` for each type. A parser must not conflate these unless the descriptor explicitly defines them as equivalent. Unknown field types and unknown supported-version keys must not be silently dropped.
 
-`<vault>/.tablify/links/<key>.json`, where `<key>` is a stable hash of the `.base` path plus the view name. Dot-folders are not indexed by Obsidian, so this never pollutes search or the file explorer.
+## 4. Linked-record integrity
 
-```json
-{
-  "version": 1,
-  "basePath": "Projects/Projects.base",
-  "viewName": "Tasks",
-  "airtable": { "baseId": "appXXXX", "baseName": "Work", "tableId": "tblYYYY", "tableName": "Tasks" },
-  "recordMap": { "Projects/Rows/Alpha.md": "recZZZ" },
-  "fieldMap": { "Status": "fldAAA", "Owner": "fldBBB" },
-  "snapshot": { "recZZZ": { "Status": "sha256:…", "Owner": "sha256:…" } },
-  "lastPulledAt": "2026-10-05T10:00:00.000Z",
-  "lastPushedAt": "2026-10-05T09:12:04.000Z"
-}
-```
+A link field points to one target table. Its values are stable record IDs from that table; display labels are resolved at render time and never persisted as the relation key.
 
-- `snapshot` holds a hash of the **last agreed value per field per record**. That is what makes per-field three-way diffs possible without storing full history: `local ≠ snapshot` means the vault changed; `remote ≠ snapshot` means Airtable changed; both ⇒ a real conflict.
-- Deleting this folder is safe: it only loses sync linkage, and the plugin tells the user that before doing anything destructive.
-- Migration reports also live under `.tablify/migrations/`.
+Before implementation, decide and record:
 
-## Sync behaviour
+- whether the relation is single-value, multi-value, or supports both through one representation;
+- whether inverse relations are explicit or generated;
+- relation value ordering;
+- what happens when a target record is deleted;
+- whether a table with inbound links may be deleted;
+- how to load/detect broken links from hand-edited or partially synced documents.
 
-| Situation | Behaviour |
-|---|---|
-| Only local changed | Pushed on the next push |
-| Only remote changed | Offered on the next pull |
-| Both changed, different fields | Merged per field automatically — **no** conflict promoted |
-| Both changed, same field | Conflict: value shown side by side; user chooses per field |
-| Remote record missing (deleted in Airtable) | Reported, never auto-deleted locally |
-| Local note missing (deleted in vault) | Reported; remote record untouched |
-| Field with no Airtable counterpart | Skipped, reported once per sync |
-| Airtable schema changed | Reported; the mapping is never auto-rewritten; Airtable schema is never modified |
+Recommended safety posture (proposal, not yet user-confirmed): never cascade-delete records silently; a row deletion clears inbound links in the same undoable transaction; table deletion is blocked until inbound references are resolved; parse preserves broken reference data for user repair.
 
-## Legacy `.tabula` format (frozen)
+## 5. Views and record order
 
-Two shapes exist in the wild; the adapter reads both and **writes neither**.
+A table can have multiple saved views. Query/view state belongs in the `.tablify` document, not in a `.base` config or plugin `data.json`. Each view refers to stable field IDs and should include only state that is meaningful for that table.
 
-```jsonc
-// v1 — a single table (bare document)
-{ "version": 1, "name": "Tasks", "fields": [...], "rows": [...], "view": {...}, "autoNumberNext": 3, "sync": {...} }
+The native database must define authoritative row order because Bases currently supplies an already-sorted row sequence. Persist manual ordering explicitly and define how it interacts with filters, sorts, groups, and row drag. Stable final sort tie-breaks use row ID/order, never file path.
 
-// v2 — the multi-table envelope, written by the fork only when a file has ≥ 2 tables
-{ "version": 2, "tables": [ { "id": "t_…", "table": { /* v1 document */ } } ] }
-```
+## 6. Attachments
 
-- Rows: `{ id, cells: { [fieldId]: CellValue } }`; select cells store **option ids**, not labels.
-- Fields: the 19-type union with `singleSelect`/`multiSelect` carrying `{ id, name, color }` options.
-- Sync: `{ baseId, tableId, baseName, tableName, fieldMap, recordMap, lastPulledAt, lastPushedAt }`.
+- Store vault-relative paths only; do not embed images or files in JSON.
+- Normalize separators/Unicode consistently and preserve paths with spaces and special characters.
+- A missing attachment is an unresolved reference, not permission to remove the cell value.
+- Moving the database file does not rewrite attachment paths. Cross-vault portability is not guaranteed when referenced assets are absent.
+- UI may open/preview a path using the Obsidian host, but the core model stores plain strings and imports no Obsidian API.
 
-The legacy view is read-only in the grid, shows a "migrate" banner, and never gains features. The format is documented here so the importer is exact, and then it is closed.
+## 7. Internal `.tablify` schema upgrades
 
-## Migration: `.tabula` → notes + `.base`
+The only automatic migrations in scope are pure upgrades between versions of the native `.tablify` schema.
 
-Triggered by a command and by the legacy view's banner. Always a dry run first.
+- Each `vN → vN+1` migration is deterministic, tested against a committed fixture, and returns a new document plus warnings.
+- Migration failure leaves original file content intact and gives a recovery route; never replace it with an empty database.
+- Newer unsupported document versions are read-only or refused clearly; an older build never writes them back.
+- Preserve unknown keys within a supported format version unless an ADR specifies safe handling.
 
-**Algorithm**
+## 8. Explicitly unsupported old-data migration
 
-1. Parse (v1 or v2). For each table, resolve field names → property names per the rules above; report collisions and renames.
-2. Compute the target set: one folder per table (`<base name>/<table name>/`), one note per row (`{{primary field value}}`, deduped), one `.base` file per source file with one view per table.
-3. **Dry-run report** (the dialog): rows → notes, properties created, dropped field types, untranslatable filter conditions, name collisions, target folder, filename sample. Nothing is written until confirmed.
-4. On confirm: create notes (progress UI, cancellable mid-run), write frontmatter with `fieldOptions` for selects/rating/currency, then write the `.base`.
-5. **Write the mapping file** `.tablify/migrations/<timestamp>.json`: `rowId → notePath`, `fieldId → property name`, plus any pre-existing `recordMap`. The first sync after migration seeds `recordMap` from this, so **Airtable linkage survives the migration**.
-6. If "keep original" is off, the `.tabula` file is moved to a `_tabula-archive/` folder rather than deleted.
-7. Rollback instructions are printed and stored in the mapping file (the report lists every file created, so "undo" is a known, finite list).
+The refactor does **not** convert:
 
-**View settings translation**
+- Obsidian `.base` files or Bases view configuration;
+- Markdown note/frontmatter rows;
+- legacy `.tabula` v1/v2 tables;
+- Base-keyed Airtable link state from `<vault>/.tablify/links/`.
 
-| Old | New |
-|---|---|
-| `frozenPrimary`, `rowHeight`, `columnWidths`, hidden fields, column order | Native Bases view config / plugin view options |
-| `sorts` | Bases sort config |
-| `filters` (flat and/or) | Bases filter syntax for simple comparisons; nested/multi-value conditions are reported as untranslatable rather than silently dropped |
-| `query` (string DSL) | Folded into the same filter translation; leftovers reported |
-| `search` | Dropped (user-visible notice: search is a per-session action in Bases) |
-| `groupBy` | Bases grouping |
-| `autoNumberNext` | Discarded with the field |
+No old data is deleted or rewritten by the new plugin. Existing files can remain in the vault, but the refactored plugin does not promise to open, edit, or migrate them. Because the old release is a prerelease for personal/testing use, the default is fresh setup in a `.tablify` database, not a converter. Any later request for data conversion requires an explicit scope decision and a separate reviewed plan.
 
-> ⚠️ **Verified (official Bases syntax docs + `BasesConfigFile` type):** the `.base` schema is `filters`, `formulas`, `properties` (`<id>.displayName`), `summaries`, `views[]` where each view is `{ type, name, filters?, groupBy?, order?: string[], summaries? }`. `order` holds prefixed property ids; `groupBy` is `{ property, direction }`; filter statements are strings (`'status != "done"'`) or `{and|or|not: […]}` objects.
->
-> **Generate the file from the `BasesConfigFile` TypeScript type**, not from string templates — then the compiler validates the shape. A generated base must round-trip through Obsidian without warnings: add a harness case with a golden `.base` fixture.
+## 9. Airtable link metadata is not the database
 
-## Import (into the current Bases view)
+The current vault-root `<vault>/.tablify/` directory is an app-owned namespace for sync metadata; it is not an implemented `.tablify` database format. Keep these concepts distinct:
 
-Same machinery, no `.tabula` involved: matrix → property inference → preview dialog (row count, filename template, folders, properties) → note creation → single undo step that removes the created notes.
+- **`.tablify` extension:** a JSON database file opened by a custom file view.
+- **`.tablify/links/` directory:** optional per-table Airtable link metadata, if retained.
+
+Recommended future link state is keyed by stable local `databaseId + tableId`, with `fieldId → remoteFieldId`, `rowId → remoteRecordId`, per-field agreed snapshot hashes, remote Airtable base/table identity, and last successful pull/push stamps. The Airtable token remains only in Obsidian `SecretStorage`.
+
+Do not automatically reinterpret old link files keyed by `.base` path + view name. Recommended default: leave old link metadata untouched and create a fresh Airtable link for each new local table. Ask before implementing any sidecar conversion.
+
+## 10. Data operations and import boundary
+
+CSV/TSV/XLSX and clipboard matrices are interchange inputs/outputs, not native data formats. Import preview chooses create table, append records, or replace after confirmation. It creates database records, never Markdown notes. Export states selected range/current view/full table. Formula-shaped text is literal and never evaluated. Import and export must use stable field order and explicit link/attachment conversion rules.
+
+## 11. Review checklist for R1/R2
+
+- [ ] Schema IDs/value/empty semantics are in an ADR and match the example fixture.
+- [ ] Multiple tables, views, links, field options, row order, and attachments survive parse/serialize/parse.
+- [ ] Invalid/future documents cannot be silently overwritten.
+- [ ] No `.base` or `.tabula` migration code appears in the new parser.
+- [ ] `.tablify` filename and `.tablify/links/` metadata directory are described separately.
+- [ ] All file write guarantees are verified against pinned Obsidian APIs and a real test vault before claimed.

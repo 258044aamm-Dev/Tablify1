@@ -1,5 +1,7 @@
 # Prototype freeze — 2026-10-05
 
+> **Historical scope only:** this freeze applies to the legacy static prototype described below. It does not define or authorize work on the native `.tablify` product. Preserve this record; use `docs/04-design-system-and-layout.md` and the R-phase guides for any future design work.
+
 **The instruction, in the user's words:** some UI needs redesigning, but the freeze holds — *the redesign
 happens after the current run of work*; no work may touch the current design in a way that breaks the
 interaction or the look; **no side-effects on the shared core**; the focus is **`index.html` plus its

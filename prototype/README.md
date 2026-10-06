@@ -1,5 +1,7 @@
 # Tablify prototype
 
+> **Historical prototype / not target authority:** this self-contained browser model reflects the earlier Bases/note/`.tabula` product direction. Keep it as an audit artifact only; it is not evidence that native `.tablify` behavior exists. Use the current product decisions and R0–R6 guides for the refactor. Do not extend the prototype as part of plan-only work.
+
 A **working, self-contained model** of the plugin specified in `../docs/`. No build step, no
 network calls, no dependencies: open `index.html` in a browser (or serve the folder) and drive it.
 

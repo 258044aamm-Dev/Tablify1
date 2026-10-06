@@ -1,124 +1,110 @@
-# 06 — Roadmap
+# 06 — Native `.tablify` refactor roadmap
 
-Sized for **full-time** work (the stated pace): roughly **4–6 weeks** to a public release, with a usable internal build inside the first two.
+> **Status:** planned work only. The current `0.1.0` prerelease still uses Bases and Markdown-note rows. This roadmap does not claim `.tablify` support exists.
 
-Every phase ends shippable. No phase leaves a half-migrated state. `M0` alone fixes the publishing blockers, so it can be done before any code exists.
+The implementation is deliberately phased. Each phase is a reviewable, testable boundary; no calendar estimate is claimed before the R2 file-write proof and R1 schema decisions are closed. Detailed step sequences, scope fences, tests, and exit criteria live in [`docs/reference/native-tablify/`](reference/native-tablify/README.md).
 
----
+## Baseline to preserve
 
-## M0 — Project hygiene · 0.5–1 day
+- Repository/plugin id remains `tablify`; do not create a replacement repository or rewrite the `0.1.0` tag.
+- The `0.1.0` GitHub release is a prerelease for personal/device testing. Manual real-vault/phone verification remains `NOT RUN` in `docs/manual-test-log.md`.
+- Current unit/DOM/layout/CI work is the baseline to retain; the test/build gate has not been rerun in this documentation pass.
+- The application remains Bases-backed until the cutover. Keep current `manifest.json` and `package.json` product descriptions truthful until a release that actually includes `.tablify` support.
 
-**Goal:** a clean repo that can legally and technically grow into a published plugin.
+## Dependency graph
 
-- [ ] Fresh repository `tablify` (keep the old fork archived for reference; do not merge it).
-- [ ] `manifest.json` with `id: "tablify"`, own `author`/`authorUrl`, `version: "0.1.0"`, `isDesktopOnly: false`, `minAppVersion` = lowest version you actually test on.
-- [ ] `versions.json`, one `CHANGELOG.md`, `LICENSE` (MIT, retaining upstream copyright alongside yours), `NOTICE`.
-- [ ] `.gitignore`: `main.js`, `node_modules/`, `playwright-report/`, `*.local`.
-- [ ] Bun + esbuild + TypeScript strict + ESLint 9 + Prettier wired; `bun run check` green on an empty `src/`.
-- [ ] CI (`ci.yml`) and release (`release.yml`) per `docs/05-toolchain-and-ci.md`.
-- [ ] `AGENTS.md` committed; `docs/` committed (this set).
-
-**Exit:** `bun run check` passes; a `0.1.0` dry-run release produces `main.js`/`manifest.json`/`styles.css` as separate assets; `grep -r "airtable\|anthropic" --include=*.json --include=*.ts .` returns only Airtable *API* usages, never a brand placement.
-
----
-
-## M1 — Core domain · 4–5 days
-
-**Goal:** the pure layer that the old codebase never had, with the field-type registry replacing ~18 duplicated type switches.
-
-- [ ] `core/schema`: property schema, column set, read-only resolution.
-- [ ] `core/fieldTypes/**`: one descriptor per type in the mapping table of `03` — **16 today** (`text`, `longText`, `number`, `checkbox`, `date`, `datetime`, `url`, `email`, `phone`, `singleSelect`, `multiSelect`, `rating`, `currency`, `percent`, `duration`, `attachment`) + registry + `fieldOptions` validation. The mapping table is the source of truth; this count is a convenience, not a spec.
-- [ ] `core/query`: AST, parser (DSL → AST), evaluator, comparator, `toQueryString`.
-- [ ] `core/ops`: Op types + reducers + inverse computation (for undo).
-- [ ] `core/selection`: ranges, anchors, clipboard matrix model (TSV/HTML in and out).
-- [ ] Unit tests for all of it; coverage thresholds met.
-
-**Exit:** adding a field type requires exactly one new file plus registration — prove it by adding `progressBar` as a spike, then deleting it. No `switch (field.type)` anywhere outside `core/fieldTypes/`. Zero `obsidian`/React imports in `core/` (lint-enforced).
-
----
-
-## M2 — Data layer · 3–4 days
-
-**Goal:** rows come from somewhere real, and writes are safe.
-
-- [ ] `adapters/RowSource.ts` (the port) + `adapters/writeQueue.ts` (coalescing, per-file serialization, rollback, `flush`).
-- [ ] `adapters/bases/BasesSource.ts`: schema + rows + values from `QueryController`; writes via `fileManager.processFrontMatter`; snapshot caching + `subscribe`.
-- [ ] `adapters/tabulaFile/`: read-only parser for v1 and v2 (ported from the fork's `parseTableFileDocument`, with tests).
-- [ ] Note creation service: prefer `BasesView.createFileForView(baseFileName?, frontmatterProcessor?)` (the sanctioned path — it handles filename collision and frontmatter in one step, `@since 1.10.2`), falling back to a manual create when a specific folder is required.
-- [ ] Adapter tests against a **fake vault** (an in-memory `App` implementing the small surface we use).
-
-**Exit:** in a real vault, a Bases view renders rows from a `BasesSource`; editing a cell changes the note's frontmatter; a batch write to 4 notes either lands or reports exactly which failed; `flush()` guarantees disk before close.
-
----
-
-## M3 — Grid v1 · 5–7 days → **internal beta**
-
-**Goal:** a grid you would actually use daily.
-
-- [ ] Windowing, single scroller, sticky header, `position: absolute; inset: 0` root. First column pinned **only above 600 px of pane width** (`view.frozenPrimary && paneWidth >= 600`), with the freeze option hidden below that.
-- [ ] Store + selectors (`useSyncExternalStore`), command dispatch, optimistic overlay.
-- [ ] Keyboard model (`01-spec.md` table) with one handler and a roving `tabindex`.
-- [ ] Cell editors for every type; read-only cells disabled with a reason.
-- [ ] Row/column resize, reorder by drag; row height; view options persisted in the `.base`.
-- [ ] Context menus via Obsidian `Menu`; overlays via `Modal`.
-- [ ] `tokens.css` + `brand.css` + `grid.css`; zero `!important`.
-- [ ] Playwright harness with the four viewport fixtures; CI green.
-
-**Exit:** the harness passes on `desktop`, `desktop-dark`, `phone-closed`, `phone-keyboard` (host squeezed to 389 px) and `tablet`; a 5,000-row × 20-column fixture opens in ≤ 300 ms and scrolls at 60 fps; typing never re-renders the grid; opening two panes on the same base neither fights nor loses edits; the plugin can be used for real work without falling back to the legacy build.
-
----
-
-## M4 — Spreadsheet depth · 5–7 days → **public beta**
-
-**Goal:** the reason the plugin exists.
-
-- [ ] Range selection (mouse, touch toggle, shift-arrows), whole row/column selection.
-- [ ] Clipboard: copy/cut/paste TSV **and** HTML both directions; paste a `.csv`/`.xlsx` file from the clipboard where the OS exposes it.
-- [ ] Fill down/right; clear selection; bulk column edit bottom-up (`Cmd/Ctrl+Enter`).
-- [ ] Undo/redo across all operations, including multi-note writes, as one step each.
-- [ ] Import: CSV/TSV/XLSX → preview dialog with row count, folder, filename template, per-column type override, threshold warning, `.tabula` alternative.
-- [ ] Export: selection or view → TSV/XLSX to clipboard or file. (CSV stays Obsidian's.)
-- [ ] New-row affordances (footer button, Enter at the end of the last row, paste overflow) creating notes with correct frontmatter.
-
-**Exit:** paste a 400 × 6 block into an empty view → 400 correct notes in one undoable step with progress feedback and no freeze; copy a range into Google Sheets and back with values and structure intact; import a 412-row XLSX with the preview telling the truth; export reproduces what the sheet looked like.
-
----
-
-## M5 — Airtable sync · 3–5 days
-
-**Goal:** the differentiator, isolated so it can never destabilise the grid.
-
-- [ ] `SecretStorage` token flow + settings UI (never in `data.json`).
-- [ ] `SyncTarget` port, Airtable client (pagination, retry/backoff, typed errors, chunked writes).
-- [ ] Link dialog (base + table), link state in `.tablify/links/*.json`, `snapshot` hashes.
-- [ ] Pull/push with per-field diff; conflict review dialog; bulk take-local/take-remote.
-- [ ] Dynamic import so startup never parses sync code; link state drives badges.
-- [ ] Sync tests with a mocked transport (no live Airtable calls in CI).
-
-**Exit:** a pull that changes 40 fields across 12 notes applies in one reviewable step; a same-field conflict is impossible to resolve silently; deleting a note locally never deletes a remote record; the plugin's startup is measurably unchanged when sync is unused.
-
----
-
-## M6 — Publish · 2–3 days
-
-- [ ] README with usage, screenshots, limitations, and the **network-use disclosure** (`docs/09-publishing.md`).
-- [ ] `.tabula` migration command documented and tested end-to-end on a real legacy file.
-- [ ] `community.obsidian.md` submission: repo URL, latest release, developer policies accepted.
-- [ ] Post-submission: address review feedback; tag `0.1.0` when the release is verified in-app on desktop **and** phone.
-
-**Exit:** installable from the community directory; a stranger can go from install to a migrated legacy file to an Airtable pull without reading the source.
-
----
-
-## After 1.0 (candidates, not commitments)
-
-Kanban (only if Bases' kanban leaves a real gap — it currently does not), per-column type overrides in the UI, saved view presets beyond Bases', a "recently changed by sync" filter, an optional two-way link to Apple Numbers/Excel via file watch, i18n, and a command surface for external plugins.
-
-## Critical path and risk order
-
-```
-M0 ─┬─ M1 ── M2 ── M3 ─┬─ M4 ── M6
-    └─────────────────┴─ M5 ──┘
+```text
+R0 — scope, decisions, and docs
+ └─ R1 — JSON model/parser/versioning
+     └─ R2 — repository + custom file view
+         └─ R3 — IDs, database ops, undo, relations
+             └─ R4 — grid parity + linked records
+                 └─ R5 — CSV/TSV/XLSX + Airtable
+                     └─ R6 — delete old paths, verify, release
 ```
 
-Highest-risk items, in order: **write-queue correctness** (M2), **Bases API assumptions** (M2 — `QueryController` behaviour under rapid vault changes), **windowing + interaction performance** (M3), **`.base` generation for migration** (M6). Each has a spike attached to its phase; do the spike before the phase's polish work.
+R3 and parts of R2 may be explored in parallel only after their public state/repository interfaces are agreed. Airtable is deliberately after local IDs; otherwise sync mappings would be built on identities scheduled for removal.
+
+## R0 — Scope and documentation (completed documentation pass)
+
+**Goal:** a single accurate contract for what is present versus planned.
+
+- [x] Record all user-confirmed decisions and unresolved engineering choices.
+- [x] Rewrite target spec, architecture, data-model, roadmap, test, decision, publishing, verification, and prompting docs.
+- [x] Update AGENTS/START-HERE/phase prompts and developer notes so future work does not revive Bases or `.tabula`.
+- [x] Keep the README accurate for the released `0.1.0` build and clearly label `.tablify` as planned.
+- [x] Do not change package/manifest/release metadata until behavior ships.
+
+**Exit:** active guidance distinguishes current 0.1 behavior from `.tablify` target; no open product-scope contradiction; unresolved details are marked as ADRs.
+
+## R1 — Native JSON schema and pure core
+
+**Goal:** define the file format before host I/O.
+
+- [ ] Freeze envelope, stable IDs, field values/empty semantics, saved views, explicit record order, relation references, and attachment paths.
+- [ ] Build pure parser/validator/serializer and deterministic internal version migrations for `.tablify` only.
+- [ ] Create multi-table fixtures and test invalid/future versions, unknown fields/keys, broken links, and round-trip fidelity.
+- [ ] Keep core independent of Obsidian, React, DOM, file I/O, and Airtable.
+
+**Exit:** schema ADR accepted; all fixtures round-trip; corrupted/future data is never silently reset or rewritten.
+
+## R2 — Repository and Obsidian custom file view
+
+**Goal:** open, create, save, and reopen `.tablify` safely.
+
+- [ ] Verify `registerView`, `registerExtensions`, `FileView` lifecycle, supported file-write APIs, and rename/external-modify events against pinned typings and actual desktop/mobile app versions.
+- [ ] Add document repository/session, in-memory validated snapshot, active-table projection, document-level serialized write queue, and revision conflict handling.
+- [ ] Add `.tablify` creation/open/close/reopen/rename and multi-pane behavior.
+- [ ] Test malformed file, unsupported future version, write failure, Obsidian Sync/external edit, and view disposal.
+
+**Exit:** edit multiple tables, close/reopen, and preserve data; external/newer document state is never clobbered silently; no Bases plugin dependency.
+
+## R3 — Multi-table identities and operations
+
+**Goal:** replace `filePath`/`PropertyId`/single `TableState` assumptions.
+
+- [ ] Convert operations, inverses, selection, query tie-breaks, grid store, exports, and sync ports to stable table/row/field IDs.
+- [ ] Add table/field/row/view operations and undo; define transaction/write failure semantics.
+- [ ] Implement linked-record validation and approved referential-integrity/delete behavior.
+- [ ] Move schema/field options and record timestamps into the database model; remove YAML/frontmatter conversion.
+
+**Exit:** pure multi-table state can apply/undo every supported operation; no note path is a local row identity.
+
+## R4 — Grid parity and links
+
+**Goal:** give the user the existing spreadsheet-class workflows on a native database.
+
+- [ ] Add table/view switching, create/rename/delete UX for tables/fields/views, and persist saved views in the `.tablify` file.
+- [ ] Retain selection, keyboard, editing, clipboard, bulk operations, row/column order, undo/redo, accessibility, mobile layout, and performance.
+- [ ] Add linked-record chooser, display, navigation, missing-target state, and keyboard/screen-reader behavior.
+- [ ] Add native-view lifecycle tests beyond the existing browser-only layout harness.
+
+**Exit:** a multi-table `.tablify` document can be used without enabling Bases; full agreed grid parity and link behavior pass.
+
+## R5 — Spreadsheet interchange and Airtable
+
+**Goal:** preserve import/export and manual sync on stable local identities.
+
+- [ ] Rewire CSV/TSV/XLSX import to create/append/replace table data with exact preview and undo; no note creation or `.tabula` option.
+- [ ] Add CSV export alongside TSV/XLSX; define selection/view/table scope, link display, attachment reference, and formula-shaped literal rules.
+- [ ] Re-key sync to `databaseId + tableId`, `rowId`, and `fieldId`; preserve manual pull/push/conflict review and token storage.
+- [ ] Define linked-record Airtable mapping behavior and safely report unresolved mappings.
+- [ ] Default to no migration of old `.base` path/view-keyed sync links; leave old metadata untouched unless separately approved.
+
+**Exit:** import/export round-trips; mocked sync tests cover conflicts, partial reads, stale checks, deletions, links, failures, and secret redaction; CI makes no live API calls.
+
+## R6 — Removal, verification, release
+
+**Goal:** deliver one native data path, with accurate documentation and release evidence.
+
+- [ ] Remove Bases adapters/view registration, frontmatter/note row model, `.tabula` parser/migration, hidden alternatives, obsolete settings/tests/fixtures, and the throwaway Bases spike.
+- [ ] Update all active specs, instructions, prompts, issue templates, developer notes, README, and product metadata with behavior that actually ships. Preserve historical release/progress records.
+- [ ] Add source gates against Bases and `.tabula` runtime paths, with Airtable terminology/historical text exceptions.
+- [ ] Run `bun run check`, `bun run test:layout`, release gates, and real desktop/physical-phone/device-vault tests; mark any unrun check `NOT RUN`.
+- [ ] Publish a distinct version/tag; never rewrite `0.1.0`.
+
+**Exit:** `.tablify` JSON is the only native editable database, sync remains safe, no Bases or `.tabula` code path ships, all active docs match the release, and old data is not claimed to migrate.
+
+## Stop conditions
+
+Stop and ask for a decision before: choosing link cardinality/inverse behavior; deleting tables/rows with inbound links; choosing a lossy schema conversion; changing current keyboard behavior; migrating old Airtable link metadata; writing a newer document version; changing `minAppVersion`; adding a runtime dependency; or modifying package/manifest/version/release assets before the new behavior exists.

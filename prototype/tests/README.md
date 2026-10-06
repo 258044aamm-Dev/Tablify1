@@ -1,5 +1,7 @@
 # Prototype tests
 
+> **Historical prototype suite:** these results apply only to the legacy static prototype, not the current plugin or the planned native `.tablify` release. Do not use them as R-phase implementation gates.
+
 Three harnesses, all run outside the page (nothing ships to the browser).
 
 | file | what it proves | how to run |

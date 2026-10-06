@@ -1,195 +1,326 @@
-# Tabula — Refactor Plan & Decision Record
+# Tablify native `.tablify` refactor plan
 
-Status: **proposal, awaiting sign-off** · Prepared 2026-10-05
-Repo audited: `258044aamm-Dev/airtable-tabula` @ `ac25680` (30 commits ahead of, 0 behind, `MehulG/airtable-tabula`)
+**Status:** user-confirmed product direction; planning only. No source implementation is part of this document update.
 
-Answers that drove this plan:
-- **Endgame:** publish as your own community plugin
-- **Trigger:** mobile layout hell is the pain
-- **Platform:** desktop *and* mobile are both first-class
-- **Sync/storage:** "do what's best" → recommendation below
-- **Stack:** build on Obsidian Bases
+**Repository audited:** `258044aamm-Dev/Tablify`, `main` at `50f041f135abe9e7e9f111cf7c170b32dc98e9e0` (2026-10-06); tag `0.1.0` exists.
+
+**Detailed phase guides:** [`docs/reference/native-tablify/README.md`](native-tablify/README.md) indexes R0–R6 guides covering schema, file view/storage, core identity, UI parity/links, sync, removal, tests, and release sequencing.
+
+**Supersedes:** the earlier 2026-10-05 proposal in this file, which audited the older `airtable-tabula` fork and recommended an Obsidian Bases-first product. That recommendation and its architecture are no longer the product decision.
 
 ---
 
-## 1. What I found (evidence)
+## 1. Decision in one sentence
 
-**Shape.** Obsidian plugin, `.tabula` files = JSON tables, React 18 + esbuild. **7,572 LOC** across 27 TS/TSX files, **2,141 lines of CSS**, a committed 1.39 MB `main.js`.
+Keep this repository and the Obsidian plugin, but make a versioned, multi-table `.tablify` JSON file the **only native editable data source**. Remove Obsidian Bases and the legacy `.tabula` path rather than keeping parallel modes. Reuse the grid and provider-independent code; replace the data model, storage adapter, plugin view lifecycle, and Bases-specific docs/tests.
 
-**The 30-commit divergence is not a roadmap.** Roughly 15 consecutive commits are repairs to one thing — the mobile layout height chain — including two temporary on-screen diagnostic builds and one commit that diffs the whole document on tap. Upstream (`MehulG`) has been stationary at 0.1.6; the merge base is `3542249`.
+This is a substantial refactor, not a new repository and not a small adapter swap.
 
-**Identity is broken for publishing (blocking issues):**
+## 2. User-confirmed product contract
 
-| Issue | Evidence | Why it blocks |
-|---|---|---|
-| Plugin id collides with upstream | `manifest.json` `id: airtable-tabula`; upstream is already listed at `community.obsidian.md/plugins/airtable-tabula` | The directory is keyed by id. You cannot claim it. |
-| "Airtable" in the name | Airtable's trademark guidelines forbid incorporating their marks "in business names, app names, … related products" | Legal risk on a public listing |
-| Version triple-mismatch | `manifest.json`/`package.json` = `0.0.1`, `versions.json` = `{"0.0.1"}`, `CHANGELOG.md` documents **0.1.31** | Registry requires tag == manifest.version; also never change id after release |
-| Author metadata still upstream's | `author: MehulG`, `authorUrl`/`homepage` → `MehulG/...` | Misattribution + review flags |
-| Two changelogs, byte-identical | `CHANGELOG.md` and `change log.md`, same md5 `307ffb49` | Noise |
-| Release workflow would fail review | `.github/workflows/release.yml` accepts `v`-prefixed tags (`VERSION="${TAG#v}"`) and publishes notes titled "Test Release" | Registry rejects `v`-prefixed tags |
-| Build artifact in git | `main.js` (1.39 MB) committed | Release assets belong on the release, not in history |
+These decisions were confirmed in the conversation and are the constraints for the plan:
 
-**Architecture problems, ranked by cost:**
-
-1. **No state layer.** `TableApp` holds ~32 handlers; `TableGrid`'s props interface has **29 members, 22 of them callbacks**; `Toolbar` 18. **Zero `React.memo`, zero `useMemo` in the grid, no virtualization** — a full `<table>` re-renders on every keystroke, and each edit fires `workspace.requestSaveLayout()` plus a full `root.render()`.
-2. **Field types hardcoded in 5+ modules.** 19 variants; the type ladder is repeated in `store.ts` (×4: create/normalize/empty/sanitize), `query.ts` (operators, matching, comparator), `cellClipboard.ts`, `CellEditor.tsx`, `syncEngine.ts`. ~18 `case "text"`-style sites. Adding one field type touches ~6 files.
-3. **Three overlapping filter systems** in `ViewState`: `filters` (flat and/or), `query` (string DSL), `search` (separate code path), with `filtersToQueryString`/`parseQueryString` round-tripping. No nested groups.
-4. **Non-idiomatic Obsidian integration.** **Zero** uses of `Scope`, `Keymap`, `registerDomEvent`, or `Modal`. Instead 6–7 hand-rolled overlays each adding its own `window.addEventListener("keydown"/"mousedown")`, plus a `MutationObserver` that repaints the ribbon icon by injecting inline `!important` SVG purple. This is the root of the "theme repaints my controls" bug class.
-5. **CSS fights everything.** Deep descendant chains (`.tabula-view .tabula-mount .tabula-file-root button.tabula-btn`), 7 `!important`, 46 custom props but only **12 references to Obsidian theme variables** — the plugin paints itself, then needs override layers to survive vault themes.
-6. **Hand-rolled everything else.** No schema lib, no migration runner; the file's shape is unstable (`serializeTableFileDocument` emits bare v1 for 1 table, a v2 envelope for 2+). **No tests, no test runner, no ESLint/Prettier, no PR CI.** `tsconfig` sets only `noImplicitAny` + `strictNullChecks`, `allowJs: true`. The "harness"/"functest" the changelog cites is not in the repo — it was ephemeral, which is exactly why the layout regressions kept coming back.
-
----
-
-## 2. The pivot you need to see before anything else
-
-You chose "build on Obsidian Bases." That is a **product pivot, not a refactor**, and it has one consequence that decides everything:
-
-> **In Bases, every row is a file in the vault.**
-
-- Bases entries are notes; `BasesEntry`/`BasesEntryGroup` expose `this.data` to a custom view as **read-only** data plus view config. The Beta/Bases API gives you `registerBasesView(viewId, { name, icon, factory, options })` and `BasesView.onDataUpdated()`. It does **not** give you a write API.
-- Editing therefore happens by *you* writing frontmatter: `app.fileManager.processFrontMatter(file, fm => { fm[prop] = value })`, debounced. That works well — it is how the built-in table view behaves — but it means your plugin owns per-note file writes, not a record store.
-- `registerBasesView` **returns `false` when Bases is disabled in the vault** — you must degrade gracefully.
-- Bases API is `@since 1.10.0`, so `minAppVersion` goes to `1.10.0` and you inherit Obsidian's own schema, filters, sorting, grouping, formulas, view chrome, embeds (`![[x.base#view]]`) and **layout**.
-
-**What Bases buys you (directly answers your #1 pain):** your plugin no longer owns the height chain, the viewport, the keyboard, or the theme contract — the failure surface that consumed 15 commits and two diagnostic builds. A Bases view renders inside a container Obsidian has already sized correctly, on desktop and mobile.
-
-**What Bases costs you:** `.tabula` standalone tables, multiple independent tables per file with non-note records, and — at scale — 5,000 imported rows becomes 5,000 notes. Bases' own docs warn to expect thousands of entries and to reuse DOM / avoid off-screen rendering.
-
-**Therefore: a decision, not a default.** Both are legitimate products:
-
-| | **A. Bases-first (recommended)** | **B. Own-storage-first** |
-|---|---|---|
-| Product | "The Airtable-style grid view for Bases" | "Standalone tables that live next to your notes" |
-| Rows | Notes (frontmatter = schema) | Records inside a `.tabula` file |
-| Layout/mobile/keyboard | Obsidian owns it | You own it — must be rebuilt cleanly |
-| 5k-row import | 5k notes (warn; gate it) | One file, trivially fine |
-| Publishability | High, ecosystem-aligned, core-API supported | You compete with a core feature |
-| Keep `.tabula`? | Only as one-way importer | Yes, permanently |
-
-**My recommendation:** take A, and take it *without throwing away the old product on day one* — see §3. The rewrite is worth doing either way, and ~70% of it (field registry, grid, editors, query engine, sync) is shared. The difference is which adapter sits underneath.
-
----
-
-## 3. Target architecture: one grid, two data adapters
-
-```
-src/
-  core/                     ← pure TS. No React, no Obsidian, 100% unit-testable
-    schema.ts               zod schemas + migration runner (.tabula only)
-    fieldType/registry.ts   ← ONE file per field type. THE decisive refactor
-    query/                  ← AST + parser + evaluator (single source of truth)
-    ops/                    ← insert/update/delete/reorder/select options/undo
-    selection/              ← row ranges, clipboard semantics
-
-  grid/                     ← the visible product (React)
-    GridView.tsx            virtualized, one scroller, sticky header + frozen col
-    cells/                  per-field-type editors (registry-driven)
-    commands.ts             keyboard nav via a single keymap, undo/redo
-    tokens.css              Obsidian CSS vars only. No !important. No palette.
-
-  adapters/                 ← the only place that knows where rows live
-    RowSource.ts            getRows/getFields/setCell/insertRow/deleteRow/subscribe
-    tabulaFile.ts           .tabula JSON (legacy + non-note data) — frozen contract
-    bases.ts                QueryController data + processFrontMatter write-back
-
-  sync/                     ← optional, lazily imported
-    SyncTarget.ts           port: apply(rows) / collect(rows)
-    airtable.ts             Airtable adapter, conflict UX, secret from SecretStorage
-
-  plugin/                   ← Obsidian glue
-    registerBasesView(...)  ← primary surface
-    FileView (legacy)       ← secondary surface, shares grid/
-```
-
-**Why this shape:**
-- The field-type registry turns "add a field type = touch 6 files" into "add one file" — it is the single biggest velocity win and the reason a rewrite is justified at all.
-- `RowSource` is what lets you ship the Bases product while `.tabula` stays alive as the escape hatch for non-note data (a 5,000-row import that shouldn't become 5,000 notes). One renderer, two adapters — not two architectures.
-- The grid never learns where data comes from, so sync plugs in as another port, not another coupling.
-
-**The mobile layout contract (replaces the ResizeObserver anchor hack):**
-
-```
-host provides a correctly-sized positioned parent
-  .view-content  (file view)   ← Obsidian sizes it
-  .bases-view    (Bases view)  ← Obsidian sizes it
-    └─ .tabula-grid-host   position: absolute; inset: 0;
-        └─ .tabula-grid    height: 100%; display: flex; column; overflow: hidden
-            ├─ .toolbar    flex: none
-            └─ .scroller   flex: 1; overflow: auto   ← the only scroller
-```
-
-`position: absolute; inset: 0` cannot be lost in a flex chain, which is precisely the bug that ate v0.1.23 → v0.1.30. For the mobile keyboard, handle it where it actually happens — `visualViewport` resize → pad the scroller — never by renegotiating the document's height.
-
----
-
-## 4. Decision record
-
-| # | Decision | Recommendation | Rationale |
-|---|---|---|---|
-| D1 | Plugin name & id | **New id, no "Airtable" in it.** Candidates: `tabula-grid`, `tabula-tables`, `bases-grid`. Verify availability at `community.obsidian.md` | `airtable-tabula` is owned by upstream; Airtable's trademark rules forbid their mark in an app name. **Never change the id after release.** |
-| D2 | Product model | **Bases-first**, `.tabula` retained as legacy adapter + one-way importer | Removes the layout/theme/keyboard bug class; ecosystem-aligned; keeps non-note data possible |
-| D3 | `.tabula` promise | Keep reading it (frozen format, never written except by the legacy adapter); ship a previewed one-way importer `.tabula → notes + .base` | Existing users can migrate; you stop maintaining two formats in anger |
-| D4 | Airtable sync | **Keep it** — but as a lazily-imported module behind `SyncTarget`, with token in `SecretStorage`, and *visible* conflict resolution (per-field diff + choice), not silent last-write-wins | It is your only real differentiator vs. plain Bases. Startup stays light. |
-| D5 | State | Tiny store + `useSyncExternalStore` + selectors + command log (undo/redo). No prop drilling; no new framework | 22 callbacks in one props interface is the actual bug |
-| D6 | Grid | Virtualize with **TanStack Virtual** (~5 KB) but keep your own column model from the field registry — not TanStack Table | A table lib would duplicate the registry you're building |
-| D7 | Field types | Registry: each type declares value shape, empty/parse/format/validate, editor, filter operators, comparator, group key, sync mapping | Kills ~18 duplicated switch sites |
-| D8 | Query | One AST. Query string compiles *into* it; delete `search` by folding it into the AST | Three filter systems is three bug surfaces |
-| D9 | CSS | Obsidian theme variables only. No `!important`, no hardcoded palette, max 2-level selectors | Ends the "theme repaints my controls" class |
-| D10 | Obsidian idioms | `Modal`/`SuggestModal`, `Scope`, `registerDomEvent`, `SecretStorage`. Delete the ribbon `MutationObserver` | Free keyboard/a11y/focus correctness |
-| D11 | Fork strategy | **Hard fork.** Keep `upstream` as a read-only remote for reference, never merge again; record it in `DECISIONS.md` | 30 commits of divergence with a stationary upstream is a fork, not a branch |
-| D12 | Versioning | Reset to `0.1.0` under the new id; tag == `manifest.version` (no `v` prefix); `versions.json` entry per release | Registry requirement |
-| D13 | Testing | Vitest on `core/`; **committed** Playwright harness that mounts the grid at 3 viewports incl. keyboard-open simulation; both in PR CI | The old harness was ephemeral — that is why layout regressions returned |
-| D14 | Attribution | MIT retained; `LICENSE` keeps MehulG's copyright **plus** your own; add `NOTICE` crediting upstream | MIT requires retaining the notice; also the honest thing |
-| D15 | Platforms | Both first-class; `isDesktopOnly: false`; one layout contract for both hosts; CI viewport matrix | Your call, and the contract makes it cheap |
-
----
-
-## 5. Phased plan
-
-**M0 — Identity & hygiene** *(1–2 days, zero behaviour change)*
-New repo name, new id, `author`/`authorUrl`/`fundingUrl` corrected, version reset `0.1.0`, `versions.json` normalised, one `CHANGELOG.md` (delete `change log.md`), `main.js` out of git, release workflow fixed (tag == manifest.version, real release notes, assets as separate files), LICENSE + NOTICE, README network-use disclosure (Airtable API + how the token is stored).
-*Exit:* `npm run build` clean, tag dry-run produces valid assets, no id/name/version inconsistency anywhere.
-
-**M1 — Domain core extraction** *(the real refactor; ~1–2 weeks)*
-Build `core/` with the field-type registry, query AST, ops, selection. Port `store.ts`, `query.ts`, `cellClipboard.ts` logic onto it. Vitest with fixtures. The existing UI keeps working against the new core (strangler step 1).
-*Exit:* all 19 field types declarative; **adding a type = 1 file**; core coverage on the paths that used to be switch ladders; no React/Obsidian import inside `core/`.
-
-**M2 — Store + ports + Obsidian idioms** *(~1 week)*
-Store with `useSyncExternalStore`, actions, undo/redo. `RowSource` port with `tabulaFile` adapter (atomic writes, debounced `requestSave()`; delete the per-keystroke `requestSaveLayout()`). Replace hand-rolled overlays with `Modal`; replace window listeners with `Scope`/`registerDomEvent`; token → `SecretStorage`; delete the ribbon `MutationObserver`.
-*Exit:* grid props ≤ 6; no `window.addEventListener` in `src/ui`; safe to open in two panes.
-
-**M3 — Grid rewrite + layout contract** *(~1–2 weeks)*
-Virtualized grid; CSS token layer; single scroller; sticky header/frozen primary column; one keyboard handler; the `absolute; inset: 0` contract; commit the Playwright harness with 3 viewports (desktop / phone closed / phone keyboard-open).
-*Exit:* 5,000 rows × 20 cols, typing at 60 fps; harness green on all 3 viewports; `grep -c '!important' styles.css` → 0.
-
-**M4 — Bases view + migration** *(~1 week)*
-`registerBasesView` with ViewOptions (row height, frozen column, …); write-back via `processFrontMatter` (debounced, error-handled, optimistic with rollback); graceful notice when Bases is disabled; embedded-base and pop-out-window handling; `.tabula → notes + .base` importer with dry-run preview and row-count warning above a threshold.
-*Exit:* publishable; a user can migrate a `.tabula` file end-to-end.
-
-**M5 — Sync rebuild** *(optional, ~1 week)*
-`SyncTarget` over `RowSource`; Airtable adapter; explicit conflict UX; lazy `import()` on first use.
-*Exit:* startup unaffected when sync is unused; no silent data loss path.
-
-**M6 — Release**
-`community.obsidian.md` submission (dashboard flow; the old PR route is retired), README with disclosures, screenshots, migration guide.
-
-**Not doing:** merging upstream again · two live file formats · hand-rolled modals · `main.js` in git · two changelogs · "Airtable" in the name · any ResizeObserver-anchored height chain.
-
----
-
-## 6. Risks
-
-| Risk | Mitigation |
+| Area | Decision |
 |---|---|
-| Rows-as-notes is the wrong product for your data | Keep the `tabulaFile` adapter. It costs little precisely because the grid is shared. Revisit at M4 with real data. |
-| Import creates thousands of notes | Dry-run preview + threshold warning + "keep as `.tabula` instead" option |
-| Bases disabled / API churn | Detect `registerBasesView() === false`; the legacy file view remains a working fallback surface |
-| You are the only maintainer now | Small dependency surface, committed test harness, CI on every PR, ADRs for every D-number above |
-| Rewrite stalls half-finished | Every milestone ends shippable; M0 alone fixes the publishing blockers |
+| Host | Remain an Obsidian plugin. Keep this repository, product identity, and plugin id `tablify`. |
+| Native data | `.tablify` is the only native editable database format. Its JSON document contains the database’s tables, schema, rows, and saved views. |
+| File shape | One `.tablify` document can contain multiple tables. |
+| Relationships | Linked-record fields are in scope for the first stable release. Formula, lookup, and rollup fields are deferred. |
+| Attachments | Store vault-relative path references; do not embed attachment bytes in the JSON document. |
+| Bases | No Obsidian Bases view mode, no `BasesView` integration, and no `.base`-to-`.tablify` migration. |
+| Legacy `.tabula` | Remove its reader/view/import path; do not carry a `.tabula` mode or converter forward. |
+| Spreadsheet interchange | Keep CSV/TSV/XLSX import and export. These are interchange formats, not alternative native storage. |
+| Airtable | Keep Airtable sync in the first stable release, using the current manual pull/push and field-by-field conflict-review behavior. Keep credentials in Obsidian `SecretStorage`. |
+| Grid | Retain the current grid interaction set and bring it onto the new storage: editing, selection, clipboard, bulk operations, undo/redo, views, accessibility, and mobile behavior. |
 
-## 7. First three actions
+**Terminology:** remove the Obsidian **Bases** integration. Airtable’s remote **base** remains an Airtable API concept, so remote `baseId`/`baseName` fields in the sync adapter are not themselves evidence of an Obsidian Bases dependency.
 
-1. Confirm the name/id (D1) and whether the Bases pivot (D2/D3) is accepted — everything downstream hangs on it.
-2. Do M0 today; it is small and unblocks a legitimate listing.
-3. Start M1 with the field-type registry — write the 19 types as data, then delete the ladders.
+**Compatibility consequence:** `.base`, Markdown-note rows, and `.tabula` files may remain on disk, but the refactored plugin will not open, edit, or migrate them. The existing `0.1.0` pre-release is a rollback point; do not overwrite its tag or pretend it is compatible with the new storage.
+
+## 3. Audit findings: current repo versus target
+
+### 3.1 What is already reusable
+
+The current repo is not the original 7,572-line fork described in the superseded plan. It is a typed Obsidian plugin with a substantial implemented core and test suites. Reuse these pieces where their contracts are genuinely storage-neutral:
+
+- `src/grid/**`: the virtualized React grid, keyboard/focus model, editors, clipboard, menus, selection interactions, accessibility roles, mobile keyboard inset, and styling.
+- `src/core/fieldTypes/**`: the field descriptor registry and most existing scalar field behavior (text, number, date, select, currency, percent, duration, rating, attachment, and others). Field context and serialization contracts need decoupling, not wholesale deletion.
+- `src/core/query/**` and `src/core/view/pipeline.ts`: the expression evaluator, sorting/grouping pipeline, search behavior, and view presentation logic. Replace Bases-specific persisted input; do not reimplement these without a demonstrated gap.
+- `src/core/ops/**`, `src/core/selection/**`, and `src/grid/store/**`: plain-data operations, inverses/history, ranges, and the store. Their identity and table scope currently assume a note path and one table, so they need a deliberate type/model migration.
+- CSV/TSV/HTML/XLSX matrix parsing, preview/inference, clipboard serialization, and the XLSX/TSV export flows under `src/core/**` and `src/plugin/{import,export}/**`.
+- The Airtable client, transport, diff/conflict engine, retry/error handling, secret-storage wrapper, and mocked-transport tests under `src/sync/**` and `src/plugin/sync/**`. Re-key and reconnect the local side; do not throw away the sync correctness work.
+- The Vitest, DOM, Playwright layout harness, CI, bundle/contrast/CSS gates, and architecture-boundary lint rules.
+
+### 3.2 The Bases coupling is structural, not just a registration call
+
+The source audit found all of the following, so deleting only `registerBasesView()` would leave a misleading and nonfunctional product:
+
+| Current code | Current assumption | Refactor consequence |
+|---|---|---|
+| `src/plugin/main.ts` | Calls `registerBasesView`, finds a `bases` leaf, and tracks live Bases views. | Replace with a `.tablify` file view, create/open commands, and file-view lifecycle. Remove `BASES_LEAF_TYPE` and all Bases registration/disabled-plugin notices. |
+| `src/plugin/TablifyView.ts` | Extends Obsidian `BasesView`; consumes `QueryController`, `BasesPropertyId`, `data`, `.base` config, `createFileForView`, and note metadata/frontmatter APIs. | Replace with a view bound to a `.tablify` `TFile`/database session. No `BasesView`, `QueryController`, `config.getOrder()`, `processFrontMatter`, or note-backed row refresh. |
+| `src/adapters/bases/BasesSource.ts` | Implements `RowSource` over note paths and frontmatter; persists field options, view patch, and presentation in `.base` config. | Retire. Add native database/table storage and store views/field options inside the `.tablify` document. |
+| `src/adapters/RowSource.ts` | `kind` is only `'bases' | 'tabula-file'`; `RowId` comments distinguish note path from `.tabula` row id. | Redesign around database/table/row/field identities. There is currently no live `.tablify` source. |
+| `src/core/ops/types.ts`, `src/core/selection/**`, `src/core/query/evaluate.ts`, `src/core/view/pipeline.ts` | Rows/cells use `filePath`; stable sort ties use that path; operations model a single `TableState`. | Replace note-path identity with stable `rowId`, carry `tableId` where an operation crosses table boundaries, and add database/table-level state and operations. |
+| `src/core/types.ts`, `src/core/schema/propertySchema.ts`, `src/core/fieldTypes/**` | `PropertyId` is described as a prefixed Bases id; `PropertySource` distinguishes `note/file/formula`; descriptors expose `toYaml`; `FieldContext` contains a note `path`; created/modified fields derive from Obsidian file metadata. | Replace with native `FieldId`/field definitions and JSON-safe encode/decode. Define record timestamps in the file model; remove note/frontmatter/property-source rules. Keep locale/timezone formatting where useful. |
+| `src/core/view/patch.ts`, `BasesSource` view keys | View configuration is encoded as strings in `.base` sidecar settings. | Persist named table views in `.tablify` and version their schema. |
+| `src/adapters/notes/createNote.ts`, `src/core/import/**`, `src/plugin/import/**` | Import creates Markdown notes, plans folders/filenames/collisions, and treats `.tabula` as the legacy alternative. The `.tabula` wizard choice is explicitly not implemented as a writer. | Keep matrix parsing, inference, preview, progress, and one-action undo. Replace note planning with create-table / append-records / replace-table plans. Remove folder/template/legacy-choice semantics. |
+| `src/adapters/tabulaFile/**`, `src/core/migrate/**` | Pure `.tabula` v1/v2 reader and conversion-to-notes migration, with committed fixtures and tests. | Remove these paths and fixtures after their tests are replaced by `.tablify` parser/serializer/version tests. |
+| `src/sync/LinkStore.ts`, `src/plugin/sync/host.ts`, `src/plugin/sync/local.ts`, `src/sync/pullPush.ts` | Link identity is `.base` path + view name; record map keys are note paths; local operations address properties and note paths. | Key links by stable local `databaseId` + `tableId`; map stable local `rowId`/`fieldId` to Airtable record/field IDs. Keep the token in `SecretStorage`; keep the conflict engine provider-agnostic. |
+| `src/plugin/settings/schema.ts` | Settings include row folder, note filename template, `.tabula` migration visibility, and note-import threshold. | Remove row-folder/filename and legacy settings. Retain appearance, diagnostics, type inference, clipboard behavior, and import warning only if it still corresponds to file-size/performance risk. |
+| `AGENTS.md`, `README.md`, `manifest.json`, `package.json`, `docs/01–12`, `START-HERE.md`, `prompts/**`, `src/plugin/DEV-NOTES.md` | Active instructions and product copy still say Bases, notes/frontmatter, `.base`, `.tabula`, or note migration. | Rewrite the active contract before source work; otherwise future changes will reintroduce the removed system. Preserve historical release/progress records as history, not as current instructions. |
+
+**Important scope correction:** Bases is an Obsidian core API, not a separate runtime package in `package.json`. Keep the `obsidian` development typings for the plugin host and the remaining APIs. The removal target is the Bases classes, registration, configuration and semantics—not Obsidian itself.
+
+**`.tabula` status correction:** the checked-in current runtime has a `.tabula` model/reader and migration utilities, but `RowSource` has no live `.tabula` implementation; the import wizard’s “keep as `.tabula`” action is disabled/unbuilt. The new product should remove this legacy code and its promise rather than preserve a viewer that is not actually present.
+
+**`.tablify` naming correction:** the existing vault-root `.tablify/` directory is currently an app-owned link-metadata namespace; it is not a database file or an implemented `.tablify` format. Keep the file extension and the directory’s sync metadata roles distinct in code, UI copy, and tests.
+
+### 3.3 Current release and verification baseline
+
+- `manifest.json` and `package.json` identify the product as `Tablify`, id `tablify`, version `0.1.0`; manifest minimum Obsidian version is `1.13.0` and mobile is enabled.
+- Git tag `0.1.0` and the latest changelog/progress describe a GitHub pre-release for personal/device testing, not a community-directory release. The current manual device log still records real-app/device checks as not run.
+- `package.json` already has React 19, `read-excel-file`, and `write-excel-file`; it has no standalone database or Bases runtime package. Do not add a DB dependency just to make `.tablify` JSON work.
+- This is a source/docs audit at the commit above. Bun is not installed in this workspace, so `bun run check` was not run as part of this planning pass. The existing repository gate remains required during implementation.
+
+## 4. Target format and architecture
+
+### 4.1 `.tablify` document contract
+
+Use a plain, versioned JSON document with one stable database identity and stable IDs for tables, fields, records, views, and select options. The following is illustrative, not a frozen schema:
+
+```json
+{
+  "format": "tablify",
+  "version": 1,
+  "databaseId": "db_…",
+  "name": "Project tracker",
+  "tables": [
+    {
+      "id": "tbl_…",
+      "name": "Tasks",
+      "fields": [
+        { "id": "fld_…", "name": "Status", "type": "singleSelect", "options": [] },
+        { "id": "fld_…", "name": "Project", "type": "link", "targetTableId": "tbl_…" }
+      ],
+      "rows": [
+        { "id": "row_…", "cells": { "fld_…": "opt_…", "fld_…": ["row_…"] } }
+      ],
+      "views": [
+        { "id": "view_…", "name": "Open tasks", "filters": null, "sorts": [], "groupBy": null }
+      ]
+    }
+  ]
+}
+```
+
+Schema work must settle these invariants before the file writer is built:
+
+1. Renaming or reordering a table, field, view, or option must not change its ID or invalidate a linked-record value.
+2. A linked-record field names one `targetTableId`; its value is a validated list of row IDs from that table. Decide whether single-link is a constraint on that same model or a separate field type.
+3. Select/multi-select cell values should use stable option IDs in the native format; labels and colors are field metadata. This is recommended for a database format, even though the old frontmatter model used labels as stored values.
+4. A row has persistent `createdAt`/`updatedAt` metadata if created/modified-time fields are exposed. Do not derive them from the `.tablify` file’s own Obsidian `TFile` timestamps, which describe the whole database file, not individual records.
+5. Attachment values are vault-relative paths. Missing or moved files render as missing attachments; the JSON file does not pretend to package the bytes or guarantee cross-vault portability.
+6. Views and their filters/sorts/grouping, hidden columns, order, widths, density, and frozen-column presentation belong to the table/database document, not `data.json` settings and not a `.base` sidecar.
+7. A future `.tablify` `version` must never be silently rewritten by an older build. A newer unsupported version should open read-only with a clear explanation; malformed JSON must not be replaced by an empty database.
+8. Internal `.tablify` schema upgrades are in scope. Conversion from `.base` or `.tabula` is explicitly not.
+
+Use the existing core query AST/pipeline as the starting point for saved-view execution. A `.tablify` view is Tablify’s own query; it is no longer inherited from Bases.
+
+### 4.2 Data access and plugin host
+
+The existing `RowSource` is a **single-table grid port**; simply adding `kind: 'tablify-file'` is insufficient for the confirmed multi-table document. Introduce two clear responsibilities:
+
+- A database repository/session owns one parsed `.tablify` document, all tables, file I/O, schema validation, document revision, and subscriptions.
+- The active-table/grid port exposes one table’s schema, rows, values, operations, and view to the existing grid. It always carries stable `databaseId`, `tableId`, `rowId`, and `fieldId` identity as appropriate.
+
+Register a custom Obsidian file view for the `.tablify` extension, plus a create/open flow. The official Obsidian docs describe custom views through `registerView` and extension routing through `registerExtensions`; use the file-view lifecycle and verify exact event/write APIs against the repository’s pinned `obsidian@1.13.1` typings before implementation ([custom views](https://docs.obsidian.md/Plugins/User+interface/Views), [`Plugin.registerExtensions`](https://docs.obsidian.md/Reference/TypeScript+API/Plugin/registerExtensions), [`FileView.onLoadFile`](https://docs.obsidian.md/Reference/TypeScript+API/FileView/onLoadFile)). Do not keep a plugin-global list of view instances merely to find the active Base; follow Obsidian’s custom-view lifecycle guidance.
+
+The `.tablify` file is the native source of truth. Use an in-memory validated snapshot so render-time cell reads stay O(1). All edits go through the operation/store path. Coalesce a user action into one serialized document write and one undo step; do not reuse the per-note queue unchanged. Define how writes to one open file serialize, how two panes share the same database session, and how an external vault-sync edit is detected before overwriting a newer revision. On parse or write failure, show the error and preserve the last known-good file; never replace it with an empty default.
+
+### 4.3 Airtable link model
+
+Retain the working manual sync design, but change its local identity. The `.tablify` filename is the database document; the existing vault-root `.tablify/links/` directory is only optional sync metadata, not the database itself:
+
+- Recommended default: link **one local table** to one Airtable base/table. A saved local view is presentation/query state, not the sync identity.
+- Store `databaseId`, local `tableId`, Airtable base/table IDs, `fieldId → Airtable field ID`, `rowId → Airtable record ID`, per-field agreement hashes, and last pull/push stamps in the link sidecar under `.tablify/links/`. The sidecar remains sync metadata, not another native table format.
+- Preserve explicit pull/push, dry-run counts, per-field conflict review, safe stale checks, typed errors/retry behavior, read-only remote schema, and “report remote deletion; never silently delete locally.” Preserve the current rule that missing Airtable record links are reported rather than inventing remote records, unless a separate user decision adds record creation.
+- Keep the personal access token only in `SecretStorage`. No token in `.tablify`, link JSON, `data.json`, logs, or export.
+- For linked-record sync, translate local referenced row IDs through the linked table’s Airtable record map. If either side lacks a valid mapping or the Airtable field type is not supported, report/skip it; never coerce a relation into text or silently write an incomplete link.
+
+## 5. Refactor work plan
+
+Phases are dependency order, not calendar estimates. The previous plan’s week estimates were for a different product and should not be reused.
+
+### R0 — Replace the stale product contract before coding
+
+- [x] Keep this file as the active refactor plan and mark the 2026-10-05 Bases-first proposal superseded.
+- [x] Rewrite the normative docs first: `docs/01-spec.md`, `docs/02-architecture.md`, `docs/03-data-model-and-migration.md`, `docs/06-roadmap.md`, `docs/07-test-plan.md`, and the applicable product decisions in `docs/08-decisions.md`.
+- [x] Update `AGENTS.md`, README status note, `START-HERE.md`, `prompts/**`, `src/plugin/DEV-NOTES.md`, and any active issue templates so no future task tells an agent to extend Bases, use frontmatter rows, or migrate `.tabula`.
+- [x] Keep `manifest.json`/`package.json` release descriptions accurate for the current `0.1.0` build; update those fields only at the code cutover/release when `.tablify` support actually ships.
+- [x] Preserve old `PROGRESS.md`/`CHANGELOG.md` entries as historical records; append native-format work rather than falsifying what `0.1.0` did. Correct only demonstrably false status text (for example, the existing prerelease tag does exist).
+- [x] Confirm open design items in §7: link cardinality/delete behavior, row order semantics, external file edit behavior, and Airtable relation mapping.
+
+**Exit:** one authoritative product/architecture contract; no disagreement between this plan, active docs, and implementation prompts.
+
+### R1 — Specify and test the native schema (pure core)
+
+- [ ] Add a pure `DatabaseDocument` model with database/table/field/row/view/link types and stable ID rules.
+- [ ] Add total parser/validator/serializer functions for JSON. Return structured errors/warnings; never default a corrupt file to a blank database.
+- [ ] Add an internal `.tablify` version migration runner and golden fixtures. No `.base` or `.tabula` migration branch.
+- [ ] Decide unknown-key policy (recommended: preserve unknown v1 keys; reject or read-only open unknown future versions).
+- [ ] Define record ordering and view ordering separately; Bases previously supplied source ordering, while the native file must own it.
+- [ ] Add field type `link` (or equivalent typed relationship) with target table ID, row-ID values, validation, display/search/sort/filter behavior, and editor contract. Formula/lookup/rollup types remain out of scope.
+- [ ] Move field options into the field definitions; remove `.base`-keyed `fieldOptions` parsing.
+
+**Exit:** fixtures round-trip without loss; bad IDs, duplicate IDs, missing tables, broken links, malformed JSON, and future versions have explicit tested outcomes; core stays Obsidian/React/DOM-free.
+
+### R2 — Database repository and `.tablify` file view
+
+- [ ] Add `src/adapters/tablifyFile/**` for create/read/validate/write/subscribe/flush/dispose.
+- [ ] Register and open `.tablify` through a custom Obsidian file view. Add a command to create a database and open it in a leaf; support reopen, rename, close, and multiple open panes.
+- [ ] Add a document-level write queue: coalesce cell edits and bulk operations, serialize one document revision at a time, surface write failures, and avoid clobbering an external revision.
+- [ ] Store all table view configs in the document. Keep global plugin preferences in Obsidian plugin settings only when they are truly global defaults.
+- [ ] Update `AGENTS.md`’s current rule “Writes go through `adapters/bases`” to the new single storage boundary. Keep the core/adapters/grid/plugin import direction intact.
+
+**Exit:** create a `.tablify`, enter values in multiple tables, close/reopen, and verify exact values/schema/views; no Bases core plugin is enabled or queried; malformed/external edits never cause silent data loss.
+
+### R3 — Generalize the core from a note-backed table to a database
+
+- [ ] Replace `filePath`-as-row identity in operations, cell references, selection, view rows, query tiebreaks, store snapshots, export, and sync local ports with stable row/table identity.
+- [ ] Replace Bases `PropertyId`/`PropertySource`/prefixed ID resolution with native `FieldId` and a field definition owned by the database document.
+- [ ] Replace `toYaml`/frontmatter mapping with type-safe native JSON encode/decode; keep `parsePlain`/`formatPlain` for clipboard and interchange.
+- [ ] Remove note-only `FieldContext.path` assumptions. Add database/table/row/relationship context only where a descriptor or editor actually needs it.
+- [ ] Replace file metadata time fields with record-level `createdAt`/`updatedAt` semantics, or explicitly defer those fields; do not display the database file’s modification time as every row’s value.
+- [ ] Extend the operation/inverse model for database and table actions (create/rename/delete table, add/rename/delete field, view management, linked-record writes) while retaining one logical undo step per user action.
+- [ ] Add referential-integrity operations. A delete must state what happens to inbound links and must be undoable.
+
+**Exit:** a pure `DatabaseState` can apply/undo table and row operations; no note path, YAML, frontmatter, or Bases property ID is needed to represent a table.
+
+### R4 — Bring the existing grid to native tables and views
+
+- [ ] Add table switching/navigation and the minimal create/rename/delete table UX.
+- [ ] Add field/table/record creation and editing from the native schema.
+- [ ] Persist multiple named views with filters, multi-sort, grouping, hidden/reordered/resized columns, density, and frozen-primary presentation.
+- [ ] Keep grid parity: virtualized rendering, range/row/column selection, keyboard navigation, clipboard, bulk edits, fill, row/column reorder, undo/redo, screen-reader roles, and mobile layout.
+- [ ] Add linked-record editor/display that resolves names from the target table while storing IDs. Cover missing targets and cross-table navigation.
+- [ ] Preserve existing locale-aware field formatting and the project’s mobile/performance gates.
+
+**Exit:** a person can create a multi-table `.tablify` database, add linked records, create different views over a table, and complete the current grid workflows without any Bases view or Markdown rows.
+
+### R5 — Rewire import/export and Airtable sync
+
+- [ ] Reuse CSV/TSV/XLSX readers, type inference, clipboard matrix logic, and XLSX/TSV serializers.
+- [ ] Change the import wizard target from “create notes / disabled `.tabula` alternative” to “create a table / append to a selected table / replace a table,” with an explicit preview and destructive-replace confirmation. One imported sheet should become one undoable database operation (or a documented sequence if size requires chunking).
+- [ ] Offer CSV, TSV, and XLSX export for a selected range, current view, or table. Do not preserve “CSV belongs to Bases” as a limitation.
+- [ ] Update Airtable link identity from `.base path + viewName` to `databaseId + local tableId`, then connect row/field ID maps. Keep manual pull/push, conflict review, no remote schema mutation, token storage, error reporting, and mocked network tests.
+- [ ] Add linked-record sync rules: only push/pull link fields when the target table’s record mapping is complete; report unsupported/missing mappings before writing.
+
+**Exit:** import/export round-trips representative data; sync tests cover manual pull/push updates, stale local edits, same-field conflicts, remote deletion, partial reads, missing mappings, linked records, and token redaction. No live Airtable calls run in CI.
+
+### R6 — Delete obsolete product paths, close docs, and release
+
+- [ ] Remove `src/adapters/bases/**`, Bases-only view and registration code, note creation/import runners/settings, `.tabula` reader/migration modules, their tests/fixtures/snapshots, and Base/Tabula-only branches in import UI.
+- [ ] Remove `bases`/`tabula-file` source kinds and stale note/frontmatter types. Keep `obsidian` typings and Obsidian APIs needed by the file view, settings, vault paths, and `SecretStorage`.
+- [ ] Delete the throwaway `spike/bases-path/**` after preserving any still-relevant findings in this plan or a historical note. Update `eslint.config.mts`/brand and source gates so they no longer treat Obsidian Bases as a shipped feature; retain the Airtable-base terminology exception.
+- [ ] Update active README/manifest/product copy and `docs/01–12`, `AGENTS.md`, prompts, and dev notes. Remove obsolete Bases spikes/references from active guidance; preserve historical audit entries rather than rewriting history.
+- [ ] Add a CI/source gate against reintroducing `BasesView`, `registerBasesView`, `BasesPropertyId`, `.base` view-config writes, `processFrontMatter`, and `.tabula` mode in shipped code. Scope the gate carefully: Airtable `baseId` and historical docs are intentional exceptions.
+- [ ] Keep plugin id `tablify`; do not rewrite tag `0.1.0`. Publish a distinct pre-release only after desktop and real-phone verification required by the current release process.
+
+**Exit:** `.tablify` is the sole native local database mode; active docs match the product; all gates pass; release notes plainly say old `.base`/`.tabula` content is not migrated or supported.
+
+## 6. Test and acceptance gates
+
+Every implementation phase must add tests before or with its behavior. The current `bun run check` gate remains the minimum; do not weaken it to make the refactor pass.
+
+### Format and repository
+
+- Valid multi-table `.tablify` parse/serialize/parse preserves stable IDs, option IDs, views, attachments, and links.
+- Empty database, empty table, empty cell, `false`, `0`, empty text, and absent value remain distinguishable where the model requires it.
+- Malformed/truncated JSON, duplicate IDs, broken link targets, unknown field types, unknown keys, and unsupported future versions are covered; no silent reset/write occurs.
+- Internal format-version migration is deterministic and leaves a backup or recoverable prior document when a migration cannot complete.
+
+### Store, operations, and file lifecycle
+
+- One cell edit and one 400 × 6 paste each have the intended undo behavior and are saved through one coalesced document write.
+- A failed save reports the error and restores truthful UI state; `flush()` resolves only after the document write finishes.
+- Two panes on one `.tablify` share or reconcile one document session; external modify/rename/delete is handled without stale local state overwriting newer content.
+- Delete/rename table, field, or record preserves referential integrity and undo restores both the object and its links.
+- Opening/closing the custom file view releases subscriptions, timers, queues, and React roots.
+
+### Grid, import/export, and performance
+
+- Preserve the existing selection, clipboard TSV/HTML, keyboard, accessibility, mobile, and layout assertions against the native file-backed source.
+- Import preview matches the operation actually committed; append/create/replace are tested; replace requires explicit confirmation; cancellation and failure are reported exactly.
+- CSV/TSV/XLSX export/import uses stable field order, values, types, and selection semantics; formula-shaped spreadsheet text is never evaluated.
+- Benchmark open, view filtering/sorting, edit/serialize, and import on the existing 5,000-row × 20-column fixture. Keep the 300 ms first-paint target as a starting regression guard, but set a separate measured write budget for serializing the JSON document before release.
+
+### Airtable and release
+
+- The current manual conflict-review guarantees survive with `rowId`/`fieldId`: no unreviewed same-field conflict, no silent schema change, no remote deletion mirrored locally, no token in data/logs, and no CI network calls.
+- Verify the file extension opens in a real Obsidian vault without the Bases core plugin enabled.
+- Complete the current desktop and physical-phone manual verification; the existing release log says those checks have not yet been run for `0.1.0`.
+- Run `bun run check`, build/release checks, and the complete browser layout harness before tagging a new release.
+
+## 7. Open design decisions to close before the dependent phase
+
+These do not reopen the product direction; they are implementation-level contracts that should be decided in an ADR before coding the related feature.
+
+| Decision | Recommended starting point | Must be resolved by |
+|---|---|---|
+| Linked-record cardinality | One field targets one table and stores an ordered list of target row IDs; a single-link field is a constraint on the same representation. | R1 |
+| Link deletion behavior | Deleting a target row removes its inbound references in the same undoable transaction; deleting a table with inbound links is blocked until the user resolves them. Do not cascade-delete records silently. | R3 |
+| Manual row order | Persist an explicit table/view row order; stable sorting uses `rowId` as final tie-break. Define what drag-reorder means in a sorted view. | R1/R4 |
+| Multiple views and current view | Persist named views per table; open a stable default view, and keep selected table/view in Obsidian workspace state rather than mutating the database merely on focus. | R1/R2 |
+| Unknown JSON keys | Preserve unknown keys within a supported version; future versions open read-only rather than being rewritten. | R1 |
+| External edits / Obsidian Sync conflict | Compare file revision or last-loaded content before writing; reload or ask before replacing a changed document. Never “last writer wins” silently. | R2 |
+| Airtable link granularity | One local table ↔ one Airtable table; multiple local tables may link independently. Keep credentials global in `SecretStorage`. | R5 |
+| Cross-table sync | Translate a linked row only if the referenced table has a record mapping; report all unresolved relation values before applying. | R5 |
+| Existing Airtable link metadata | Current links are keyed by `.base` path/view. Recommended default: do not migrate; leave files untouched and create fresh `.tablify` table links. Ask before building a converter. | R5 |
+| JSON write strategy | Benchmark document-level rewrite; use one serialized queue and a recoverable write path. Do not choose a binary/container format unless real size/attachment evidence requires it. | R2 |
+| Supported app floor | Keep current `minAppVersion` until the new custom file-view APIs are verified on the intended oldest desktop and mobile version; removing Bases does not itself justify lowering the floor. | R2/R6 |
+
+## 8. Risk register
+
+| Risk | Why it matters | Mitigation |
+|---|---|---|
+| Whole-database JSON rewrites | Every cell write touches one potentially large document, unlike the current per-note queue. | In-memory index, coalescing, one write per action, profile 5k × 20 and large imports, recoverable writes, explicit error state. |
+| Multi-table identity leaks | `filePath` is embedded in operations, selection, query tiebreaks, sync, and labels. A superficial rename leaves wrong semantics. | Do a checked inventory and a staged `rowId` conversion; add a multi-table boundary test before grid wiring. |
+| Linked-record integrity | Row/table deletion, table rename, and partial imports can leave dangling IDs. | Stable IDs, validation, explicit delete rules, undoable relation cleanup, broken-link UI and tests. |
+| Airtable mapping complexity | Current sync is keyed to a Bases view/note path; linked fields require cross-table record maps. | Stabilize the native IDs/schema first; port sync after repository/table identity; refuse/report unmapped relation fields. |
+| Attachment portability | A vault path reference is not an embedded attachment. | Show missing-file state, document the portability limitation, and keep the chosen path-reference contract explicit. |
+| No old-format migration | Existing test-vault Bases data will not appear in the new plugin. | Preserve release tag and source files; announce the breaking change; do not delete or overwrite old vault content. |
+| Stale instructions reintroduce Bases | README, AGENTS, prompts, architecture and settings are still Bases-first. | R0 rewrites active guidance before implementation; add a targeted source/lint gate, while preserving historical logs. |
+| Mobile and real-vault verification | Current manual release checks were not run on a real device/vault. | Keep mobile first-class; do not call a build verified until the manual matrix is actually completed. |
+
+## 9. What not to do
+
+- Do not create a second repository or replace the existing plugin identity; the project is already named/id’d `tablify`, and the user confirmed this remains an Obsidian plugin.
+- Do not keep `BasesSource` hidden as a “fallback,” keep a Bases view mode, or implement `.base` migration.
+- Do not keep `.tabula` read-only/migrate support; the user chose `.tablify` only.
+- Do not treat `registerBasesView` removal as the whole refactor; row identity, field schema, import, settings, views, and sync are coupled to note/Bases semantics.
+- Do not remove Airtable sync when removing Obsidian Bases. They are distinct systems.
+- Do not put Airtable credentials in the database file, plugin `data.json`, logs, or exports.
+- Do not implement formulas/lookups/rollups in v1 without a new explicit scope decision.
+- Do not modify `0.1.0` history or claim `.base`/`.tabula` compatibility.
+
+## 10. Research references
+
+### Repository evidence
+
+- Current adapter boundary and type: `src/adapters/RowSource.ts`.
+- Current Bases source and write queue: `src/adapters/bases/BasesSource.ts`, `src/adapters/writeQueue.ts`.
+- Current Bases view/registration: `src/plugin/TablifyView.ts`, `src/plugin/main.ts`.
+- Current single-table state/identity: `src/core/ops/types.ts`, `src/core/query/evaluate.ts`, `src/core/view/pipeline.ts`, `src/grid/store/**`.
+- Current note-backed schema/import: `src/core/schema/propertySchema.ts`, `src/core/types.ts`, `src/adapters/notes/createNote.ts`, `src/plugin/import/**`.
+- Existing `.tabula` reader/migration: `src/adapters/tabulaFile/**`, `src/core/migrate/**`, `tests/fixtures/tabula/**`.
+- Existing Airtable boundary/state: `src/sync/SyncTarget.ts`, `src/sync/LinkStore.ts`, `src/sync/pullPush.ts`, `src/plugin/sync/**`.
+- Current product/release truth: `README.md`, `manifest.json`, `package.json`, `CHANGELOG.md`, `PROGRESS.md`, `docs/manual-test-log.md`.
+
+### Obsidian API references
+
+- [Custom views](https://docs.obsidian.md/Plugins/User+interface/Views)
+- [`Plugin.registerExtensions`](https://docs.obsidian.md/Reference/TypeScript+API/Plugin/registerExtensions)
+- [`FileView.onLoadFile`](https://docs.obsidian.md/Reference/TypeScript+API/FileView/onLoadFile)
+
+The Obsidian docs establish a custom file-view route without Bases. The exact supported API lifecycle and write behavior still needs to be checked against the repo’s pinned type declarations and a real desktop/mobile Obsidian build during R2; do not infer it from the Bases spike.

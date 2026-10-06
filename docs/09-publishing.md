@@ -1,131 +1,68 @@
-# 09 — Publishing
+# 09 — Publishing and release policy
 
-## Submission mechanics (2026)
+> **Status:** release policy for the current plugin and planned native refactor. Current product metadata must describe the code in the corresponding release; the planned `.tablify` product is not available in `0.1.0`.
 
-Submissions go through the **`community.obsidian.md` dashboard**: sign in with an Obsidian account, link GitHub, choose **Plugins → New plugin**, enter the repo URL, accept the developer policies. An automated security and policy review gates the listing (usually minutes); on pass the plugin is searchable in-app within about a day. The old route (a PR to `obsidianmd/obsidian-releases`) is retired.
+## Current release truth
 
-Requirements the automated review checks:
+- Plugin id: `tablify`; current version: `0.1.0`; manifest minimum Obsidian version: `1.13.0`; desktop/mobile flag: mobile supported.
+- Tag `0.1.0` and a GitHub **prerelease** exist. It was published for personal/device testing, not listed in the community directory.
+- The real Obsidian desktop/phone manual checks remain `NOT RUN` in `docs/manual-test-log.md`.
+- Do not rewrite the existing tag/release or change the current manifest/package description before the new behavior is implemented.
 
-| Requirement | Our state |
+## Release invariants
+
+For every future release:
+
+| Requirement | Gate |
 |---|---|
-| Repo is dedicated to this plugin | ✅ fresh `tablify` repo |
-| `manifest.json` with `id`, `name`, `version`, `minAppVersion`, `description`, `isDesktopOnly` (+ optional `author`, `authorUrl`, `fundingUrl`, `helpUrl` only) | per template below |
-| `id`: lowercase, `[a-z0-9-_]+`, no "obsidian", does not end in "plugin" | ✅ `tablify` |
-| `name`: no "Obsidian", no "Plugin" | ✅ `Tablify` |
-| `description`: no "Obsidian"; ≤ 250 chars; ends with `.`, `?`, `!` or `)` | per template below |
-| `LICENSE` at repo root with the correct copyright holder | MIT, both copyrights |
-| `README` with purpose, usage, and **network-use disclosure** | per template below |
-| Release tag **exactly equals** `manifest.version`, no `v` prefix | enforced in `release.yml` |
-| Release attaches `main.js`, `manifest.json`, `styles.css` as **separate** assets | ✅ |
-| `versions.json` maps each version to its `minAppVersion` | ✅ |
-| No telemetry, no remote code execution, no self-updating code, no obfuscation | ✅ by policy |
-| No sample/boilerplate code left behind | M0 checklist |
-| Command ids do not contain the plugin id redundantly | `verb-noun` convention |
+| `manifest.json` includes valid `id`, `name`, `version`, `minAppVersion`, `description`, `isDesktopOnly` | `bun run manifest:check` |
+| Plugin id remains `tablify` | Preserve installed identity; never create a second plugin id for this refactor. |
+| Version/tag agree exactly, no `v` prefix | Release workflow guard. Use a distinct tag after `0.1.0`. |
+| `versions.json` maps each released version to the minimum app version | Version-bump/release gate. |
+| Release includes `main.js`, `manifest.json`, `styles.css` separately | Release workflow. |
+| Changelog and README describe behavior actually shipped | Human review; no future features advertised as current. |
+| No telemetry or unapproved network endpoints | Policy/code review and tests. |
+| Clean build, bundle, CSS/contrast, layout gates | `bun run check`, `bun run test:layout`, release checks. |
+| Real-vault/device verification is recorded | `docs/manual-test-log.md`; unrun remains `NOT RUN`. |
 
-## `manifest.json`
+Keep the existing project’s release automation as source of truth; this document does not replace it.
 
-```json
-{
-  "id": "tablify",
-  "name": "Tablify",
-  "version": "0.1.0",
-  "minAppVersion": "1.13.0",
-  "description": "Spreadsheet-class grid view for Bases: range selection, block paste, bulk edit, and spreadsheet import with optional Airtable sync.",
-  "author": "258044aamm-Dev",
-  "authorUrl": "https://github.com/258044aamm-Dev",
-  "isDesktopOnly": false
-}
-```
+## Product copy transition
 
-Notes:
-- `minAppVersion` is set to **1.13.0** — the Obsidian version you actually run. Raise or lower it only after testing on that version; the Bases API floor is 1.10.2 (`BasesView.createFileForView`).
-- **Never change `id` after the first release.** Changing it orphans every installed copy.
-- No extra keys beyond the allowlist.
+Until the `.tablify` custom file view and repository ship, README and release metadata must continue describing the `0.1.0` Bases-backed grid. They may include a clearly separated roadmap note linking to the plan, but must not claim `.tablify` creation, multi-table files, linked-record fields, or no-Bases operation are already available.
 
-## `versions.json`
+After cutover, public product copy must state clearly:
 
-```json
-{ "0.1.0": "1.13.0" }
-```
+- `.tablify` is the only native local database format and one file can contain multiple tables;
+- `.base`/Markdown-note Bases data and `.tabula` are not opened, migrated, or modified by the refactored plugin;
+- linked records are supported; formulas/lookups/rollups are not in the first stable release;
+- attachment cells store vault-relative path references and do not embed file bytes;
+- CSV/TSV/XLSX import/export and Airtable manual pull/push/conflict review are supported;
+- Airtable sync is optional and explicit; token storage, network endpoints, and no-telemetry policy are disclosed.
 
-One entry per release, forever. A missing entry breaks updates from older versions.
+Do not silently call the new data format “compatible” with the old release. A user may keep old files in the vault, but the new product does not promise to open them.
 
-## README requirements
+## Network disclosure for the native release
 
-Must contain: what it is, how to install, how to use, screenshots, a **limitations** section (screen-reader editing, `.tabula` being read-only legacy, what sync does not do), and the network disclosure below, verbatim in substance.
+Adapt this only when the shipping behavior is verified:
 
-### Network-use disclosure (copy into the README)
+> **Network use.** Tablify works locally and offline. It contacts Airtable only when you configure and explicitly run a pull or push. The personal access token is stored in Obsidian secret storage and is not written to the `.tablify` database, sync metadata, plugin settings file, logs, or export. Tablify has no telemetry or analytics.
 
-> **Network use.** Tablify is local-first and works fully offline. It makes network requests **only** when you link a view to Airtable and explicitly run a pull or push. Requests go to `api.airtable.com` using your own personal access token, which is stored in Obsidian's secret storage on your device and is never written into your vault or into any synced file. Tablify has no telemetry, no analytics and no other endpoints.
+The real release text must name only the endpoints the implemented client actually contacts.
 
-## License and attribution
+## Licensing and attribution
 
-- `LICENSE`: MIT, retaining the upstream copyright notice **and** adding yours.
-- `NOTICE`:
+Keep `LICENSE` and `NOTICE` intact unless a separate legal review authorizes changes. Historical attribution to the project’s source/fork lineage remains truthful; removing `.tabula` behavior does not erase provenance. Do not imply affiliation or endorsement by Obsidian or Airtable.
 
-```
-Tablify
-Copyright (c) 2026 <you>
+## Refactor release sequence
 
-This project began as a fork of airtable-tabula by MehulG
-(https://github.com/MehulG/airtable-tabula, MIT). The .tabula file-format
-compatibility and the CSV/Excel import path originate there.
-```
+1. Complete R0–R5 and R6 source cleanup; version/tag changes are out of scope until behavior ships.
+2. Update README, manifest/package descriptions, docs, screenshots, changelog, and `versions.json` together with the actual native implementation.
+3. Run `bun run check`, `bun run test:layout`, bundle/release gates, and a clean checkout test.
+4. Complete desktop and physical-phone verification in the manual log. Test the custom file view with Bases disabled, multi-table data, links, import/export, and optional Airtable conflict review.
+5. Publish a new distinct prerelease if any manual/review gates remain; do not promote it to a stable/community listing while verification is incomplete.
+6. Preserve `0.1.0` unchanged as the rollback/history point.
 
-- Do not describe the plugin as "the Airtable plugin" or as affiliated with Airtable. Airtable is named only to describe the integration, as a factual reference to their API, never as branding, in a title, or implying endorsement.
+## Stable-release rejection conditions
 
-## Branding constraints (repeat of `docs/04`, because this is where they bite)
-
-No third-party company names — Anthropic, Claude, Airtable, Notion — in the plugin name, `description`, README headings, settings copy, screenshots or repo metadata. No third-party logos or mark reproduction. No implied affiliation. The warm palette is shipped as our own tokens under our own names.
-
-## Pre-submission checklist
-
-- [ ] `bun run check` green on a clean checkout (`--frozen-lockfile`)
-- [ ] `manifest.json` / `package.json` / `versions.json` versions agree; tag matches exactly
-- [ ] Release assets are three separate files
-- [ ] Description ends with punctuation, ≤ 250 chars, no "Obsidian"
-- [ ] LICENSE + NOTICE committed; both copyrights present
-- [ ] README with network disclosure, limitations, screenshots
-- [ ] Bundle within budget; sync chunk lazily imported
-- [ ] No `console.log` left in shipped paths (only the prefixed logger)
-- [ ] Works in a fresh vault: install → enable → create base → edit → import → migrate a legacy file
-- [ ] Verified on desktop **and** a physical phone (keyboard, long-press, safe areas)
-- [ ] `.tabula` migration tested on a real legacy file, including rollback
-- [ ] `CHANGELOG.md` has a real entry for the version being tagged
-
-## Release process
-
-1. `bun run version patch` (or `minor` / `major`) — bumps `manifest.json`, `package.json`, `versions.json` and
-   adds the dated `CHANGELOG.md` heading. It never commits and never tags, so the release stays a deliberate
-   step. The argument is required: run it bare and it prints its usage and exits non-zero rather than guessing.
-   (The npm script is deliberately **one** command. In a `&&` chain npm appends extra arguments to the *last*
-   command, so `bun run version patch` would hand `patch` to `git add` and the bump would never happen.)
-2. Fill in the `CHANGELOG.md` section the bump created.
-3. Stage and commit (`git add -A`), run `bun run check`, push to `main`.
-4. Tag the exact version string: `git tag 0.1.0 && git push --tags` (no `v`).
-5. `release.yml` builds, runs the size gate, attests provenance, and publishes the three assets with changelog-derived notes.
-6. Verify in-app: install from the release in a clean vault on desktop and phone.
-
-### Pre-releases (device testing, before submission)
-
-`0.1.0` is published as a **pre-release** so a real desktop and a real phone can run
-`docs/manual-test-log.md` before anything is submitted. Two rules make that work:
-
-- **The tag is always a bare `x.y.z`** — Obsidian matches it to `manifest.json` exactly, so "beta" cannot live in
-  the version string. Whether a release is a pre-release is decided by `.github/prerelease`: present, and
-  `release.yml` passes `--prerelease` and prefixes the notes with a notice that the build is unverified.
-- **Verification is what removes the marker.** `git rm .github/prerelease` once the log is filled in, and either
-  `gh release edit 0.1.0 --prerelease=false` or re-run the workflow to promote the existing release. The tag never
-  changes, and the commit that deletes the file is the record that the verification happened.
-
-BRAT installs a pre-release (it takes the newest release *or* pre-release by version, and reads `manifest.json`
-from the release assets), which is why the device-test build is a release rather than a branch or a bare tag. The
-community directory reads the same three assets; it is not told about pre-releases.
-
-## Post-release
-
-- **Patch cadence:** bug fixes ship as `0.1.x`; a new release is not a milestone.
-- **Compatibility promises:** the `.base` option schema and the field-type set are the public API. Breaking either requires a minor bump and a migration note in the changelog while pre-1.0, and a deprecation window after.
-- **The `.tabula` format is frozen forever.** Read + migrate only. There is no scenario in which new features are added to it.
-- **Issue hygiene:** issue templates for bug (with plugin/Obsidian version, platform, vault size, reproduction), feature request, and sync problem (with the sync state file redacted).
-- **Support boundaries** stated in the README: no data recovery guarantees, no Airtable account troubleshooting, no support for forks of Bases.
+Do not submit or call the release stable if: any `.base`/`.tabula` compatibility claim is ambiguous; malformed JSON can be overwritten silently; linked-record delete behavior is unresolved; token handling cannot be proven; CSV/export behavior is inaccurate; actual device checks are unrun; or public copy describes features not in the bundle.

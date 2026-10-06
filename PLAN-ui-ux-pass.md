@@ -1,5 +1,7 @@
 # Plan — UI/UX + design-engineering pass ("Parchment Ledger")
 
+> **Historical / superseded for the native refactor:** this plan governed a prior prototype-only design exercise and is not the current product contract or an active implementation instruction. Keep it as history. Any future native UI work must follow `docs/04-design-system-and-layout.md`, the native phase guides, and a new explicit user request.
+
 **Status: plan only. Nothing implemented in this turn.** The prototype, `docs/`, and the published
 repo are all unchanged. This file is a working artifact, not part of the docs contract; it is not to be
 committed unless you ask.

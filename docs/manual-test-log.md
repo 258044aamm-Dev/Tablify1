@@ -1,109 +1,84 @@
 # Manual test log
 
-One section per release. Everything here is on **real hardware** — the tier-5 checks that cannot be automated (`docs/07-test-plan.md`).
+This file records checks that require real Obsidian, real devices, or real spreadsheet/Airtable clients. A browser harness does not prove these behaviors. Never change `NOT RUN` to “pass” based on a neighboring automated test.
 
-Copy the block below for each release and fill it in. A release is not ready to tag while any row is blank.
+## Current test status
+
+The `0.1.0` GitHub prerelease exists for personal/device testing. It remains Bases-backed and was not verified in a real Obsidian vault or on a physical phone according to the rows below. Keep the historical result as recorded; the existence of the release tag does not turn an unrun manual test into a pass.
 
 ---
 
-## Template — vX.Y.Z
+## Template — release vX.Y.Z
 
-**Tested:** YYYY-MM-DD · **Build:** `main.js` from release/vX.Y.Z · **Plugin:** vX.Y.Z
+**Tested:** YYYY-MM-DD · **Build SHA:** `<commit>` · **Plugin:** vX.Y.Z · **Obsidian:** `<version>`
 
 | Device | OS | Obsidian | Result | Notes |
 |---|---|---|---|---|
-| iPhone 15 | iOS 19.x | 1.14.x | ☐ pass ☐ fail | |
-| Pixel 8 | Android 16 | 1.14.x | ☐ pass ☐ fail | |
-| MacBook (Safari-free: Electron) | macOS 26 | 1.14.x | ☐ pass ☐ fail | |
-| Windows laptop | Windows 12 | 1.14.x | ☐ pass ☐ fail | |
+| Desktop (record model/device) | OS/version | version | NOT RUN | |
+| Physical phone (record model) | OS/version | version | NOT RUN | |
+| Optional tablet | OS/version | version | NOT RUN | |
 
 | Check | Result | Notes |
 |---|---|---|
-| Keyboard open while editing a cell near the bottom; active cell stays visible | ☐ | |
-| Keyboard open/close does not collapse the grid | ☐ | |
-| Toolbar single-row, no clipped controls | ☐ | |
-| Long-press opens the context menu (and does not scroll instead) | ☐ | |
-| No input zoom on focus (iOS) | ☐ | |
-| Safe-area insets respected (notch, home indicator) | ☐ | |
-| Momentum scroll through 5,000 rows | ☐ | |
-| Paste a real range from Excel (desktop) and Google Sheets (mobile app) | ☐ | |
-| Copy a range out into Numbers / Excel / Sheets | ☐ | |
-| Import a real `.xlsx`; preview numbers match reality | ☐ | |
-| Migrate a real `.tabula` file, then roll back from the report | ☐ | |
-| Airtable pull with a real base; conflict dialog on a deliberately conflicting row | ☐ | |
-| Two panes on the same base: no lost edits, no stale reads | ☐ | |
-| Screen reader: navigate and read the grid; announce a bulk edit | ☐ | |
+| Install from release into a clean vault; enable, disable, reload | NOT RUN | |
+| Create/open database file; close and reopen; verify values persist | NOT RUN | |
+| Two panes on the same file; external modify/rename handling | NOT RUN | |
+| Multiple tables and saved views; switch while keyboard/focus is active | NOT RUN | |
+| Linked records; target rename, delete, undo, and broken-reference behavior | NOT RUN | |
+| Mobile keyboard open/close, active cell visibility, no layout collapse | NOT RUN | |
+| Long-press context menu does not steal normal scroll | NOT RUN | |
+| Safe-area/notch/home indicator; input zoom; toolbar clipping | NOT RUN | |
+| Real CSV/TSV/XLSX import preview and actual row/field counts | NOT RUN | |
+| Export selected range/view/table and open it in Excel/Sheets-compatible app | NOT RUN | |
+| Airtable pull/push and deliberate conflict on a scratch/test base, if available | NOT RUN | |
+| Token absent from database file, settings, link state, logs, and export | NOT RUN | |
+| Confirm pre-existing `.base`, Markdown, and `.tabula` files were not rewritten or migrated | NOT RUN | |
+| Screen-reader navigation, reading, link labels, and write announcement | NOT RUN | |
 
 ---
 
-## v0.1.0 — pending (step 27, 2026-10-06)
+## v0.1.0 — Bases-backed prerelease (historical results)
 
-**Status: NOT RUN.** Nothing in this section has been executed. No release of this plugin has been loaded into a
-real Obsidian, on real hardware, yet — step 27 is where that gap is *recorded*, not where it is closed, because the
-build has never left the harness (`docs/07` §Tier 5 is the list that only a person with a phone can complete). The
-rows below are the release candidates; each is filled in before `v0.1.0` is tagged, and a row is never marked pass
-because a neighbouring row passed.
+**Status: NOT RUN for real-app/device checks.** The `0.1.0` GitHub prerelease/tag exists and was prepared as a device-test build. This section records the gap honestly: the release was published as a prerelease before the manual matrix was completed; it was not submitted to the community directory. Automated browser/jsdom coverage does not replace the checks below.
 
 | Device | OS | Obsidian | Result | Notes |
 |---|---|---|---|---|
-| iPhone 15 | iOS 19.x | 1.14.x | **NOT RUN** | manual — needs real hardware |
-| Pixel 8 | Android 16 | 1.14.x | **NOT RUN** | manual — needs real hardware |
-| MacBook (Electron) | macOS 26 | 1.14.x | **NOT RUN** | manual — needs a real vault |
-| Windows laptop | Windows 12 | 1.14.x | **NOT RUN** | manual — needs a real vault |
+| iPhone 15 | iOS 19.x | 1.14.x | **NOT RUN** | Real device check required. |
+| Pixel 8 | Android 16 | 1.14.x | **NOT RUN** | Real device check required. |
+| MacBook (Electron) | macOS 26 | 1.14.x | **NOT RUN** | Real vault check required. |
+| Windows laptop | Windows 12 | 1.14.x | **NOT RUN** | Real vault check required. |
 
 | Check | Result | Notes |
 |---|---|---|
-| Keyboard open while editing a cell near the bottom; active cell stays visible | **NOT RUN** | tier-4 #2 and `keyboardInset` stand in for the geometry only (`--tablify-keyboard-inset` 260 px in the `phone-keyboard` fixture); a real keyboard also *resizes* differently on each OS |
-| Keyboard open/close does not collapse the grid | **NOT RUN** | no viewport-height unit exists to collapse with (`css-gate` rule 4) — but the real `visualViewport` behaviour is untested |
-| Toolbar single-row, no clipped controls | **NOT RUN** | tier-4 #5 measures it in the harness at five sizes |
-| Long-press opens the context menu (and does not scroll instead) | **NOT RUN** | tier-4 #23 dispatches synthetic touch pointers; a real thumb drags enough to be a scroll |
-| No input zoom on focus (iOS) | **NOT RUN** | tier-4 #19 gates 16 px, which is the mechanism, not the effect |
-| Safe-area insets respected (notch, home indicator) | **NOT RUN** | tier-4 #20 checks the declarations exist; the inset itself is 0 in a browser |
-| Momentum scroll through 5,000 rows | **NOT RUN** | 5,000 rows render in the harness; momentum is a compositor behaviour |
-| Paste a real range from Excel (desktop) and Google Sheets (mobile app) | **NOT RUN** | the clipboard flavours are covered by fixtures (`text/html` + `text/plain` TSV captured from Sheets) |
-| Copy a range out into Numbers / Excel / Sheets | **NOT RUN** | round trip is covered in-harness (tier-4 #15) |
-| Import a real `.xlsx`; preview numbers match reality | **NOT RUN** | `read-excel-file` is unit-tested against generated buffers; no real Excel or LibreOffice exists in the build container (recorded in step 24's report) |
-| Migrate a real `.tabula` file, then roll back from the report | **NOT RUN** | seven committed fixtures; a real `.tabula` from a live vault is the missing one |
-| Airtable pull with a real base; conflict dialog on a deliberately conflicting row | **NOT RUN** | the conflict review is tested against a fake transport; no live base has been read |
-| Two panes on the same base: no lost edits, no stale reads | **NOT RUN** | the live-view registry is unit-tested, not two real panes |
-| Screen reader: navigate and read the grid; announce a bulk edit | **NOT RUN** | the roles, names and the polite live region are asserted in `tests/dom/a11y.test.ts`; a screen reader is not in CI |
+| Keyboard open/close while editing | **NOT RUN** | Harness simulates geometry only. |
+| Long-press context menu versus scroll | **NOT RUN** | Synthetic pointer tests are not a real thumb/OS gesture. |
+| Safe-area insets and iOS input zoom | **NOT RUN** | Browser declarations do not prove device behavior. |
+| Real Excel/Sheets clipboard paste and spreadsheet round-trip | **NOT RUN** | Fixtures do not replace the target apps. |
+| Real `.xlsx` import and exported workbook opened in a spreadsheet app | **NOT RUN** | Unit buffers are not a real client check. |
+| `.tabula` migration/rollback on a real file | **NOT RUN** | Historical 0.1.0-only check; it is not part of the new product. |
+| Airtable pull and deliberate conflict in a real base | **NOT RUN** | Mock transport tests are not a live smoke check. |
+| Two panes on the same Bases view | **NOT RUN** | Real Obsidian panes are required. |
+| Screen-reader navigation/reading/editing | **NOT RUN** | Automated roles are not a screen-reader session. |
 
-**What step 27 changed for this file:** the *checks* column stays empty on purpose. Step 27's job at the five
-viewports was to make the automated tiers own as much of this matrix as they can — inputs at 16 px (#19), tap
-targets at 44 × 40 (#7), scrollbars thick enough to grab with a thumb (#21), safe-area padding declared (#20), the
-freeze control absent below 600 px (#22), long-press without a menu during the hold (#23) — so that a person with a
-phone is confirming, not discovering. Everything this table still says **NOT RUN** is a thing no browser in this
-container can truthfully claim.
+The `0.1.0` feature and release history remain in `CHANGELOG.md`/`PROGRESS.md`. This manual log does not claim the future `.tablify` format was part of that release.
 
 ---
 
-## 0.1.0 — release verification (prepared 2026-10-06)
+## First native `.tablify` release — template, not yet run
 
-**The build to test is the `0.1.0` pre-release:** <https://github.com/258044aamm-Dev/Tablify/releases/tag/0.1.0>.
-It is published as a **pre-release** (its own body says so) with the three assets BRAT installs from
-(`main.js` 464,705 B, `manifest.json` 359 B, `styles.css` 25,056 B, all three downloaded and checked on
-2026-10-06). BRAT: *Add beta plugin* → repository `258044aamm-Dev/Tablify` → pick `0.1.0`. Manual route: drop the
-three files in `<vault>/.obsidian/plugins/tablify/`. Nothing else is required, and no row below is filled in by
-installing it — only by using it.
+**Status: NOT RUN.** Do not fill this section until a refactored build exists and is installed from its own release. Record exact build SHA, Obsidian version, device, operating system, and the name of the tested file fixture.
 
-**Status: NOT RUN — and this section is the reason the release is not tagged.** `docs/06-roadmap.md` §M6 says the
-tag waits until *"the release is verified in-app on desktop **and** phone"*, and `docs/10` §the release checklist
-has the same two rows. Neither has happened: at the time of writing, the plugin has run in the layout harness and
-in jsdom, and in **no** real Obsidian. The version each row must be stamped with is `0.1.0` (the value in
-`manifest.json`, `package.json` and `versions.json`).
+| Check | Result | Notes |
+|---|---|---|
+| File extension opens custom Tablify view with Obsidian Bases disabled | NOT RUN | Verify on minimum supported app version. |
+| Create, save, close, reopen a database with at least three tables | NOT RUN | Verify stable IDs and exact values. |
+| Two panes share/reconcile writes; external revision never silently overwritten | NOT RUN | Include Obsidian Sync or an external text edit. |
+| Create/edit/link rows across two tables; rename target; delete/undo per approved ADR | NOT RUN | Verify reference integrity. |
+| Table/view switch; saved query/presentation survives reopen | NOT RUN | Include filter/sort/group and column layout. |
+| CSV/TSV/XLSX import, append, replace confirmation, and undo | NOT RUN | Use known fixture and record exact counts. |
+| CSV/TSV/XLSX export opened in real spreadsheet client | NOT RUN | Formula-shaped values remain literal. |
+| Manual Airtable pull/push/conflict review on a scratch base | NOT RUN | If credentials/base unavailable, record NOT RUN. |
+| Old `.base`, Markdown, `.tabula` data remains untouched; no migration promise | NOT RUN | Compare before/after hashes or copies. |
+| Mobile keyboard, safe area, long-press, selection, and screen reader | NOT RUN | Record actual hardware/app behavior. |
 
-| Step | Version | Result | Notes |
-|---|---|---|---|
-| Installed from the release/BRAT into a clean vault — desktop | 0.1.0 | **NOT RUN** | manual — the pre-release above; needs a real vault |
-| Installed from the community directory — desktop | — | **NOT RUN** | not possible: the plugin is not submitted yet (see the prerequisite list in `PROGRESS.md` §step 28) |
-| Installed from the release/BRAT into a clean vault — phone | 0.1.0 | **NOT RUN** | manual — the pre-release above; needs a real device |
-| The base opened and the grid drawn | 0.1.0 | **NOT RUN** | harness equivalent: tier-4 #1–#8 at five viewports |
-| A cell edited, and the note's frontmatter checked | 0.1.0 | **NOT RUN** | harness equivalent: tier-4 #10, #15 |
-| An import (CSV and XLSX), preview matched against the source | 0.1.0 | **NOT RUN** | the XLSX writer/reader pair is unit-tested against generated buffers; no real Excel or LibreOffice exists in the build container (step 24's report) |
-| An export, opened in a real spreadsheet | 0.1.0 | **NOT RUN** | same gap, other direction |
-| A `.tabula` migration, including the rollback | 0.1.0 | **NOT RUN** | seven committed fixtures stand in for a real legacy file |
-| A pull from a linked base (if a link is available) | 0.1.0 | **NOT RUN** | the engine is tested against a fake transport; no live base has been read |
-| The plugin disabled and re-enabled, then the vault reopened | 0.1.0 | **NOT RUN** | no `onunload` leak can be observed outside a real app |
-
-**What would change this section:** a person, a phone, a desktop machine and about twenty minutes. Nothing in
-this repository can substitute for it, which is why the rows are empty rather than green.
+A release is not described as verified while any required row is blank or `NOT RUN`.

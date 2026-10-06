@@ -1,5 +1,7 @@
 # The Bases spike — how to run it
 
+> **Historical/retired spike:** this probes the Bases integration that the confirmed target removes. Keep it only as evidence while planning; do not run it as a verification of the native `.tablify` file view. R6 plans its eventual removal after relevant findings are preserved.
+
 A throwaway plugin that prints what Obsidian's Bases API actually does, so `docs/02` §Bases integration can be
 verified instead of believed. **It is not part of the build.** `spike/**` is in `eslint.config.mts`'s
 `globalIgnores`, it has its own `tsconfig.json` and its own build command, and nothing in `src/` may import

@@ -1,170 +1,97 @@
-# 04 — Design system, layout contract and accessibility
+# 04 — Design system, layout contract, and accessibility
 
-## The two problems this document exists to kill
+> **Status:** target UI contract for the planned `.tablify` custom file view. Preserve the current grid’s proven responsive/accessibility behavior; this document does not imply the new file view exists in `0.1.0`.
 
-The previous build shipped 2,141 lines of CSS with **7 `!important` rules, 46 custom properties, only 12 references to Obsidian theme variables, and deep descendant chains** (`​.tabula-view .tabula-mount .tabula-file-root button.tabula-btn`). The result was a plugin that painted over the user's theme and had to be re-patched for every theme, plus a height chain that consumed 15 commits.
+## Design goals
 
-Two rules replace it:
-
-1. **Structure and surfaces come from Obsidian's variables.** The plugin adds brand *accent*, not its own chrome.
-2. **The grid fills the container it is given.** It never negotiates height with its ancestors.
+1. Use Obsidian’s host theme variables for surfaces and typography; Tablify supplies a restrained accent, not a competing application chrome.
+2. Fill the container given to the custom file view; do not negotiate height through ancestor chains.
+3. Keep the same grid interaction model at desktop, tablet, narrow pane, and phone sizes.
+4. Make focus, selection, status, broken links, pending writes, and save errors distinguishable without relying on color alone.
+5. Keep all behavior accessible by keyboard; mobile gestures supplement, never replace, keyboard navigation.
 
 ## Token tiers
 
-```
-tier 1 — Obsidian theme variables     (read-only: never redefine them)
-tier 2 — brand.css                    (our accent/selection/status tokens)
-tier 3 — grid.css / editors.css       (components; may only use tier 1 and 2 tokens)
+```text
+tier 1 — Obsidian theme variables (read, never redefine)
+tier 2 — Tablify semantic/brand tokens
+ tier 3 — grid/editor components using only tier 1 and tier 2
 ```
 
-### Tier 1 — the mapping (structure & surfaces)
+### Host tokens
 
-| Purpose | Variable |
+| Purpose | Preferred source |
 |---|---|
-| Grid background | `--background-primary` |
-| Header background | `--background-secondary` |
-| Hover row | `--background-modifier-hover` |
-| Selected row wash | `--background-modifier-active-hover` |
-| Grid lines | `--background-modifier-border` |
-| Primary text | `--text-normal` |
-| Muted text (row numbers, placeholders) | `--text-muted` |
-| Faint text | `--text-faint` |
-| Primary action button | `--interactive-accent` / `--text-on-accent` |
-| Focus outline | `--background-modifier-border-focus` |
-| Radius | `--radius-s` / `--radius-m` |
-| Font sizes | `--font-ui-smaller` / `--font-ui-small` / `--font-ui-medium` |
-| Monospace (numbers, ids) | `--font-monospace` |
+| Main surface | `--background-primary` |
+| Raised/header surface | `--background-secondary` |
+| Hover surface | `--background-modifier-hover` |
+| Selection wash | `--background-modifier-active-hover` plus an explicit border/glyph |
+| Borders | `--background-modifier-border` |
+| Main/muted text | `--text-normal`, `--text-muted`, `--text-faint` |
+| Primary action | `--interactive-accent`, `--text-on-accent` where available |
+| Focus | `--background-modifier-border-focus` or a contrast-tested Tablify focus token |
+| Font/radius | Obsidian UI font variables and radius variables when appropriate |
 
-If a surface has no theme variable, the answer is *do not style it*, not *pick a hex*.
+### Tablify semantic tokens
 
-### Tier 2 — brand tokens (`brand.css`)
+Use semantic names such as `--tablify-accent`, `--tablify-selection`, `--tablify-focus-ring`, `--tablify-danger`, and `--tablify-row-height`. Palette values belong in one token file. Do not spread literal colors through component CSS. Verify text contrast (4.5:1 body; 3:1 large text/UI boundaries) in both host themes; verify forced-colors behavior.
 
-Placeholders below are deliberately **not** any third party's published brand values. Replace the values in one file; nothing else changes.
+- Accent is for focus, selection, and primary action—not success/error meaning.
+- Option colors are labels, not the only way to identify a status.
+- `!important` is not an allowed conflict-resolution strategy.
 
-```css
-.tablify-root {
-  /* light */
-  --tablify-accent:         #9c4a2f;   /* primary brand, buttons, active state */
-  --tablify-accent-hover:   #833c26;
-  --tablify-accent-subtle:  #f6e9e2;   /* selection wash, tag backgrounds */
-  --tablify-accent-text:    #ffffff;   /* text on accent — verify AA */
-  --tablify-focus-ring:     #9c4a2f;
-  --tablify-selection-line: #9c4a2f;   /* range border */
-  --tablify-ink:            #2a2521;   /* high-emphasis text on brand surfaces */
-  --tablify-number:         #6b4a3a;   /* numeric cells, tabs on figures */
-}
+## File-view layout contract
 
-.theme-dark .tablify-root {
-  --tablify-accent:         #e0916d;
-  --tablify-accent-hover:   #eda583;
-  --tablify-accent-subtle:  #3a2a22;
-  --tablify-accent-text:    #221a16;
-  --tablify-focus-ring:     #e0916d;
-  --tablify-selection-line: #e0916d;
-  --tablify-ink:            #f2ece7;
-  --tablify-number:         #d7b7a4;
-}
+The Obsidian FileView provides a host container; the plugin fills it and owns one grid scroller.
+
+```text
+Obsidian FileView host (size supplied by workspace)
+└─ .tablify-root                 absolute; inset: 0; flex column; overflow hidden
+   ├─ database/table/view bar     fixed controls; responsive overflow below narrow width
+   ├─ toolbar                     fixed; never wraps into a clipped second row
+   ├─ .tablify-scroller            the only grid scroller
+   │  ├─ virtual canvas
+   │  ├─ windowed rows
+   │  ├─ sticky header layer
+   │  └─ frozen-primary layer only when pane width ≥ 600 px
+   └─ status region               polite write/status announcements as appropriate
 ```
 
-Rules for tier 2:
+Rules:
 
-- **Accent is reserved for selection, focus and primary actions. It is never a status colour.** Select-option pills, ratings and checkboxes use the nine option colours and theme variables, so brand and semantics never collide.
-- Every text/background pair must pass **WCAG AA (4.5:1 for body text, 3:1 for icons and boundaries)** in both light and dark. Verify before merging a palette change; record the check in the PR.
-- `!important` is banned. If a rule loses, fix specificity by shortening the selector.
+- One scroller; header/rows stay aligned during horizontal and vertical movement.
+- Grid root fills the FileView’s actual host box; do not rely on percentage-height chains above it.
+- No `100vh` for mobile geometry. Use `visualViewport`/safe-area behavior only if verified in Obsidian’s target WebViews.
+- Frozen primary column is unpinned below 600 px pane width; row-number/selection gutter scrolls with the remaining grid. Hide the freeze option while unavailable rather than presenting a no-op control.
+- Layout listeners/subscriptions are registered and disposed with the file view; no leaked global handlers or observers.
 
-### Tier 2b — status/option colours
+## Responsive and mobile behavior
 
-Nine option colours (`gray, blue, green, yellow, orange, red, pink, purple, cyan`) are defined as tinted pills derived from theme hues:
-
-```css
-.tablify-pill { background: color-mix(in srgb, var(--tablify-pill-hue) 18%, transparent);
-                border-color: color-mix(in srgb, var(--tablify-pill-hue) 35%, transparent);
-                color: var(--text-normal); }
-```
-
-`color-mix()` is used deliberately: it keeps pills legible in every theme without hardcoding a light/dark pair per colour, and it is supported on all Obsidian targets (desktop Electron, iOS/Android WebView) at the declared `minAppVersion`.
-
-### ⚠️ Branding constraints (read before touching `brand.css`)
-
-The palette direction is a warm clay/parchment family. It must be shipped as **your own tokens**:
-
-- **Do not** name a colour token, class, comment, README section or settings copy after another company (Anthropic, Claude, Airtable, Notion). No "anthropic" in the repo, at all.
-- **Do not** use any third party's logo, wordmark, icon, or a visual imitation of their marks.
-- **Do not** imply affiliation or endorsement anywhere — README, listing description, settings text.
-- Colour values themselves are not protected, but *trade dress imitation of another product's look and feel* is the thin edge here. The safe path is a palette that reads as warm and considered without being a reproduction, under your own names (`--tablify-accent`, `--tablify-clay`).
-
-## The layout contract
-
-**One contract, both hosts** (Bases view container and the legacy file view). Obsidian sizes the host; the plugin fills it and owns exactly one scroller below it.
-
-```
-host element (Obsidian-sized, position: relative)
-  └─ .tablify-root            position: absolute; inset: 0;
-     │                        (display:flex; flex-direction:column; overflow:hidden)
-     ├─ .tablify-toolbar      flex: 0 0 auto
-     ├─ .tablify-scroller     flex: 1 1 auto; overflow: auto; overscroll-behavior: contain
-     │   ├─ .tablify-canvas      height = totalRows × rowHeight (the scroll range)
-     │   ├─ .tablify-rows        transformed by -scrollTop, windowed
-     │   ├─ .tablify-header      transformed by (-scrollTop, scrollLeft) — sticky layer
-     │   └─ .tablify-frozen-col  transformed by (-scrollTop, 0) — frozen layer
-     └─ .tablify-statusbar    flex: 0 0 auto   (optional: counts, write status)
-```
-
-Why `position: absolute; inset: 0`: an absolutely-positioned box takes its size from its container's *padding box* and cannot be collapsed by an intermediate flex/percentage chain. The old failure mode — Obsidian's mobile shell compressing `.app-container` from 860px to 389px when the keyboard opened while every percentage layer collapsed to 0 — is structurally impossible here.
-
-**Forbidden:** percentage heights on any ancestor of the scroller, `height: 100%` chains, `ResizeObserver` writing height custom properties, `window.innerHeight` reads during layout, `100vh` (it ignores mobile browser chrome), and `requestSaveLayout()` in a typing path.
-
-## Mobile
-
-### Keyboard and viewport
-
-- Listen to `window.visualViewport` (`resize` + `scroll`, passive, registered with `registerDomEvent` on the view) and drive **one** CSS variable: `--tablify-keyboard-inset`, applied as `padding-bottom` on `.tablify-root`. The document height is never renegotiated.
-- Scroll the active cell into view *after* the inset settles (one `requestAnimationFrame`), so editing a cell near the bottom does not hide it under the keyboard.
-- Safe areas: `env(safe-area-inset-*)` on the toolbar and statusbar, so the grid never sits under a notch or home indicator.
-- **Inputs are ≥ 16px** (`--font-ui-medium` or an explicit 16px on editors) so iOS never zooms the viewport on focus. This is what produced the "input zoom" bug class previously.
-
-### Touch
-
-| Concern | Rule |
+| Concern | Requirement |
 |---|---|
-| Target size | ≥ 44×44 px for any tap target; row height minimum 40 (medium) on mobile |
-| Context menus | Long-press (≈500 ms) with visual feedback before opening; also reachable from a toolbar button, since long-press is not discoverable |
-| Hover-only affordances | Banned — resize handles, row handles and add-row affordances must be visible on touch |
-| Range selection | Explicit toolbar toggle (a drag would fight scrolling), then drag sets the range |
-| Scrolling | `-webkit-overflow-scrolling: touch`; momentum preserved; never capture vertical pan while a range drag is not active |
-| Toolbar | Collapses to an overflow menu below 520 px width; the toolbar never wraps to two rows |
+| Inputs | At least 16 px to avoid iOS focus zoom. |
+| Touch targets | At least 44×44 px where practical; maintain existing minimum row geometry and document exceptions. |
+| Keyboard | Keep the active editor/cell visible when the software keyboard opens; restore scroll/focus on close. |
+| Safe areas | Respect top/bottom insets for toolbar and status controls. |
+| Context menu | Long-press with visible affordance, plus a discoverable toolbar/menu action. Long-press must not steal ordinary scrolling. |
+| Hover | Never make an essential control appear only on hover. |
+| Toolbar | Collapse low-frequency actions into an overflow menu on narrow panes; no clipped/wrapped toolbar. |
+| Motion | Honor reduced-motion preference; frequent selection/typing/scroll paths do not animate unnecessarily. |
 
-### Gestures that must not exist
+## Accessibility contract
 
-Pinch-to-zoom inside the grid fails on mobile as often as it succeeds. Zoom is the OS/browser's job.
+- Use grid semantics (`role=grid`, row/cell/header roles, row/column counts and indices that account for virtualization).
+- One clear keyboard focus model (roving `tabindex` or a documented equivalent) with visible focus and no keyboard trap.
+- Expose `aria-selected`, read-only reasons, active table/view names, link target labels, and broken-reference state.
+- Use a polite live region for completed writes/errors, not for every arrow-key selection movement.
+- Dialogs and menus restore focus on close; keyboard-only users can create/remove a linked record and reach table/view controls.
+- Selection is conveyed by border/shape/icon as well as color; forced-colors mode remains legible.
+- State screen-reader editing limitations honestly until verified on actual screen readers.
 
-## Accessibility
+## Verification viewports
 
-| Area | Requirement |
-|---|---|
-| Semantics | `role="grid"`, `role="row"`, `role="gridcell"`/`role="columnheader"`, with `aria-rowcount`, `aria-colcount`, `aria-rowindex`, `aria-colindex` (indices count virtualized-but-absent cells) |
-| Focus | Roving `tabindex`: the grid is one tab stop; arrows move focus; `aria-activedescendant` is **not** used, real focus moves |
-| Read-only cells | `aria-readonly="true"` plus a title explaining why |
-| Selection | `aria-selected` on cells in the range and on the active row |
-| Bulk operations | Announce completion via a polite live region: "412 cells updated in 137 notes" |
-| Conflicts / import dialogs | Real Obsidian `Modal` (focus trap, Escape, focus restore for free) |
-| Reduced motion | All transitions behind `@media (prefers-reduced-motion: reduce)` |
-| High contrast / forced colours | Test with `forced-colors: active`; never rely on background alone to convey selection (pair with a border or a glyph) |
-| Screen readers | Navigation and reading fully operable; editing is announced. Full grid-editing announcement is a known hard problem — state the limitation honestly in the README rather than claiming full support |
+Keep the repository’s current Playwright matrix: desktop, desktop-dark, phone with keyboard closed, phone with keyboard open/squeezed host, and tablet. Preserve existing geometry, input-size, focus, scroll, tap-target, frozen-column, and performance assertions. Add fixture states with multiple tables/views and linked-record cells. The browser harness cannot prove Obsidian FileView host lifecycle or real keyboard/compositor behavior; those remain manual device checks.
 
-## Motion
+## Design changes are not scope changes
 
-Minimal and purposeful: 120 ms ease-out on row insert/remove; no animation on scroll, typing or selection. Selection uses a border and a wash, not a scale or opacity transition.
-
-## Harness viewport matrix
-
-The Playwright harness renders the real grid against a fixture `RowSource` at:
-
-| Name | Size | State |
-|---|---|---|
-| `desktop` | 1440 × 900 | default theme, dark theme |
-| `phone-closed` | 390 × 844 | keyboard closed |
-| `phone-keyboard` | 390 × 844, host squeezed to **389 px** | reproduces the historical failure (app shell compressed from 860 px) |
-| `tablet` | 834 × 1112 | both orientations |
-
-For each: toolbar visible and unwrapped, header sticky, no clipped controls, root fills 100 % of its host, no `!important` anywhere in the computed styles. On the wide viewports the frozen column is aligned; at 389 px (and in any pane under 600 px) it is **unpinned by design** — assert that the gutter and the first column scroll with the rest instead.
+The `.tablify` refactor changes the host/data architecture, not the user’s established grid interaction model. Any removal of an existing gesture or accessibility behavior requires an explicit decision and an updated acceptance test before implementation.

@@ -1,107 +1,104 @@
-# 07 — Test plan
+# 07 — Test plan for the native `.tablify` target
 
-The previous build had **no tests and no test runner**, while its changelog cited a "harness" and "functest ALL CHECKS PASSED" that were never committed — which is precisely why the same layout regressions kept returning across 15 commits. This plan exists so that never happens again.
+> **Status:** future test contract. Current `0.1.0` tests are built around a Bases-backed source; no native `.tablify` repository exists yet. Keep current gates and add the tests below as implementation is authorized.
 
-## Tiers
+## Test principles
 
-| Tier | Tool | Scope | Gate |
+1. Test pure behavior at the lowest layer possible.
+2. Use fake Obsidian/file ports for deterministic repository tests; real vault/device verification remains a separate release gate.
+3. Assert observable behavior, not snapshots alone or mocked method calls that bypass the behavior.
+4. A test is not green if an assertion was deleted, weakened, skipped, or made vacuous to fit a refactor.
+5. Test file corruption, concurrent edits, large values, partial failures, and undo—not only the happy path.
+6. Never use a live Airtable token or network call in CI.
+
+## Tiers and gates
+
+| Tier | Tool | Target scope | Gate |
 |---|---|---|---|
-| 1 · Unit | Vitest (`node`) | `core/**`: field types, query AST/parser, ops + inverses, selection matrices | Every commit; coverage thresholds |
-| 2 · Adapter | Vitest (`node`) + fake vault | `adapters/**`: write queue, coalescing, per-file serialization, rollback, tabula parsing, note creation | Every commit |
-| 3 · Component | Vitest (`jsdom`) | Store + selectors: dispatch, optimistic overlay, undo/redo, reconciliation on external change | Every commit |
-| 4 · Layout/interaction | Playwright | The real grid in a real browser at five viewports | Every PR (CI) |
-| 5 · Manual device | Human | Real phone: keyboard, safe areas, long-press, momentum scroll, iOS input zoom | Before each release |
+| 1 — Domain | Vitest, node | JSON parser/validator/serializer, field codecs, IDs, query, ops/inverses, links, import plans/export matrices | Every commit touching core; current `bun run check` includes unit suite. |
+| 2 — Repository | Vitest with fake file/vault port | File load/create/write/flush, serialization, revisions, rename/delete/modify events, recovery | Every repository/adapter change. |
+| 3 — Store/DOM | Vitest + jsdom | Store selectors, optimistic state, undo/redo, table/view switching, link chooser/dialogs, accessibility semantics | Every relevant UI/state change. |
+| 4 — Layout/interaction | Playwright browser harness | Real grid components on fixture database at existing viewport matrix | Every PR; CI `bun run test:layout`. |
+| 5 — Real Obsidian | Human | File view registration/lifecycle, vault write notifications, desktop/mobile panes, safe areas, real clipboard, external edits | Before a release; record in `docs/manual-test-log.md`. |
+| 6 — Airtable smoke | Human + scratch Airtable base, optional | Token entry, manual pull/push, conflict review, relationship mapping | Before stable sync release; never required for CI. |
 
-## Tier 1 — unit (the biggest lever)
+## Tier 1 — Format and core
 
-Rules:
-- Field types are tested **by descriptor**, not by hand: one shared suite iterates the registry and asserts the contract (`parse(formatDisplay(v)) === v`, `formatPlain` round-trips through `parsePlain`, `toYaml` produces a YAML-safe scalar type, `compare` is a total order, `filterOps` all implemented).
-- Query tests use a table of `(expr, row, expected)`; the parser is tested against the old DSL syntax from the README so legacy filters keep meaning the same thing.
-- Ops tests assert the **inverse** for every op: `apply(undo(apply(x))) === x`. Undo correctness is a property, so it gets property-style tests over generated op sequences.
+Required suites:
 
-## Tier 2 — adapters against a fake vault
+- Parse/serialize/parse round-trip for minimum, multi-table, multi-view, all-field-type, link, attachment, Unicode, long-text, and large fixtures.
+- Empty-value semantics: absent, `null`, `''`, `[]`, `false`, and `0` for each relevant field.
+- Stable IDs: rename/reorder does not rewrite cell identity or relation references.
+- Duplicate/missing IDs, unknown supported-version keys, unknown field types, malformed/truncated JSON, unsupported future version, invalid numbers, invalid date/time, duplicate options, unknown option IDs, broken table/row links.
+- `.tablify` version migration determinism and idempotence; input remains unchanged on failure.
+- Field descriptor contract: parsing/formatting, compare total order, operators implemented, JSON-safe values, plain-text clipboard round-trip where intended.
+- Operations/inverses: `apply(inverse(apply(state))) === state` for record/field/table/view/link operations, property-tested over generated states.
+- View query tests: filters/search/sorts/grouping use stable `fieldId`/`rowId`, respect selected table and view.
 
-`tests/fakes/vault.ts` implements the slice of `App` used by adapters: `vault.getFileByPath`, `vault.create`, `vault.delete`, `fileManager.processFrontMatter`, `metadataCache`. It records every write, so tests assert:
+No tests for `.base` or `.tabula` migration are carried into this target suite. Historical fixtures can be archived, not used as a compatibility gate.
 
-- 12 property writes to one file in a tick ⇒ **one** `processFrontMatter` call.
-- Interleaved writes to the same file from two sources are serialized, never lost.
-- A failing write drops only the affected optimistic overlay and returns a per-file error.
-- Unknown frontmatter keys survive a write cycle untouched.
-- Clearing a value **removes** the key rather than writing `""`.
-- The write queue's `flush()` resolves only after the last write resolves.
+## Tier 2 — Repository and writes
 
-Legacy parsing is tested against **committed fixtures**: a v1 file, a v2 file with 3 tables, a file with unknown field types, a file with select cells referencing deleted options, and a corrupted file (asserts a clean user-facing error, not a crash).
+Use an in-memory fake implementing exactly the text-file operations the adapter needs. Record writes, events, revision numbers, and failures. Test:
 
-## Tier 3 — store
+- Create a valid empty document, open it, mutate it, flush, reload, and compare normalized document state.
+- Exactly defined write coalescing for a single edit, bulk paste, table schema change, import, undo, and redo.
+- Writes serialize; a failed write does not make the snapshot appear saved or discard later commands.
+- External modification while clean reloads safely; external modification while dirty triggers the agreed conflict behavior and never silently overwrites.
+- Two sessions/leaves on one document share or reconcile revisions; close of one leaf does not dispose the session still used by another.
+- Rename preserves `databaseId`; delete/close/unload releases listeners, timers, and queued resources.
+- Malformed and newer-version documents remain byte-for-byte untouched; read-only/error state is visible.
+- Attachment paths resolve to existing/missing status through a fake host without mutating stored values.
 
-- A keystroke re-renders the edited cell and nothing else (assert with a render counter).
-- Selection is preserved when the row set is unchanged by a re-query; it degrades predictably (to the nearest surviving row) when rows are removed.
-- Undo of a 400-cell paste issues **one** queued batch, and the number of `processFrontMatter` calls equals the number of distinct files touched.
-- External change (`subscribe` fired by another pane) wins over a stale local snapshot and does not resurrect deleted rows.
+The write/atomicity guarantees in tests must match what the real Obsidian API provides. A fake proves repository logic, not host durability.
 
-## Tier 4 — the layout harness (the committed one)
+## Tier 3 — Store, UI and accessibility
 
-`harness/` is a static page that mounts the **real** `GridView` against a fixture `RowSource`, styled by a stub Obsidian theme stylesheet plus the plugin's own CSS. Served by `bun run harness:serve` on port 4173; driven by Playwright.
+- One keystroke re-renders the edited cell and expected row only; active table selectors do not leak rows from another table.
+- Table/view switch preserves the intended per-table selection/view behavior and restores focus.
+- Range/row/column selection, copy/cut/paste, fill, bulk edit, add/duplicate/delete, and undo remain correct against stable IDs.
+- Linked-record chooser supports approved cardinality, search, keyboard-only add/remove, missing target display, cross-table updates, and undo.
+- Table/field rename/delete updates or warns about dependent views/links according to ADR.
+- Screen-reader labels/announcements describe table, view, cell, link target, read-only state, errors, and completed writes.
+- Dialog focus trap/restore, escape handling, reduced motion, and disabled/read-only semantics remain correct.
 
-Viewports: `desktop`, `desktop-dark`, `phone-closed`, `phone-keyboard`, `tablet` (`docs/04` §matrix).
+## Tier 4 — Browser layout/interaction harness
 
-Assertions (all five viewports unless noted):
+Keep current five target viewport categories (`desktop`, `desktop-dark`, `phone-closed`, `phone-keyboard`, `tablet`) and existing CSS, focus, touch, frozen-column, scroll, and grid interaction assertions. Extend fixtures to include at least two tables, two saved views, and linked records. Add assertions for:
 
-| # | Assertion |
-|---|---|
-| 1 | `.tablify-root` fills **100 %** of its host (padding box), measured, not assumed |
-| 2 | In `phone-keyboard`, the host is squeezed to **389 px** and the root still fills it — the exact historical failure, now a test |
-| 3 | Header stays visually aligned with its columns after horizontal scroll, and after vertical scroll |
-| 4 | Frozen first column does not drift by more than 1 px against the header |
-| 5 | Toolbar is single-row and fully visible; overflow menu appears below 520 px |
-| 6 | Every input/editor reports `font-size ≥ 16px` (iOS zoom guard) |
-| 7 | Every interactive target is ≥ 44 × 44 px on phone viewports |
-| 8 | No element's computed style contains `!important` — plus a static check that `styles.css` contains zero occurrences |
-| 9 | Keyboard navigation: 200 arrow presses keep the active cell in view, keep exactly one focused element, and never scroll the *page* |
-| 10 | Typing in a cell does not move scroll position (no jump-to-top regression) |
-| 11 | Paste of a 400 × 6 matrix completes with correct cell values in a < 2 s budget (harness fixture, not a note-creating run) |
-| 12 | Row insert/remove does not scroll-jump |
-| 13 | Screenshot diff against committed baselines at each viewport, with a small tolerance |
+1. table and view switchers remain visible/usable at narrow widths;
+2. linked-record editor is navigable and does not trap focus;
+3. target table name changes update display without changing stored relation ID;
+4. missing targets show a visible broken-reference state;
+5. all current selection/clipboard/performance assertions pass using the native repository fixture;
+6. no layout behavior relies on Bases DOM or `.base` settings.
 
-Every layout or interaction bug fixed **must** land with a new assertion here. That is the rule that was missing before; without it the harness is decorative.
+Use browser geometry for layout claims, not jsdom. The harness still cannot verify Obsidian's FileView host or real device behavior.
 
-## Tier 5 — manual device matrix
+## Performance and file-size tests
 
-| Check | Why it cannot be automated |
-|---|---|
-| Keyboard open/close while editing | Real iOS/Android behaviour and timing |
-| Long-press context menu vs scroll | OS gesture arbitration |
-| Safe-area/notch | Real hardware |
-| Input zoom on focus | WebView behaviour |
-| Momentum scroll feel | Perception |
-| Large pastes from the real Excel/Sheets apps | Real clipboard payloads (TSV + HTML flavours differ per OS) |
+Benchmark parse/open, visible first paint, filter/sort/group, edit/serialize/write, and bulk import on a reproducible 5,000-row × 20-column database. Keep existing first-paint target (≤300 ms in the harness) as a baseline, then record a separate measured budget for full JSON write and import. Measure memory for duplicate document snapshots/two panes. Do not set a maximum file size by guess.
 
-Record results in `docs/manual-test-log.md` before each release (one page per release, including the device/OS).
+## Airtable tests
 
-## Performance assertions
+Use a fake `SyncTarget`/transport. Required scenarios: link mapping by stable IDs; local-only and remote-only field updates; same-field conflict review; stale local edit after plan; full versus partial read; remote deletion report; local deletion report; failed/rejected push; 429/backoff; corrupt link state; token redaction; unsupported field type; cross-table linked-record mapping complete/missing/deleted; no live network in CI.
 
-| Test | Method | Budget |
-|---|---|---|
-| Open a 5,000-row view | Fixture render timing | ≤ 300 ms to first paint |
-| Scroll | rAF sampling over a scripted scroll | ≥ 55 fps sustained, no gap > 50 ms |
-| Typing | 60 keystrokes dispatched | No frame > 16 ms attributable to grid re-render |
-| Paste 400 × 6 | Harness apply path | < 2 s |
-| Bundle | `metafile` + gzip | Per `docs/05` budgets |
-| Startup | Time `onload` in a dev vault with the plugin alone | ≤ 50 ms; sync module not parsed |
+No remote record create/delete or schema mutation is introduced by these tests unless separately approved.
 
-## What is deliberately not tested
+## Tier 5/6 manual matrix
 
-- Component snapshot tests (they assert markup, not behaviour, and rot instantly).
-- jsdom-based layout tests (jsdom does not lay out; that is what tier 4 is for).
-- Live Airtable calls in CI (mock transport; a manual smoke test before releases instead).
-- The old build's behaviour as a compatibility contract. Only the **file format** is a contract; the UI is not.
+Record build SHA, plugin version, Obsidian version, OS/device, date, exact steps, result, and limitations. Required before stable release:
 
-## Fixtures
+- open/create/rename/reopen `.tablify` with Bases disabled;
+- multiple panes, same-file writes, Obsidian Sync/external edit collision;
+- multi-table links, table/row deletion, undo, and broken-link recovery;
+- phone keyboard, focus, safe areas, long-press versus scroll, screen reader where available;
+- real CSV/XLSX import and CSV/TSV/XLSX export with Excel/Sheets or compatible clients;
+- manual Airtable pull/push and a deliberately created conflict using a scratch/test base if available;
+- confirmation old `.base`/`.tabula` files were left unchanged, not migrated.
 
-Committed under `tests/fixtures/` and `harness/fixtures/`:
+A check that was not actually run remains **NOT RUN**.
 
-- `legacy-v1.tabula`, `legacy-v2-multitable.tabula`, `legacy-corrupt.tabula`
-- `sheet-412.xlsx`, `sheet.csv`, `paste-block-400x6.tsv`
-- `golden/projects.base` (generated by migration; must round-trip through Obsidian without warnings)
-- `golden/migration-report.json` (asserted structurally, not byte-for-byte)
-- `rows-5000.json` (generated by a script at test time, not committed — keep the repo lean)
+## Current baseline and commands
+
+The existing package script `bun run check` runs typecheck, lint, brand/manifest gates, formatting, unit tests, build, contrast, CSS, and size gates. CI additionally runs the Playwright layout suite. Run both for implementation PRs. This documentation-only pass did not run them because Bun is not available in the workspace; it does not claim the code or tests pass.

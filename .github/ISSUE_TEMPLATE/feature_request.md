@@ -1,10 +1,14 @@
 ---
 name: Feature request
-about: Suggest a change to the grid, an import, an export, a setting or a shortcut
+about: Suggest a change to a grid workflow, table, import/export, setting, or shortcut
 title: ''
 labels: enhancement
 assignees: ''
 ---
+
+## Product context
+
+<!-- The current 0.1.0 release is Bases-backed; the planned native `.tablify` refactor is not shipped yet. Say which build/target this request refers to. -->
 
 ## The problem
 
@@ -16,15 +20,12 @@ assignees: ''
 
 ## What you would like
 
-<!-- Your idea. If it changes the .base file, or a keyboard shortcut, say so. -->
+<!-- Describe the workflow and affected table/field/view. Mention any data-format or keyboard implications. -->
 
 ## Scope check
 
 <!--
-Tablify is deliberately narrow, so two answers help before anything is built:
-
-- **Does it belong in Tablify, or in Obsidian itself?** Bases is a young feature and some things that look
-  like plugin gaps are on its own roadmap.
-- **Does it need a new dependency?** Anything that can be done with the platform, the Bases API or the
-  existing stack is far more likely to land than something that adds a library.
+- Does this belong in Tablify or in Obsidian itself?
+- Is the request about current 0.1.0 behavior or the planned native `.tablify` target?
+- Would it require a new runtime dependency or change a confirmed product decision?
 -->

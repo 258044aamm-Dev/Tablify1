@@ -1,5 +1,7 @@
 # Design review — Tablify prototype
 
+> **Historical prototype record:** this review records prior work on the static prototype and is not an active design specification for the planned native `.tablify` application. Preserve the findings as history; the target contract is `docs/04-design-system-and-layout.md`.
+
 The executed UI/UX + design-engineering pass, as Before/After/Why tables (the format the
 design-engineering skill requires). `Before` values are the real values measured in the files before
 each stage — not impressions. `After` values are what the code now contains.

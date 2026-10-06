@@ -1,5 +1,7 @@
 # Proceed-as-assumption — 2026-10-05
 
+> **Historical session record:** this documents a prior prototype/settings task and is not current scope or an instruction for the native `.tablify` refactor. Keep it for provenance; follow the current user instruction and `docs/08-decisions.md`.
+
 The user's message contained **"3-10"** plus *"Settings > Advanced Settings → Content, I want all content
 to be enabled by default"*, and the standing **"Proceed and execute"** / *"the new modification shouldn't
 influence other existing features and functionalities"*.
