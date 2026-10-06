@@ -113,6 +113,8 @@ import { matrixOfSelection, payloadHtml, payloadTsv } from './clipboard/matrix';
 import { needsDialog, planPaste, readAndPlan } from './clipboard/pastePlan';
 import { applyPlan, pasteSentence } from './clipboard/wiring';
 import { startRangeDrag, useCoarsePointer } from './selection/dragSelect';
+import { createLongPressSession } from './pointer/longPress';
+import type { LongPressTrigger } from './pointer/longPress';
 import {
 	allOf,
 	cellPosition,
@@ -1121,20 +1123,26 @@ export function GridView(props: GridViewProps): ReactElement {
 		[store, menuPorts],
 	);
 
-	/** Right-click (or a long press, which the browser reports as a context menu) anywhere in the grid. */
-	const onContextMenu = useCallback(
-		(event: ReactMouseEvent<HTMLDivElement>): void => {
-			const node = event.target;
-			if (!(node instanceof Element)) {
-				return;
-			}
+	/**
+	 * The context menu, for **any** gesture that asks for one: right-click, `Shift+F10`, and — since step 27 —
+	 * a long press.
+	 *
+	 * The body is a function of `(node, event)` rather than of a React event because of that third caller. A
+	 * long press has no `contextmenu` event to react to (a phone's WebView does not synthesise one from a hold on
+	 * a `div`; the browser's own long-press menu never fires, because the grid is not a link or a text selection),
+	 * so it calls this directly with the element the finger landed on and the `pointerdown` that started the
+	 * press — a `PointerEvent` **is** a `MouseEvent`, which is what the menu's anchor type wants, and its
+	 * `clientX`/`clientY` are the finger's position. One code path, three gestures: no second menu inventory.
+	 */
+	const openMenuAt = useCallback(
+		(node: Element, event: MouseEvent): void => {
 			const snapshot = store.getSnapshot();
 			event.preventDefault();
 			const header = node.closest('.hcell[data-field]');
 			if (header !== null) {
 				const fieldId = header.getAttribute('data-field');
 				if (fieldId !== null) {
-					openHeaderMenu(fieldId, event.nativeEvent);
+					openHeaderMenu(fieldId, event);
 					return;
 				}
 			}
@@ -1152,7 +1160,7 @@ export function GridView(props: GridViewProps): ReactElement {
 							bounds: menuBounds(snapshot.order, snapshot.selection, snapshot.active),
 							ports: menuPorts(),
 						}),
-						{ kind: 'event', event: event.nativeEvent },
+						{ kind: 'event', event },
 					);
 					return;
 				}
@@ -1174,14 +1182,112 @@ export function GridView(props: GridViewProps): ReactElement {
 						bounds: menuBounds(snapshot.order, snapshot.selection, snapshot.active),
 						ports: menuPorts(),
 					}),
-					{ kind: 'event', event: event.nativeEvent },
+					{ kind: 'event', event },
 				);
 			}
 		},
 		[store, openHeaderMenu, menuPorts],
 	);
 
+	/** Right-click anywhere in the grid (and a real `contextmenu` on a trackpad's two-finger tap). */
+	const onContextMenu = useCallback(
+		(event: ReactMouseEvent<HTMLDivElement>): void => {
+			const node = event.target;
+			if (!(node instanceof Element)) {
+				return;
+			}
+			openMenuAt(node, event.nativeEvent);
+		},
+		[openMenuAt],
+	);
+
 	/* ── the pointer ───────────────────────────────────────────────────────────────────────────────────── */
+
+	/**
+	 * The long-press feedback: **an attribute on the pressed element**, and nothing else.
+	 *
+	 * `docs/04` §Touch asks for "visual feedback before opening", and this is the cheapest honest version of it:
+	 * the gesture paints one attribute (`data-touch-press`), the stylesheet draws it, and React is not involved —
+	 * so a 500 ms hold costs zero renders, which is the same rule the resize drag follows one screen down.
+	 *
+	 * The attribute is removed in a microtask-safe way on every exit path of the press (fire, move, cancel, lift)
+	 * because `createLongPressSession` clears it for all four. What it does *not* do is survive the element being
+	 * re-rendered away mid-press, so the removal also happens by query rather than by holding a reference: a
+	 * windowed row that scrolls out from under a finger would otherwise keep the attribute forever.
+	 */
+	const pressTargetRef = useRef<Element | null>(null);
+	const paintPress = useCallback((pressed: boolean): void => {
+		const target = pressTargetRef.current;
+		if (pressed) {
+			// On: the element the press landed on. On the *first* press of a session this is painted because
+			// `onRootPointerDown` records the target **before** it calls `begin` — the session announces the press
+			// from inside `begin`, so a caller that recorded the target afterwards painted nothing at all (the bug
+			// `tests/dom/long-press.test.tsx` caught during step 27).
+			if (target instanceof HTMLElement) {
+				target.setAttribute('data-touch-press', 'on');
+			}
+			return;
+		}
+		// Off: **by query, not by reference** — the element may have been re-rendered away mid-press (a windowed
+		// row scrolling out from under a finger), and the ref may already be null, so a sweep is the only version
+		// of this that cannot leave a cell painted forever. The scope is the target's own document when there is
+		// one, and the ambient document otherwise.
+		const scope = target?.ownerDocument ?? document;
+		for (const painted of Array.from(scope.querySelectorAll('[data-touch-press]'))) {
+			painted.removeAttribute('data-touch-press');
+		}
+		pressTargetRef.current = null;
+	}, []);
+
+	/**
+	 * The long press itself: the session, and the ref that keeps it honest.
+	 *
+	 * `triggerRef` exists because a session is created once and `openMenuAt` is a `useCallback` React may
+	 * re-create: the session must always call **this render's** menu opener, or a long press after a store change
+	 * would open a menu built from a stale snapshot. The ref is written in an effect (never during render) and read
+	 * at fire time.
+	 */
+	const triggerRef = useRef<(trigger: LongPressTrigger) => void>(() => undefined);
+	useEffect(() => {
+		triggerRef.current = (trigger: LongPressTrigger): void => {
+			openMenuAt(trigger.target, trigger.source);
+		};
+	}, [openMenuAt]);
+	const longPress = useMemo(
+		() =>
+			createLongPressSession({
+				onTrigger: (trigger) => {
+					triggerRef.current(trigger);
+				},
+				onPressChange: paintPress,
+			}),
+		[paintPress],
+	);
+
+	/** A move that travels more than the slop ends the press: a finger that moves is scrolling, not holding. */
+	const onRootPointerMove = useCallback(
+		(event: ReactPointerEvent<HTMLDivElement>): void => {
+			longPress.move({ x: event.clientX, y: event.clientY });
+		},
+		[longPress],
+	);
+
+	/**
+	 * The finger lifted.
+	 *
+	 * `end()` answers whether a menu opened during this press. The grid does **not** then swallow the click that
+	 * follows, and that is a fact about this grid rather than an omission: a cell is selected on *press* (`Cell`'s
+	 * own `onActivate`), so the release after a long press has nothing left to do — the menu is already open over
+	 * the cell the person meant. The flag is reported anyway, because a surface with a click-to-open path needs it
+	 * and a session that cannot say "I already handled this press" is a session a caller works around.
+	 */
+	const onRootPointerUp = useCallback((): void => {
+		longPress.end();
+	}, [longPress]);
+
+	const onRootPointerCancel = useCallback((): void => {
+		longPress.cancel();
+	}, [longPress]);
 
 	/**
 	 * The live width preview: a drag writes to the DOM, not to the store.
@@ -1565,6 +1671,30 @@ export function GridView(props: GridViewProps): ReactElement {
 				return;
 			}
 			/*
+			 * The long press (step 27). It is offered here — after the resize grips, the row handle, the fill
+			 * handle and the scroll thumbs have each claimed their gesture, and **before** the cell branch — for
+			 * two reasons:
+			 *
+			 *  · those four are drags whose first pixel is meaningful, and a finger resting on one of them means
+			 *    that drag, not a menu;
+			 *  · a header is deliberately excluded (`.hcell`, above), because a header already has a touch path to
+			 *    its menu: a press that does not move opens it **on release** (`tests/dom/pointer.test.tsx`), and
+			 *    arming a press there as well would open the same menu twice — once at 500 ms and again on lift.
+			 */
+			if (node.closest('.hcell') === null) {
+				/*
+				 * The target is recorded **before** `begin`, and cleared again when the press was refused: the
+				 * feedback is painted from the target, and `begin` announces the press from inside itself, so the
+				 * other order paints nothing (step 27 found this with `tests/dom/long-press.test.tsx`). A refused
+				 * press only forgets the target when no other press is in flight — otherwise a second finger would
+				 * steal the first finger's paint.
+				 */
+				pressTargetRef.current = node;
+				if (!longPress.begin(event.nativeEvent) && !longPress.pending()) {
+					pressTargetRef.current = null;
+				}
+			}
+			/*
 			 * A press on a cell: the range drag. On a fine pointer it always runs — dragging across cells is how a
 			 * range is made with a mouse. On a coarse one it runs only in the **Select range** mode, because a
 			 * finger drag on the grid is how you scroll (`docs/04` §Touch), and because the mode's whole reason to
@@ -1589,6 +1719,7 @@ export function GridView(props: GridViewProps): ReactElement {
 			rangeSelect,
 			coarsePointer,
 			store,
+			longPress,
 		],
 	);
 
@@ -1673,7 +1804,12 @@ export function GridView(props: GridViewProps): ReactElement {
 			// One delegated press for every drag (step 20): a per-row or per-cell handler would be a listener per
 			// row, and rows are windowed.
 			onPointerDown={onRootPointerDown}
-			// Right-click and long-press both arrive here. The grid's own menus are built from data
+			// The long press's three other events (step 27). Delegated for the same reason the press is, and they
+			// do nothing at all until a touch press has begun — on an idle session each is a no-op.
+			onPointerMove={onRootPointerMove}
+			onPointerUp={onRootPointerUp}
+			onPointerCancel={onRootPointerCancel}
+			// Right-click (and a trackpad's two-finger tap) arrive here. The grid's own menus are built from data
 			// (`src/grid/menus/`) and shown through Obsidian's `Menu`.
 			onContextMenu={onContextMenu}
 		>

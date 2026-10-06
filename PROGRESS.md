@@ -1,9 +1,191 @@
 # PROGRESS
 
 - Milestone: M0 — Foundation (complete) · M1 — Core domain (complete) · M2 — Data layer (complete) ·
-  M3 — Grid v1 (complete) · M4 — Import/export (complete) · **M5 — Sync (complete)** · M6 — Release (not started)
+  M3 — Grid v1 (complete) · M4 — Import/export (complete) · M5 — Sync (complete) ·
+  **M6 — Release (in progress: step 27 done, step 28 the publish)**
   Branch: main
-- Last completed step: **step 26 — sync, end to end: the three-way diff, the plan, the pull and the push, the
+- Last completed step: **step 27 — the mobile and accessibility pass, at five viewports.** `docs/07` §Tier 4 grew
+  from eighteen assertions to twenty-three; the three suites the step names were written
+  (`tests/dom/a11y.test.ts`, `tests/dom/long-press.test.tsx`, `tests/dom/bulk-edit.test.ts`); the release
+  screenshots exist for the first time (`docs/images/`, six images, captured by `harness/shots.mjs`); and the
+  manual-test matrix is now a real section in `docs/manual-test-log.md` — **every row NOT RUN**, because not one
+  of those checks has ever been made on real hardware and a step that fills them in with guesses would be the
+  worst thing this repository could contain.
+
+  **Five product defects the step found, each with a regression guard.** They are listed first because they are
+  the point of the step: the deliverables above are the apparatus that found them.
+
+  1. **The status bar announced itself on every arrow key.** It was `role="status"`, which is an implicit
+     `aria-live="polite"` region around the line *"40 rows · 3 cells in 2 rows selected · 1 pending"* — so a
+     screen reader re-read that sentence on every selection change, i.e. the grid interrupted itself while being
+     navigated. It is a named group now (`role="group" aria-label="Grid status"`): readable on demand, silent
+     otherwise. The one polite announcement the product actually promises (`docs/04` §Accessibility) is
+     `a11y/roles.tsx`'s `LiveRegion`, which speaks only when something has been written to the vault.
+     Guard: `tests/dom/a11y.test.ts` (8 tests).
+  2. **A touch long-press painted no feedback on the way in.** `createLongPressSession.begin()` announces the
+     press synchronously, and the caller recorded the pressed element *after* calling it, so the first press of a
+     session set `data-touch-press` on nothing — the hold had no visual state for its first 500 ms and the menu
+     then appeared from a still cell. Fixed by recording the target before `begin` and making the paint null-safe;
+     the release sweep is **by query, not by reference**, because a windowed row can be re-rendered away under a
+     finger and would otherwise keep the attribute forever. Guards: `tests/dom/long-press.test.tsx` (9 tests) and
+     tier-4 #23.
+  3. **`grid.css` asked for `var(--tablify-danger)`, a token that has never existed.** There is no compile error
+     for that: CSS resolves the missing fallback to *nothing*, the declaration becomes invalid at computed-value
+     time, and the element silently inherits — so the large-paste caution in `PasteBlockDialog` (the sentence that
+     tells someone 400 rows are about to become 400 files) was rendering as ordinary body text. And nothing in the
+     repo could have noticed, which is the second half of the defect: `scripts/css-gate.ts` said *"every
+     --tablify-* token declared in tokens.css"* while checking only **declarations**. Rule 5 now checks that every
+     reference **resolves** — `var(--tablify-…)` in every stylesheet, and `'--tablify-…'` read by name in
+     `src/**/*.ts{,x}` — **329 references in 149 files against 103 declarations**, and the check was verified by
+     reintroducing the defect: `css-gate: FAILED  src/styles/grid.css:974  asks for --tablify-danger, which
+     src/styles/tokens.css never declares`.
+  4. **The `.base` sidecar was written and never read.** `BasesSource` has written `tablifyViewConfig` on every
+     view-options change since step 12; nothing read it back, so **switching panes or reopening the base dropped
+     column order, hidden columns, grouping and collapsed groups** — the exact clause step 27's checklist asks to
+     verify, which is how the gap surfaced. Fixed on the read side only: a total, never-throwing
+     `parseViewPatch` (`src/core/view/patch.ts`), `BasesSource.initialView()`, and one construction argument in
+     `TablifyView` (`view: this.source.initialView()`). The guard is the whole trip —
+     `tests/unit/bases-source.test.ts` writes the sidecar through a `setViewConfig` op, then builds a **fresh
+     source over that sidecar** and asserts the patch comes back identical; reverting the fix to `return {}` fails
+     exactly that one test. A hand-edited, half-written sidecar is a third case: an empty patch, and a grid that
+     still opens.
+
+  5. **The 24 px touch target on the drawn scrollbars did not exist.** The rule that stretches each bar's hit area
+     on a coarse pointer read `calc((var(--tablify-scrollbar) - 24px) / -2)` — which is `+6px` at a 12 px bar, not
+     `-6px`: the strip was *inset* into a 12 px box, so its height was `12 - 6 - 6 = 0` and every pixel outside the
+     bar belonged to whatever was underneath. Tier-4 assertion 21 measured it at 5 px outside the bar on a phone
+     fixture, which is the only place it can be measured (`@media (pointer: coarse)`). The fix is not just the
+     sign: a symmetric overhang would spend half its area *outside* the grid area, where `overflow: hidden` clips
+     it and where — above the horizontal bar — the **toolbar's** taps live. The strip now runs from the bar's own
+     edge 12 px **into the lane**, so the target is the bar plus 12 px of the header (or the right 12 px of the last
+     column) and is reachable rather than theoretical. The assertion grew a second half for exactly that: 5 px into
+     the lane hits the bar on a touch fixture, and 5 px *away* from it never does.
+
+  **Four harness defects, all of which had been silently weakening every assertion made before them.** (a) A
+  temporal-dead-zone crash: `mount()` reads bindings declared below it, so the page threw before it exposed
+  `window.__harness` — every Playwright test in the suite was failing at `waitForFunction`, with the real cause
+  visible only in `pageerror`. (b) `installDomHelpers()` installed `createDiv`/`createSpan`/`createEl`/`empty` but
+  not `setText`/`addClass`/`removeClass`/`toggleClass`, so **every dialog died on**
+  `TypeError: this.titleEl.setText is not a function` and `dialogText()` returned `""` — which is why assertions
+  #11 and #16 read as "the dialog shows nothing". (c) `Element.prototype.instanceOf` was absent from the DOM
+  shim, so the harness's own `MutationObserver` threw on every mutation batch: **`renderCounts()` returned zeros**,
+  i.e. every render-count assertion in the suite had been vacuous, and `dialogChoose` threw outright. All three are
+  fixed; `hasHarness true`, `errors []`, `renderCounts {commits: 3, cells: 0, rows: 0, layers: 2}` after
+  `setRows(5000)` + `scrollTo(0, 400)` — a windowed grid that commits three times for 5,000 rows and touches no
+  row or cell that is off screen. (d) The shim's `Modal` had no Escape. The host's real modal arrives with *"a focus
+  trap, Escape and a restore of their own"* (`src/grid/a11y/focusContract.ts`, and
+  `src/grid/dialogs/BulkEditDialog.ts` leans on it in a comment), so the stand-in was missing host behaviour the
+  product documents — and assertion 22 found it by hanging for **90 s**: it pressed Escape to dismiss the View
+  options dialog, then clicked the toolbar, and Playwright sat waiting for a click that a still-open
+  `.modal-container` was intercepting. The shim now closes the topmost modal on Escape, leaves an event a surface
+  has already handled (`defaultPrevented`) alone, and assertion 22 passes at all five viewports.
+
+  **Two spec expectations were wrong, and the product was right.** Assertion #11 asked for the dialog title
+  `Paste 400 × 6 block`, which no dialog ever renders — the counts live on the choices and the subtitle
+  (*"400 rows is above the large-import threshold (250)…"*, *"2,400 cell(s) updated"*, *"400 note(s) created"*),
+  and it now asserts those. #16 pasted at row 1 of a 6-row table, where the paste fits inside the table and the
+  append-as-notes dialog never opens; it now pastes at **row 4**, so 2 rows land and 3 become notes, and the
+  assertion is the dialog's own counts (`4 cell(s) updated · 3 note(s) created`) plus
+  `createdNotes() === 5` / `rows() === 11` after `Append as new rows`. #19 read `--tablify-input-fs` from
+  `documentElement`, where it is not declared — the semantic layer lives on `body` (`docs/04`'s rule that a
+  custom property's `var()` is substituted where it is declared, and that Obsidian's theme classes are on
+  `body`); read from the right element it is `'16px'`, which is the iOS no-zoom mechanism.
+
+  **The import finding, measured and profiled rather than guessed at.** Assertion #17's own 4 s budget for a
+  400 × 6 import measured **12,365 ms** … **15,032 ms**. A CDP sampling profile of the same run answers why:
+  **23.7 %** of samples in React's `jsx`, **9.9 %** in `ReactElement`, **12.5 %** garbage collection, **4.8 %** in
+  the store's `shallowEqual` — the cost is the grid **re-rendering once per created note**, ~35 ms per commit on
+  this container, for 400 notes. The runner's own share is small: `rowMs` (the store row plus its commit) is 974 ms
+  of those 15 s, and a scaling probe (1 → 5 → 25 → 50 → 100 → 200 notes) is linear at ~13–15 ms per note after the
+  first yielded chunk. Coalescing those renders is a structural change to the store's notification, which this
+  step's fence forbids; the assertion is now the **counts and the progress line exactly** (`created 400 of 400`,
+  the runner's summary and the store's row count) plus an `elapsed` ceiling of **60 s** as a regression guard
+  around a measured finding. Widening it to 4 s would have been a lie in the other direction; the finding is
+  recorded here and in `docs/manual-test-log.md`.
+
+  **Tier 4, at five viewports (23 assertions × 5 = 115 runs):** new assertions 19–23 — dialog controls ≥ 16 px with
+  `--tablify-input-fs: 16px` read from `body`; toolbar/status padding at least `--tablify-sp-3`/`--tablify-sp-1`
+  **and** `env(safe-area-inset-*)` declared; the custom scrollbars ≥ 12 px with a real `elementFromPoint` hit test
+  on a touch fixture; the freeze choice present **iff** `paneWidth ≥ 600` with no `/freeze|pin/` menu title
+  anywhere (P21's pinning rule and the step-18 decision that the freeze mechanism does not exist on a phone); and
+  the touch long press (`duringHold 'on'`, **0** menus during the hold, 1 after the lift, cell menu carries
+  `Clear cells`, while a mouse press or a header press opens nothing). The stylesheet work behind them: keyboard
+  inset on the view's own host (`--tablify-keyboard-inset`, one variable, never the document height), 44 px tap
+  tokens on the row axis, 12 px scrollbar tokens with a 24 px touch strip, `data-touch-press` feedback, safe-area
+  padding, and 16 px minimum type on every dialog control.
+
+  **`docs/images/`, six screenshots, and the mistake that produced the capture script's guard.** They are rendered
+  from the **harness page** (the only place this plugin can be drawn outside Obsidian), by `harness/shots.mjs`:
+  `desktop-light`, `desktop-dark`, `phone-389` (390 px host, 389 px pane, nothing pinned), `tablet-light`, and two
+  real dialogs — `conflict-review` and `import-preview` — over `?shot=` fixtures in the mount. The first run wrote
+  **three byte-identical PNGs** (identical md5, 162,292 bytes) because the dialogs are Obsidian `Modal`s: they
+  mount into `<body>`, outside `.harness-frame`, so the "screenshot" was of the grid behind them and the grid did
+  not change. The script now photographs `.modal-container` for those two, waits for a string only the real
+  surface renders (`Review changes`, `Import`), and throws on an empty `.modal-content` rather than writing a PNG
+  — because that is a failure a screenshot cannot show you. `harness/obsidian-stub.css` gained the modal chrome,
+  which is host CSS (`.modal-container > .modal > .modal-title + .modal-content` and the dim backdrop), never a
+  `--tablify-*` token; and `docs/images/desktop-light.png` is **byte-identical** before and after that addition
+  (md5 `7ea9cba…`), so the grid pictures did not move.
+
+- **The gate, at the end of step 27.** `bun run check` green end to end: **1489 tests in 59 files** (+43 tests and
+  +5 files over step 26 — `a11y` 8, `long-press` 9, `bulk-edit` 4, `keyboard-inset` 6, `view-patch` 12, and three
+  added to `bases-source`); eslint **0 errors / 0 warnings**; typecheck clean; prettier clean; brand-gate 197/0;
+  manifest OK; contrast **32/32** (light and dark gated, the three host-mode shortfalls reported as the fixture
+  theme's own); css-gate clean with the new rule 5 (**327 references in 150 files against 103 declarations, 0
+  unresolved**); `main.js` **463,794 bytes / 144,480 gzip** (+4,404 raw / +1,532 gzip over step 26, both far under
+  the limits); `styles.css` 25,056 bytes. And the layout suite: **`115 passed (4.0m)`** — every one of the
+  twenty-three assertions at all five viewports, on the first run after the last fix, with no retries.
+
+- Files touched in **step 27**: new — `src/grid/pointer/longPress.ts`, `src/grid/keyboardInset.ts`,
+  `src/core/view/patch.ts`, `tests/dom/{a11y,long-press,bulk-edit}.test.*`, `tests/dom/keyboard-inset.test.ts`,
+  `tests/unit/view-patch.test.ts`, `harness/shots.mjs`, `docs/images/*.png` (six); changed —
+  `src/grid/GridView.tsx` (the long-press branch and the press paint, the inset writer, the a11y props),
+  `src/grid/pointer/dragSession.ts` (an 8 px threshold on touch/pen),
+  `src/grid/StatusBar.tsx`, `src/styles/{grid,tokens}.css`, `src/adapters/bases/BasesSource.ts` (`initialView`),
+  `src/plugin/TablifyView.ts` (the keyboard inset, and the sidecar patch into the store), `styles.css` (the built
+  stylesheet), `scripts/css-gate.ts` (rule 5), `harness/{mount.tsx,obsidian-runtime.ts,obsidian-stub.css}`,
+  `tests/dom/menus.test.tsx`, `tests/unit/bases-source.test.ts`, `tests/layout/tier4.spec.ts` (assertions 19–23),
+  `docs/manual-test-log.md`, `PROGRESS.md`. Nothing in `src/core/**` outside the new `view/patch.ts`, and nothing
+  in the grid's command, menu or dialog inventories.
+
+- Next step: `prompts/step-28-publish.md` — the release itself: the version and the tag, the three release assets
+  (`main.js`, `manifest.json`, `styles.css` — `main.js` is gitignored and attached to the release, never committed),
+  the README with these screenshots and the licence/NOTICE pair, and the submission checklist from
+  `docs/09-publishing.md` (community.obsidian.md, an automated review, the forum and Discord announcements). Its
+  STOP clauses are the two this build cannot answer for the user: the repository and plugin name are theirs, and a
+  release cannot be unpublished.
+
+- Four things this step deliberately leaves for a person, none of them buried:
+  1. **The per-note re-render during an import** (the profile above). Fixing it means coalescing the store's
+     notification during a run — a change to how *every* write repaints, in a step whose fence is the mobile and
+     accessibility pass. `docs/07` documents no import budget, so nothing is being breached; the ceiling in tier-4
+     #17 is a regression guard, and the decision is the human's.
+  2. **`density` and `frozenPrimary` are not persisted at all.** They belong to the view's *presentation*, are not
+     members of `ViewPatch`, and live in `TablifyView`'s own field — so the sidecar round trip fixed above recovers
+     column order, hidden columns, grouping and collapsed groups, while a row-height or freeze choice is lost on
+     remount. Adding them means either extending `ViewPatch` (and its ops, undo and inverse) or a second sidecar
+     key; both are decisions rather than fixes.
+  3. **The one line that wires the sidecar into the store** (`view: this.source.initialView()`) is guarded by
+     reading, not by a test that constructs a `TablifyView`: the house double's `BasesView` has no constructor
+     taking a `QueryController`, and widening a shared double to reach one construction argument is the kind of
+     change that breaks other suites. Recorded here as the seam it is.
+  4. **Every `docs/manual-test-log.md` row is NOT RUN**, and the six screenshots are harness renders, not Obsidian
+     windows. Both are stated in the files themselves.
+  5. **CI has never run the layout suite to completion.** Checked while step 27 was being verified, on the tip
+     commit: run `37447818892` (`e5c62df`) has every gate step **green** — `bun install`, typecheck, lint,
+     format:check, test, build, contrast, css:gate, size — and then sits in *"Layout suite"* with no conclusion;
+     the four runs before it are `completed / cancelled`, because `concurrency: cancel-in-progress` cancels the run
+     a push supersedes and this suite outlives the gap between pushes. So the local gate has been the only
+     thing verifying the layout, which is exactly backwards from the intent. **Measured clean run on this
+     container: `115 passed (4.0m)`** — one worker, no failures, no retries (the runs before it were slow for two
+     unrelated reasons: two 90-second Playwright timeouts waiting on the defects listed above, and the gate
+     running concurrently on the same CPU). Four minutes cannot explain a hundred minutes of *in_progress* on the
+     CI runner, so the recommendation is no longer "shard it" but "**give the step a `timeout-minutes`**": a
+     layout stage that cannot finish must fail loudly rather than hold a workflow open, and only then is the
+     useful question — shard, or fewer projects — worth answering. The stale step name (*"thirteen assertions"*)
+     was corrected to twenty-three in the same pass, because a label that lies is worse than no label.
+
+- Before that: **step 26 — sync, end to end: the three-way diff, the plan, the pull and the push, the
   conflict review, and the wiring that keeps all of it off the startup path.** The rule the step exists for is one
   sentence of `docs/08` §P9 — *ask before overwriting, never silent* — and it is enforced in three places rather
   than asserted: the diff type has **no undecided member** for a choice, `applyPull` **refuses** a plan with an

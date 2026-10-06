@@ -241,10 +241,19 @@
 
 /* ── editors ────────────────────────────────────────────────────────────────
    16 px is the rule, not a preference: an input below it makes iOS zoom the
-   whole viewport on focus (docs/04 §Keyboard). */
-.tablify-root input,
-.tablify-root textarea,
-.tablify-root select {
+   whole viewport on focus (docs/04 §Keyboard).
+
+   The selector is deliberately **not** scoped to `.tablify-root`: step 27's
+   matrix found two surfaces outside it with a text field — the dialogs the
+   import wizard and the export runner open, and the sync panel's token field —
+   and a rule that only covers the grid is a rule with a hole in it. Every text
+   entry this plugin renders is inside `[class*="tablify-"]`, so that is the
+   scope, and `tests/unit/css-contract.test.ts` asserts that no later rule
+   lowers the floor back down — that is `tests/layout/tier4.spec.ts` assertion 6, measured in a browser
+   on the real surfaces (the grid at rest, an open editor, and a dialog's own controls). */
+[class*='tablify-'] input:not([type='checkbox']):not([type='radio']):not([type='range']),
+[class*='tablify-'] textarea,
+[class*='tablify-'] select {
 	font-family: inherit;
 	font-size: var(--tablify-input-fs);
 	color: var(--tablify-text);
@@ -889,4 +898,198 @@
 	background: var(--tablify-accent);
 	color: var(--tablify-accent-text);
 	border-color: transparent;
+}
+
+/* ── the touch layer (step 27) ───────────────────────────────────────────────
+   Three rules, and each one is a measurement from the device matrix rather
+   than a preference.
+
+   1. **The long press paints.** `docs/04` §Touch: "Long-press (≈500 ms) with
+      visual feedback before opening". The gesture writes one attribute
+      (`src/grid/pointer/longPress.ts`) and this is what it draws: a wash and a
+      border, no transform, so the feedback cannot move the row under the
+      finger and cancel its own press by moving the geometry.
+   2. **The drawn scrollbars are 12 px wide but a finger needs more.** The bar
+      element is stretched on a coarse pointer with a `::after` hit area rather
+      than a wider bar — the *visual* thumb stays 12 px (widening it would eat a
+      column of content on the phone, which is the whole point of P21), while
+      the target becomes 24 px, which is what the harness measures.
+   3. **Nothing in a dialog is smaller than a tap.** The dialog buttons were
+      already `--tablify-tap` tall; the choice buttons inside them are not
+      (`--tablify-dlg-btn` is a footer rule), so the rule that a finger can hit a
+      dialog control lands here. */
+[data-touch-press='on'] {
+	background: var(--tablify-accent-subtle);
+	box-shadow: inset 0 0 0 1px var(--tablify-accent);
+}
+@media (pointer: coarse) {
+	.tablify-hbar::after,
+	.tablify-vbar::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+	}
+	/*
+	 * **The strip reaches inward, never out of the lane** — and both halves of that are fixes, not taste.
+	 *
+	 * The first version of this rule read `calc((var(--tablify-scrollbar) - 24px) / -2)`, which is `+6px` at a
+	 * 12 px bar: the strip was inset *into* a 12 px box, so its height was `12 - 6 - 6 = 0`. The 24 px target this
+	 * comment has always claimed did not exist; the bar was 12 px and the area around it belonged to whatever was
+	 * underneath. Tier-4 assertion 21 measured exactly that, on a phone fixture, at 5 px outside the bar.
+	 *
+	 * The second half is which way to widen. A symmetric `-6px` overhang spends half its area *outside* the grid
+	 * area, where `.tablify-grid-area`'s `overflow: hidden` clips it — and above the horizontal bar that space
+	 * belongs to the toolbar, whose taps must not be eaten by a scrollbar. So the strip runs from the bar's far
+	 * edge **12 px into the lane**: a finger gets the bar plus 12 px of the header (or, for the vertical bar, the
+	 * right 12 px of the last column's cells) and the documented 24 px becomes reachable rather than theoretical.
+	 */
+	.tablify-hbar::after {
+		top: 0;
+		bottom: calc(var(--tablify-scrollbar) - 24px);
+	}
+	.tablify-vbar::after {
+		left: calc(var(--tablify-scrollbar) - 24px);
+		right: 0;
+	}
+	.tablify-dlg-btn,
+	.tablify-lg-choice,
+	.tablify-dlg-switch {
+		min-width: var(--tablify-tap);
+		min-height: var(--tablify-tap);
+	}
+}
+
+/* ── the sync surfaces (step 27) ─────────────────────────────────────────────
+   The classes `SyncPanel.ts` and `ConflictReview.ts` render: a mapping table,
+   the per-field pair of choice buttons, the group headings and the four
+   sentence kinds. Written here rather than in the components because this
+   project keeps every declaration in `src/styles/` (the css gate asserts it),
+   and reached for the first time in the matrix — a sync panel with unstyled
+   rows is a panel nobody can read, which is exactly what the manual pass found. */
+.tablify-dlg-body {
+	display: flex;
+	flex-direction: column;
+	gap: var(--tablify-sp-2);
+	margin-bottom: var(--tablify-sp-3);
+}
+.tablify-dlg-fact,
+.tablify-dlg-count,
+.tablify-dlg-warning,
+.tablify-dlg-hint {
+	font-size: var(--tablify-fs-m);
+	line-height: 1.5;
+	color: var(--tablify-text-muted);
+}
+.tablify-dlg-count {
+	color: var(--tablify-text);
+	font-variant-numeric: var(--tablify-nums);
+}
+.tablify-dlg-warning {
+	color: var(--tablify-warning);
+}
+.tablify-sync-map {
+	display: flex;
+	flex-direction: column;
+	border: 1px solid var(--tablify-line);
+	border-radius: var(--tablify-radius-s);
+	overflow: hidden;
+}
+.tablify-sync-map-row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+	gap: var(--tablify-sp-2);
+	align-items: baseline;
+	padding: var(--tablify-sp-1) var(--tablify-sp-3);
+	border-bottom: 1px solid var(--tablify-line);
+	font-size: var(--tablify-fs-m);
+}
+.tablify-sync-map-row:last-child {
+	border-bottom: none;
+}
+.tablify-sync-map-remote,
+.tablify-sync-map-note {
+	color: var(--tablify-text-muted);
+	font-family: var(--tablify-font-mono);
+	font-size: var(--tablify-fs-xs);
+}
+.tablify-lg-field {
+	display: flex;
+	align-items: center;
+	gap: var(--tablify-sp-2);
+	flex-wrap: wrap;
+}
+.tablify-lg-input {
+	flex: 1 1 18ch;
+	min-width: 0;
+	min-height: var(--tablify-tap);
+	padding: 0 var(--tablify-sp-2);
+}
+.tablify-dlg-group-q {
+	font-size: var(--tablify-fs-m);
+}
+.tablify-conflict-group {
+	border: 1px solid var(--tablify-line);
+	border-radius: var(--tablify-radius-s);
+	margin-bottom: var(--tablify-sp-2);
+	overflow: hidden;
+}
+.tablify-conflict-head {
+	padding: var(--tablify-sp-1) var(--tablify-sp-3);
+	background: var(--tablify-surface-sunken);
+	border-bottom: 1px solid var(--tablify-line);
+	font-size: var(--tablify-fs-xs);
+	color: var(--tablify-text-muted);
+}
+.tablify-conflict-row {
+	padding: var(--tablify-sp-2) var(--tablify-sp-3);
+	border-bottom: 1px solid var(--tablify-line);
+}
+.tablify-conflict-row:last-child {
+	border-bottom: none;
+}
+.tablify-conflict-prop {
+	font-size: var(--tablify-fs-m);
+	margin-bottom: var(--tablify-sp-1);
+}
+.tablify-conflict-pair {
+	display: flex;
+	gap: var(--tablify-sp-2);
+	flex-wrap: wrap;
+}
+.tablify-lg-choice {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 2px;
+	flex: 1 1 14ch;
+	min-height: var(--tablify-tap);
+	padding: var(--tablify-sp-1) var(--tablify-sp-2);
+	text-align: left;
+	cursor: pointer;
+}
+.tablify-lg-choice.is-picked {
+	background: var(--tablify-accent-subtle);
+	border-color: var(--tablify-accent);
+}
+.tablify-dlg-choice-name {
+	font-size: var(--tablify-fs-xs);
+	color: var(--tablify-text-muted);
+}
+.tablify-dlg-choice-desc {
+	font-size: var(--tablify-fs-m);
+	line-height: 1.4;
+}
+.tablify-conflict-raw {
+	margin-top: var(--tablify-sp-1);
+	font-family: var(--tablify-font-mono);
+	font-size: var(--tablify-fs-xs);
+	color: var(--tablify-text-muted);
+}
+.tablify-lg-bulk {
+	display: flex;
+	gap: var(--tablify-sp-2);
+	margin-right: auto;
+}
+.tablify-conflict-pair .tablify-lg-choice {
+	overflow-wrap: anywhere;
 }

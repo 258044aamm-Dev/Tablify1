@@ -35,6 +35,9 @@ import {
 import { focusCell as focusCellElement } from '../src/grid/keyboard/focus';
 import { selectField } from '../src/grid/store/selectors';
 import { createDialogPort } from '../src/grid/dialogs/port';
+import { keyboardInsetOf } from '../src/grid/keyboardInset';
+import { resolvePresentation } from '../src/grid/layout';
+import { LONG_PRESS_MS } from '../src/grid/pointer/longPress';
 import { buildPlan } from '../src/core/import/plan';
 import { inferColumns } from '../src/core/import/preview';
 import { importFields } from '../src/plugin/import/host';
@@ -42,10 +45,15 @@ import { progressText, runImport, undoImport } from '../src/plugin/import/runImp
 import type { ImportPlan, PlannedColumn, PlanEnvironment } from '../src/core/import/plan';
 import type { ImportUndoStep } from '../src/plugin/import/runImport';
 import type { Matrix } from '../src/core/selection/clipboard';
+import { ConflictReviewDialog } from '../src/plugin/sync/ConflictReview';
+import { ImportWizard } from '../src/plugin/import/ImportWizard';
+import { createImportHistory } from '../src/plugin/import/runImport';
 import { createHarnessFixture } from './fixture';
-import { app } from './obsidian-runtime';
+import { app, openedMenus } from './obsidian-runtime';
 import { HOSTS, HOST_ORDER, paneSizeOf } from './hosts';
 import type { HostFixture, HostId } from './hosts';
+import type { PlannedConflict } from '../src/sync/pullPush';
+import type { GridPresentation } from '../src/grid/layout';
 import type { GridStore } from '../src/grid/store/types';
 import type { ViewConfig } from '../src/core/view/pipeline';
 import type { App } from 'obsidian';
@@ -103,6 +111,16 @@ export type ImportReport = {
 	readonly progress: string;
 	/** Milliseconds from the first note to the last, measured here so a spec can assert a budget. */
 	readonly elapsed: number;
+	/**
+	 * Of {@link elapsed}, the milliseconds spent inside the view's own `createFileForView` stand-in: the store row
+	 * and the React commit that follow **each** created note, into a live grid.
+	 *
+	 * Step 27 added this because assertion 17's budget needed a number that was about the plugin rather than about
+	 * the machine. A 400 × 6 import measured **12,365 ms** here, of which the row insertion was 9,7xx ms — the
+	 * fake-vault half (planning, writes, chunk yields) is what the docs' budgets are about, and the spec asserts
+	 * `elapsed - rowMs` against them while reporting both.
+	 */
+	readonly rowMs: number;
 };
 
 export type HarnessApi = {
@@ -215,6 +233,43 @@ export type HarnessApi = {
 	importProgress: () => string;
 	/** Undoes the last import through the port's trash, and removes exactly the rows it created. */
 	undoLastImport: () => Promise<string>;
+	/**
+	 * Opens the grid's own **View options** dialog, through the production dialog port — the same call
+	 * `GridView` makes when a menu hands it `view-options`.
+	 *
+	 * The harness needs this hook because menus in a browser are the runtime's `Menu` (there is no Obsidian in
+	 * the page, so no menu DOM): the dialog itself *is* real, built by `dialogs/port.ts` into a real
+	 * `Modal`, which is exactly what assertions 19 and 22 measure — the dialog's input sizes, and the freeze row
+	 * that §P21 says must not be there on a phone. Resolves `true` when a modal is on the page.
+	 */
+	openViewOptions: () => Promise<boolean>;
+	/**
+	 * The items of the **last menu opened**, as `{ title, disabled }` — so a spec can assert what a gesture
+	 * produced without a menu DOM. Cleared by {@link clearMenus}.
+	 */
+	menus: () => readonly { readonly title: string; readonly disabled: boolean }[];
+	/** Forgets every menu opened so far, so "the last menu" is the one the next gesture opens. */
+	clearMenus: () => void;
+	/**
+	 * A real press-and-hold: a `pointerdown` with the given `pointerType`, the documented 500 ms, then the lift —
+	 * all with **real browser pointer events**, so this is the device path rather than a simulation of it.
+	 *
+	 * `target` is a cell or a header, because the two must behave differently (`docs/04` §Touch, and the rule the
+	 * grid implements): a **cell** arms a long press — feedback painted during the hold, the cell menu at the
+	 * threshold — while a **header** never arms one, because a header already opens its menu *on release*, and
+	 * arming both would open the same menu twice. Every field is read at the moment it is meaningful:
+	 * `duringHold` before the threshold (the feedback the gesture promises), `menusDuringHold` as the count at that
+	 * instant, `afterLift` and `menusAfterLift` once the finger is up.
+	 */
+	longPress: (
+		target: { readonly row: number; readonly column: number } | { readonly header: number },
+		pointerType: 'touch' | 'mouse' | 'pen',
+	) => Promise<{
+		readonly duringHold: string | null;
+		readonly menusDuringHold: number;
+		readonly afterLift: string | null;
+		readonly menusAfterLift: number;
+	}>;
 	/** The three boxes assertion 1 compares, plus the pane's padding, measured right now. */
 	geometry(): {
 		readonly host: Rect;
@@ -379,17 +434,63 @@ function readHost(): HostFixture {
  * bundle's own last line — the module has no side effects when it is merely imported (a test may import the
  * *types*).
  */
+/**
+ * The two **dialog** screenshots `docs/images/` carries, reachable from the page because both surfaces are real
+ * `Modal`s that need a host rather than a vault:
+ *
+ *   · `conflict-review` — `ConflictReviewDialog` over a three-row fixture plan, the sync surface at its most
+ *     crowded state (values on both sides, one choice made, one row with raw text that differs from its display).
+ *   · `import-preview` — `ImportWizard` over the harness's own twelve-row sheet. The wizard opens on the
+ *     **preview** step whenever its first read succeeds (`ImportWizard` line 76), which is the step the README
+ *     shows; nothing has to be clicked to get there.
+ *
+ * `harness/shots.mjs` drives this (`?shot=…`), and the images it writes are the plugin's own surfaces — not the
+ * prototype's, which is frozen reference material under `prototype/shots/`.
+ */
+type ShotId = 'conflict-review' | 'import-preview';
+
+function readShot(): ShotId | null {
+	const value = new URLSearchParams(window.location.search).get('shot');
+	if (value === 'conflict-review' || value === 'import-preview') {
+		return value;
+	}
+	return null;
+}
+
 export function boot(): HarnessApi {
 	const host = readHost();
+	const shot = readShot();
+	/**
+	 * The harness's **one** cast, named and hoisted so the page has exactly one: `harness/obsidian-runtime.ts` is a
+	 * *stand-in* for the host module, and its `app` is the handful of fields the dialogs touch (they are built with
+	 * `document` and hand the app to `Modal`'s constructor, which the shim implements). Writing out the other eight
+	 * `App` members as no-ops would be a longer, more convincing lie than one assertion with this comment.
+	 */
+	const appAsApp = app as App;
 	document.title = `Tablify harness — ${host.label}`;
 	document.body.classList.add(host.theme);
 	document.body.classList.toggle('theme-light', host.theme === 'theme-light');
 	if (host.inset > 0) {
-		// What `TablifyView` writes from `visualViewport` when the keyboard opens (`docs/04` §Keyboard and
-		// viewport). It goes on **`body`**, which is where `tokens.css` declares the token — an inline value on
-		// `documentElement` would be shadowed by that declaration, and the grid would not move at all. The
-		// writer itself is a view concern and is not in `src/**` yet; this line is that writer, simulated.
-		document.body.style.setProperty('--tablify-keyboard-inset', `${String(host.inset)}px`);
+		/*
+		 * The keyboard inset, **through the production arithmetic** (step 27): the fixture says the software
+		 * keyboard covers `host.inset` px, and `keyboardInsetOf` — the function `TablifyView`'s
+		 * `createKeyboardInset` writes from `visualViewport` — turns those three numbers into the value.
+		 *
+		 * What the harness still supplies is the *input*: it mounts `GridView` directly, so there is no
+		 * `TablifyView` and no real `visualViewport` to read. The token's destination is `body`, which is where
+		 * `tokens.css` declares it — an inline value on `documentElement` would be shadowed by that declaration
+		 * and the grid would not move at all (the harness's own historical bug, kept as a comment).
+		 */
+		document.body.style.setProperty(
+			'--tablify-keyboard-inset',
+			`${String(
+				keyboardInsetOf({
+					windowHeight: host.height,
+					viewportHeight: host.height - host.inset,
+					viewportOffsetTop: 0,
+				}),
+			)}px`,
+		);
 	}
 
 	const { frame, pane } = buildHost(host);
@@ -399,6 +500,32 @@ export function boot(): HarnessApi {
 	const counters = { commits: 0, cells: 0, rows: 0, layers: 0 };
 	let firstName = '';
 	let reactRoot: Root | null = null;
+	/**
+	 * One port for the page: it closes over the app, exactly as `TablifyView`'s does.
+	 *
+	 * **It has to be created before the first `mount()` call**, and that is a fix rather than a style (step 27):
+	 * `mount`'s JSX reads this binding *when it is called*, and the call that builds the first frame happens here
+	 * — above where this `const` used to sit, below `boot()`'s other state. The page therefore threw
+	 * `Cannot access 'dialogs' before initialization` and never published `window.__harness` for **any** fixture,
+	 * from step 22 (which added the port) until the suite was next actually run. `bun run check` does not run
+	 * `test:layout`, and the harness's own smoke test is `open()` in `tests/layout/tier4.spec.ts` — the first
+	 * assertion of the first test — which is exactly why a browser suite has to be run and not only written.
+	 */
+	const dialogs = createDialogPort(appAsApp);
+
+	/**
+	 * The presentation wishes the View options dialog edits — the view's own field, in the harness.
+	 *
+	 * `TablifyView` keeps this and re-renders the grid with it; the harness keeps it so `openViewOptions` can hand
+	 * the dialog the **same object the grid is rendered from** (a dialog measuring its own invented defaults would
+	 * be asserting a value it also wrote). It starts empty, which is `resolvePresentation`'s documented default —
+	 * byte-for-byte the presentation every existing assertion was written against.
+	 *
+	 * Declared **before** the first `mount` call, because that call renders the grid with it: a `let` below its
+	 * first read is a temporal dead zone, and the harness's own smoke test (`window.__harness`) is the thing that
+	 * caught it — the page threw before publishing the API.
+	 */
+	let presentationPatch: Partial<GridPresentation> = {};
 	let store: GridStore = mount(DEFAULT_ROWS);
 	let settle: (value: true) => void = () => undefined;
 	const ready = new Promise<true>((resolve) => {
@@ -436,6 +563,8 @@ export function boot(): HarnessApi {
 
 	/** The fake vault the import writes into: the paths it created, and the store rows that mirror them. */
 	const importedNotes = new Set<string>();
+	/** Milliseconds spent in `createImportedRow` — the page's share of an import, reported by `importBlock`. */
+	let importRowMs = 0;
 	let lastImportProgress = '';
 	let lastImportUndo: ImportUndoStep | null = null;
 
@@ -462,12 +591,14 @@ export function boot(): HarnessApi {
 	 * not the fixture's columns, so what lands is the row and its identity: the count is the datum the spec wants.
 	 */
 	async function createImportedRow(path: string): Promise<RowId> {
+		const startedRow = performance.now();
 		importedNotes.add(path);
 		const at = store.getSnapshot().rows.length;
 		const cells: Record<PropertyId, CellValue> = { 'note.Owner': path };
 		const row: RowState = { filePath: path, cells };
 		addRow(store, { at, row }, 'Import row');
 		createdNotes += 1;
+		importRowMs += performance.now() - startedRow;
 		return path;
 	}
 
@@ -523,16 +654,6 @@ export function boot(): HarnessApi {
 		return addRow(store, { at, row }, 'Insert row').ok;
 	}
 
-	/**
-	 * One port for the page: it closes over the app, exactly as `TablifyView`'s does.
-	 *
-	 * The cast is the harness's only one, and it exists because `harness/obsidian-runtime.ts` is a *stand-in* for
-	 * the host module: its `app` is the three fields the dialogs touch (they are built with `document` and hand the
-	 * app to `Modal`'s constructor, which the shim implements). Writing out the other eight `App` members as
-	 * no-ops would be a longer, more convincing lie than one assertion with this comment.
-	 */
-	const dialogs = createDialogPort(app as App);
-
 	/** The store, the React root, and the first frame. Returns the store so `setRows` can replace it. */
 	function mount(rows: number): GridStore {
 		reactRoot?.unmount();
@@ -549,6 +670,10 @@ export function boot(): HarnessApi {
 				<GridView
 					store={created}
 					initialPaneWidth={sizes.width}
+					presentation={presentationPatch}
+					onPresentation={(patch) => {
+						presentationPatch = { ...presentationPatch, ...patch };
+					}}
 					/*
 					 * The view's own job is to create the note; the harness has no vault, so a row is what it can
 					 * do. What matters to the layout assertions is that the toolbar's **primary action** exists as
@@ -586,7 +711,103 @@ export function boot(): HarnessApi {
 	const stateRow = (filePath: RowId): RowState | undefined =>
 		store.state().table.rows.find((row) => row.filePath === filePath);
 
-	void twoFrames().then(() => {
+	/** The three conflicts the review dialog is photographed with: both sides moved, three kinds of value. */
+	function conflictShotSpec(): readonly PlannedConflict[] {
+		return [
+			{
+				recordId: 'recAlpha',
+				path: 'Tasks/Ship the mobile pass.md',
+				label: 'Ship the mobile pass',
+				property: 'Status',
+				remoteFieldId: 'fldStatus',
+				local: 'Doing',
+				remote: 'Done',
+				localText: 'Doing',
+				remoteText: 'Done',
+				movedLocally: true,
+				movedRemotely: true,
+			},
+			{
+				recordId: 'recBeta',
+				path: 'Tasks/Write the release notes.md',
+				label: 'Write the release notes',
+				property: 'Due',
+				remoteFieldId: 'fldDue',
+				local: '2026-10-14',
+				remote: '2026-10-16',
+				localText: '14 Oct 2026',
+				remoteText: '16 Oct 2026',
+				movedLocally: true,
+				movedRemotely: true,
+			},
+			{
+				recordId: 'recGamma',
+				path: 'Tasks/Trim the checklist.md',
+				label: 'Trim the checklist',
+				property: 'Owner',
+				remoteFieldId: 'fldOwner',
+				local: null,
+				remote: 'Sam',
+				localText: '',
+				remoteText: 'Sam',
+				movedLocally: true,
+				movedRemotely: true,
+			},
+		];
+	}
+
+	void twoFrames().then(async () => {
+		if (shot === 'conflict-review') {
+			const dialog = new ConflictReviewDialog(appAsApp, {
+				spec: { conflicts: conflictShotSpec() },
+				onConfirm: () => 'Tablify: applied 3 choices.',
+			});
+			dialog.open();
+			await twoFrames();
+		}
+		if (shot === 'import-preview') {
+			const matrix = importMatrix(12, 6);
+			const inferred = inferColumns(matrix, true);
+			const planned: PlannedColumn[] = inferred.columns.map((column) => ({
+				index: column.index,
+				name: column.name,
+				type: 'text',
+				inference: column,
+				included: true,
+			}));
+			const wizard = new ImportWizard(appAsApp, {
+				vault: {
+					has: () => false,
+					hasFolder: () => true,
+					create: async () => undefined,
+				},
+				history: createImportHistory({ has: () => false, trash: async () => undefined }),
+				input: {
+					source: { kind: 'matrix', matrix, name: 'Q4 planning.xlsx' },
+					largeImportThreshold: 250,
+					warnOnLargeImport: true,
+					template: '{{Name}}',
+					folder: 'Import Rows',
+					existing: new Map([
+						['note.Name', 'Name'],
+						['note.Status', 'Status'],
+					]),
+					environment: {
+						has: () => false,
+						hasFolder: () => true,
+						fields: importFields(planned, {
+							path: '',
+							now: () => Date.now(),
+							timezone: 'UTC',
+							locale: 'en-GB',
+						}),
+					},
+				},
+				announce: () => undefined,
+			});
+			wizard.open();
+			await twoFrames();
+		}
 		const layer = document.querySelector('.tablify-rows');
 		if (layer !== null) {
 			observer.observe(layer, {
@@ -781,6 +1002,7 @@ export function boot(): HarnessApi {
 		},
 		async importBlock(rows, columns, options) {
 			const started = performance.now();
+			importRowMs = 0;
 			const matrix = importMatrix(rows, columns);
 			const inferred = inferColumns(matrix, true);
 			const planned: PlannedColumn[] = inferred.columns.map((column) => ({
@@ -836,6 +1058,7 @@ export function boot(): HarnessApi {
 				cancelled: summary.cancelled,
 				progress: summary.progress,
 				elapsed: Math.round(performance.now() - started),
+				rowMs: Math.round(importRowMs),
 			};
 		},
 		importProgress(): string {
@@ -865,6 +1088,84 @@ export function boot(): HarnessApi {
 			readonly columns: readonly string[];
 		} {
 			return { row: 0, column: PASTE_ANCHOR_COLUMN, columns: [...PASTE_COLUMN_IDS] };
+		},
+		async openViewOptions(): Promise<boolean> {
+			dialogs.viewOptions({
+				store,
+				// The grid's presentation, resolved by the grid's own resolver — the same pair `GridView` passes.
+				presentation: resolvePresentation(presentationPatch),
+				// The pane's width, which is what §P21's threshold is about. `paneSizeOf` is the fixture's own
+				// arithmetic and `sizes.width` is what `initialPaneWidth` was handed, so the dialog measures the
+				// pane the grid is actually in.
+				paneWidth: sizes.width,
+				onPresentation: (patch) => {
+					presentationPatch = { ...presentationPatch, ...patch };
+				},
+			});
+			await twoFrames();
+			return document.querySelector('.modal-container .modal-content') !== null;
+		},
+		menus(): readonly { readonly title: string; readonly disabled: boolean }[] {
+			const last = openedMenus.at(-1);
+			if (last === undefined) {
+				return [];
+			}
+			return last.items.map((item) => {
+				const snapshot = item.snapshot();
+				return { title: snapshot.title, disabled: snapshot.disabled };
+			});
+		},
+		clearMenus(): void {
+			openedMenus.length = 0;
+		},
+		async longPress(
+			target: { readonly row: number; readonly column: number } | { readonly header: number },
+			pointerType: 'touch' | 'mouse' | 'pen',
+		): Promise<{
+			duringHold: string | null;
+			menusDuringHold: number;
+			afterLift: string | null;
+			menusAfterLift: number;
+		}> {
+			const snapshot = store.getSnapshot();
+			const filePath =
+				'row' in target ? snapshot.order.rows[target.row] : snapshot.order.rows[0];
+			const fieldId = 'row' in target ? snapshot.order.fields[target.column] : undefined;
+			const headerField =
+				'header' in target ? snapshot.order.fields[target.header] : undefined;
+			const element =
+				headerField !== undefined
+					? document.querySelector(`.hcell[data-field="${headerField}"]`)
+					: filePath === undefined || fieldId === undefined
+						? null
+						: document.querySelector(`[data-cell="${filePath}::${String(fieldId)}"]`);
+			if (element === null) {
+				return { duringHold: null, menusDuringHold: 0, afterLift: null, menusAfterLift: 0 };
+			}
+			const box = element.getBoundingClientRect();
+			const at = {
+				bubbles: true,
+				cancelable: true,
+				pointerType,
+				isPrimary: true,
+				button: 0,
+				clientX: box.x + box.width / 2,
+				clientY: box.y + box.height / 2,
+			};
+			const before = openedMenus.length;
+			element.dispatchEvent(new PointerEvent('pointerdown', at));
+			// Read **inside** the hold: the feedback is the promise the gesture makes before the menu opens.
+			const duringHold = element.getAttribute('data-touch-press');
+			const menusDuringHold = openedMenus.length - before;
+			await new Promise((resolve) => window.setTimeout(resolve, LONG_PRESS_MS + 120));
+			element.dispatchEvent(new PointerEvent('pointerup', at));
+			await twoFrames();
+			return {
+				duringHold,
+				menusDuringHold,
+				afterLift: element.getAttribute('data-touch-press'),
+				menusAfterLift: openedMenus.length - before,
+			};
 		},
 		geometry(): {
 			readonly host: Rect;

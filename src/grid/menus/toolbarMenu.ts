@@ -38,7 +38,7 @@ export type ToolbarMenuContext = {
 
 /**
  * The items, in order. Every disabled item carries its `reason` — the audit trail
- * `tests/unit/menus.test.ts` asserts against (`MenuItem` has no tooltip, so the reason is data, not UI).
+ * `tests/dom/menus.test.tsx` asserts against (`MenuItem` has no tooltip, so the reason is data, not UI).
  */
 export function toolbarMenuItems(context: ToolbarMenuContext): readonly MenuItemSpec[] {
 	const items: MenuItemSpec[] = [

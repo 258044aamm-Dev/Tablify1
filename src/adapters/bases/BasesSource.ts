@@ -30,8 +30,9 @@ import { createOverlay } from '../optimistic';
 import type { Overlay } from '../optimistic';
 import { createWriteQueue } from '../writeQueue';
 import type { FrontmatterWriter, QueueWrite, TimerPort, WriteQueue } from '../writeQueue';
-import type { Op } from '../../core/ops/types';
+import type { Op, ViewPatch } from '../../core/ops/types';
 import { propertyFromBasesId, resolveField } from '../../core/schema/propertySchema';
+import { parseViewPatch } from '../../core/view/patch';
 import type {
 	FieldLookup,
 	PropertyDefinition,
@@ -163,6 +164,17 @@ export type BasesSource = RowSource & {
 	lastResult(): ApplyResult | null;
 	/** Values that could not be parsed, so the UI can say which cell is hand-edited or broken. */
 	problems(): readonly CellProblem[];
+	/**
+	 * The view options this `.base` already carries, read out of the sidecar's `tablifyViewConfig`.
+	 *
+	 * This is the **read** half of the write path a few hundred lines down (`setViewConfig` /
+	 * `setGroupCollapse` write `VIEW_CONFIG_KEY`); without it the patch survived in the file and nowhere else, so
+	 * a pane switch or a reopened base dropped column order, hidden columns, grouping and collapsed groups on the
+	 * floor — `docs/03` §Storage says the view's own settings live in the `.base` sidecar, and they have to come
+	 * back out of it. Empty when the key is absent, unreadable, or holds nothing recognisable
+	 * (`src/core/view/patch.ts` owns the tolerance).
+	 */
+	initialView(): ViewPatch;
 };
 
 /**
@@ -433,6 +445,10 @@ export function createBasesSource(options: BasesSourceOptions): BasesSource {
 		canDeleteRows: false,
 		queue,
 		overlay,
+
+		initialView(): ViewPatch {
+			return parseViewPatch(host.config(VIEW_CONFIG_KEY));
+		},
 
 		getSchema(): PropertySchema {
 			return { fields: schema };

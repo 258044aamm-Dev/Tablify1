@@ -390,6 +390,69 @@ describe('writing through the queue', () => {
 		expect(vault.writeCount()).toBe(0);
 	});
 
+	/*
+	 * The clause step 27's checklist states as *"switching panes or reopening the base preserves the view
+	 * config"*. The write side (`setViewConfig` → `tablifyViewConfig`) has been here since step 12; until step 27
+	 * there was no read side at all, so the patch sat in the file and the next view started from nothing. This is
+	 * the whole trip: an op writes the sidecar, a **new source over that sidecar** reads it back, and the patch is
+	 * identical — with a second case for the settings that are the reason anyone collapses a group.
+	 */
+	it('reads the view config back out of the .base sidecar, so reopening the base keeps it', async () => {
+		const { source, host } = build();
+		const changes = {
+			search: 'alpha',
+			sorts: [{ fieldId: 'note.Name', direction: 'asc' as const }],
+			groupBy: 'note.Status',
+			collapsedKeys: ['Todo'],
+			hiddenFieldIds: ['note.Secret'],
+			columnOrder: ['note.Status', 'note.Name'],
+		};
+		await source.apply([{ kind: 'setViewConfig', changes, previous: {} }]);
+		const written = host.lastConfig('tablifyViewConfig');
+		expect(written).toBeDefined();
+
+		// A pane switch, in the only sense this layer has: a fresh source over the file as it now stands.
+		const reopened = fixtureHost({
+			rows: [{ filePath: 'Notes/A.md', label: 'A' }],
+			order: ['note.Name'],
+			values: { 'Notes/A.md': { 'note.Name': 'Alpha' } },
+			config: written === undefined ? {} : { tablifyViewConfig: written },
+		});
+		const second = createBasesSource({
+			host: reopened,
+			writer: { processFrontMatter: async () => undefined },
+			env: { now: () => 0, timezone: 'UTC', locale: 'en-GB' },
+			schedule: () => undefined,
+		});
+		expect(second.initialView()).toEqual(changes);
+	});
+
+	it('starts a view with no settings at all when the .base carries no sidecar', () => {
+		// The other half of the same contract: an absent key is an empty patch, not a crash and not a default.
+		const { source } = build();
+		expect(source.initialView()).toEqual({});
+	});
+
+	it('does not let a hand-edited sidecar stop a view from opening', () => {
+		const host = fixtureHost({
+			rows: [{ filePath: 'Notes/A.md', label: 'A' }],
+			order: ['note.Name'],
+			values: { 'Notes/A.md': { 'note.Name': 'Alpha' } },
+			// Half-written JSON, a key of the wrong type, and a list holding something that is not an id.
+			config: {
+				tablifyViewConfig: '{"groupBy": "note.Status", "hiddenFieldIds": ["note.A", 7],',
+			},
+		});
+		const source = createBasesSource({
+			host,
+			writer: { processFrontMatter: async () => undefined },
+			env: { now: () => 0, timezone: 'UTC', locale: 'en-GB' },
+			schedule: () => undefined,
+		});
+		expect(source.initialView()).toEqual({});
+		expect(source.getSchema().fields.length).toBeGreaterThan(0);
+	});
+
 	it('flushes to disk when asked and reports it', async () => {
 		const { source, vault } = build();
 		const applied = await source.apply([

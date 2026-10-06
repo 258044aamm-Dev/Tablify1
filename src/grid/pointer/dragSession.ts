@@ -78,6 +78,28 @@ export type DragSession = {
 export const DRAG_THRESHOLD_PX = 4;
 
 /**
+ * The same threshold for a **finger**, which is 8 px and not 4.
+ *
+ * `docs/04` §Touch asks for the drag thresholds to be at least 8 px on touch, and the reason is the gesture
+ * beside it: 4 px is a mouse's idea of "still", and a finger resting on glass moves 4 px without being asked.
+ * With a 4 px threshold, a tap on a cell in **Select range** mode would start a drag and a scroll would begin a
+ * reorder — the two failure modes a person blames the app for rather than the gesture for. `pen` gets the touch
+ * number too: a stylus wobbles like a finger, not like a mouse.
+ */
+export const TOUCH_DRAG_THRESHOLD_PX = 8;
+
+/**
+ * The threshold a press gets, by pointer type. A pure function of two numbers so the rule is a unit test rather
+ * than a comment, and `Math.max` rather than a lookup table: a gesture that asked for a *larger* threshold than
+ * the touch floor (the column reorder, at 5 px, does not) must not be made twitchier by this rule.
+ */
+export function dragThresholdFor(pointerType: string, base: number): number {
+	return pointerType === 'touch' || pointerType === 'pen'
+		? Math.max(base, TOUCH_DRAG_THRESHOLD_PX)
+		: base;
+}
+
+/**
  * Builds a drag session for one element. The element's own `pointerdown` handler calls {@link DragSession.begin};
  * everything else is the session's business until it calls `onEnd`.
  */
@@ -87,6 +109,8 @@ export function createDragSession(handlers: DragHandlers): DragSession {
 		readonly pointerId: number;
 		readonly startX: number;
 		readonly startY: number;
+		/** Frozen at `begin`: the threshold belongs to the pointer that started the drag, not to the next event. */
+		readonly threshold: number;
 		moved: boolean;
 		point: DragPoint;
 	} | null = null;
@@ -133,7 +157,7 @@ export function createDragSession(handlers: DragHandlers): DragSession {
 				Math.abs(point.clientX - state.startX),
 				Math.abs(point.clientY - state.startY),
 			);
-			if (travel < threshold) {
+			if (travel < state.threshold) {
 				return;
 			}
 			state.moved = true;
@@ -202,6 +226,7 @@ export function createDragSession(handlers: DragHandlers): DragSession {
 				pointerId: event.pointerId,
 				startX: event.clientX,
 				startY: event.clientY,
+				threshold: dragThresholdFor(event.pointerType, threshold),
 				moved: false,
 				point: { clientX: event.clientX, clientY: event.clientY },
 			};

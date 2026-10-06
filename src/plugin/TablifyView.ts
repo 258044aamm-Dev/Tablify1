@@ -33,6 +33,9 @@ import { createBasesSource } from '../adapters/bases/BasesSource';
 import type { BasesRowHost, BasesViewHost, CellProblem } from '../adapters/bases/BasesSource';
 import type { ApplyResult } from '../adapters/RowSource';
 import { GridView } from '../grid/GridView';
+import { createKeyboardInset } from '../grid/keyboardInset';
+import { readHeaderHeight } from '../grid/measure';
+import { revealElement } from '../grid/keyboard/focus';
 import type { GridViewProps } from '../grid/GridView';
 import { createDialogPort } from '../grid/dialogs/port';
 import { KeyboardHelpModal } from './help/KeyboardHelpModal';
@@ -139,6 +142,11 @@ export class TablifyView extends BasesView {
 	/** The app's metadata listener, so an external edit reaches the source. Released in `dispose()`. */
 	private metadataRef: EventRef | null = null;
 	/**
+	 * The keyboard-inset writer (`src/grid/keyboardInset.ts`), or `null` in a DOM-less environment. Owned here
+	 * because the host element is the view's, and released in the same `cleanup` pass as everything else.
+	 */
+	private keyboardInset: ReturnType<typeof createKeyboardInset> | null = null;
+	/**
 	 * The presentation the grid is rendering with. The view owns it (§P21's pinning rule and the density setting
 	 * are both *this view's* answer, not the store's), and a change from the View options dialog lands here.
 	 */
@@ -178,7 +186,17 @@ export class TablifyView extends BasesView {
 			env: environment,
 		});
 
-		this.store = createGridStore({ source: this.source });
+		/*
+		 * The view's own settings come back out of the `.base` sidecar here (step 27). The write path has always
+		 * been there — `BasesSource` writes `tablifyViewConfig` on every view-options change — but until this line
+		 * existed nothing read it, so closing the base and opening it again reset column order, hidden columns,
+		 * grouping and collapsed groups. `docs/03` §Storage puts the view's settings in the `.base`, which only
+		 * means anything if a reopened view reads them.
+		 */
+		this.store = createGridStore({
+			source: this.source,
+			view: this.source.initialView(),
+		});
 
 		// The settings the grid's *presentation* needs. Read through the store so a change in the settings tab
 		// reaches an open view; `density` is the only one the grid takes today (step 19 adds the rest).
@@ -210,6 +228,59 @@ export class TablifyView extends BasesView {
 			// and already knows whether this pane pins its primary column.
 			this.root = createRoot(this.host);
 			this.root.render(createElement(GridView, this.gridProps()));
+		}
+
+		/*
+		 * The on-screen keyboard (step 27). `docs/04` §Keyboard and viewport asks for exactly this and no more:
+		 * `visualViewport`'s `resize`/`scroll`, **one** CSS variable on the view's own host, and the focused cell
+		 * revealed after the inset settles. The token is written on `this.host` rather than on `document.body`
+		 * (which is where it is *declared*): an inline value on an ancestor of `.tablify-root` is what `var()`
+		 * resolves against, and keeping it on the host means two panes in one window cannot fight over one
+		 * number. `registerDomEvent`-style ownership is not available here — this is not a `Component` method —
+		 * so the listeners are torn down in `dispose()` with everything else in `cleanup`.
+		 */
+		if (typeof window !== 'undefined') {
+			const viewport =
+				typeof window.visualViewport === 'object' && window.visualViewport !== null
+					? window.visualViewport
+					: null;
+			this.keyboardInset = createKeyboardInset({
+				host: this.host.style,
+				window: { innerHeight: window.innerHeight },
+				viewport,
+				// The reveal is the grid's **existing** one (`revealElement`: the vertical band, the clamp, the
+				// horizontal case, all shared with `Ctrl+End` and the arrow keys). The focused element is looked
+				// up here, per call, because the editor is a different input every time: a captured one would be
+				// the editor from before the person moved.
+				reveal: () => {
+					const scroller = this.host.querySelector('.tablify-scroller');
+					const active = document.activeElement;
+					if (!(scroller instanceof HTMLElement) || !(active instanceof HTMLElement)) {
+						return;
+					}
+					if (!this.host.contains(active)) {
+						// A dialog's own field lives outside the host: that is Obsidian's surface, with its own
+						// focus trap, and the grid has no business scrolling it.
+						return;
+					}
+					revealElement(scroller, active, readHeaderHeight(this.host));
+				},
+			});
+			this.keyboardInset.start();
+			// A focus change is when the reveal matters: the keyboard has not moved yet when the editor opens,
+			// and the browser scrolls its own way. Re-syncing on both edges means the reveal runs once after the
+			// inset settles, which is the frame `docs/04` asks for.
+			const onFocusChange = (): void => {
+				this.keyboardInset?.sync();
+			};
+			this.host.addEventListener('focusin', onFocusChange);
+			this.host.addEventListener('focusout', onFocusChange);
+			this.cleanup.push(() => {
+				this.host.removeEventListener('focusin', onFocusChange);
+				this.host.removeEventListener('focusout', onFocusChange);
+				this.keyboardInset?.stop();
+				this.keyboardInset = null;
+			});
 		}
 
 		this.cleanup.push(

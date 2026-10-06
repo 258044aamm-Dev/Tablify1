@@ -1,7 +1,7 @@
 /**
  * Stylesheet gate.
  *
- * Four rules from `docs/04`, checked mechanically, because each of them is a rule a reviewer will not see
+ * Five rules from `docs/04`, checked mechanically, because each of them is a rule a reviewer will not see
  * in a diff and a theme author will feel immediately:
  *
  *   1. No bang-important, anywhere — not in a source file, not in the built stylesheet. If a rule loses,
@@ -15,6 +15,19 @@
  *   4. None of the shapes `docs/04` §The layout contract forbids: a percentage height, a viewport-height
  *      unit, or a bang-important inside a scrolling layer's geometry. The old build's 15-commit height
  *      chain began with exactly one `height: 100%`.
+ *   5. **Every `var(--tablify-…)` a stylesheet asks for, and every `'--tablify-…'` a source file reads by
+ *      name, is declared in `tokens.css`.** Rule 3 checks where *declarations* live; this one checks that
+ *      the *references* resolve, and it was added by step 27 for a real defect: `grid.css` asked for
+ *      `var(--tablify-danger)`, which no token file ever declared. There is no compile error for that —
+ *      CSS resolves the fallback (here: none) and the declaration becomes invalid at computed-value time,
+ *      so the element silently inherits instead. The large-paste caution in `PasteBlockDialog` was
+ *      rendering in ordinary body colour, and nothing in the repo could have noticed.
+ *
+ *      Read by name in TypeScript too, because `getComputedStyle(el).getPropertyValue('--tablify-…')`
+ *      fails just as quietly: `GridView` reads `--tablify-gutter-w` and `--tablify-fill-size`, `measure.ts`
+ *      reads `--tablify-header-h`, `keyboardInset.ts` writes `--tablify-keyboard-inset`. All four are
+ *      declared; the rule keeps it that way. `harness/**` is deliberately out of scope: it is test
+ *      scaffolding, and it sets the inset property itself to fake a keyboard.
  *
  * The zones are the marker comments `tokens.css` carries (`@identity begin/end`, `@semantic`, `@host`).
  * If a marker is renamed, both this gate and `scripts/contrast.ts` say so instead of checking nothing.
@@ -167,6 +180,67 @@ for (const file of files) {
 	}
 }
 
+/* ── 5, repo-wide: every reference resolves to a declaration ───────────────── */
+
+/** Every file under `dir` (recursively) whose name ends with one of `suffixes`, sorted. */
+function filesUnder(dir: string, suffixes: readonly string[]): string[] {
+	const out: string[] = [];
+	for (const entry of readdirSync(dir, { withFileTypes: true })) {
+		const path = join(dir, entry.name);
+		if (entry.isDirectory()) out.push(...filesUnder(path, suffixes));
+		else if (suffixes.some((suffix) => entry.name.endsWith(suffix))) out.push(path);
+	}
+	return out.sort();
+}
+
+/** Declared in `tokens.css`, wherever in the file: identity, semantic and host layers all count. */
+const TOKEN_NAME_DECLARATION = /(--tablify-[\w-]+)\s*:/g;
+const declaredTokens = new Set<string>();
+for (const text of lines(blankComments(readFileSync(TOKEN_FILE, 'utf8')))) {
+	TOKEN_NAME_DECLARATION.lastIndex = 0;
+	let declaration = TOKEN_NAME_DECLARATION.exec(text);
+	while (declaration !== null) {
+		if (declaration[1] !== undefined) declaredTokens.add(declaration[1]);
+		declaration = TOKEN_NAME_DECLARATION.exec(text);
+	}
+}
+
+const CSS_REFERENCE = /var\(\s*(--tablify-[\w-]+)/g;
+const QUOTED_REFERENCE = /['"`](--tablify-[\w-]+)['"`]/g;
+
+/** Every match of `pattern` in `file`, with the line it sits on. Comments are blanked first. */
+function referencesIn(file: string, pattern: RegExp): { name: string; line: number }[] {
+	const out: { name: string; line: number }[] = [];
+	for (const [index, text] of lines(blankComments(readFileSync(file, 'utf8'))).entries()) {
+		pattern.lastIndex = 0;
+		let hit = pattern.exec(text);
+		while (hit !== null) {
+			if (hit[1] !== undefined) out.push({ name: hit[1], line: index + 1 });
+			hit = pattern.exec(text);
+		}
+	}
+	return out;
+}
+
+const referencedFiles = [...files, ...filesUnder('src', ['.ts', '.tsx'])];
+let referenceCount = 0;
+
+for (const file of referencedFiles) {
+	for (const reference of referencesIn(
+		file,
+		file.endsWith('.css') ? CSS_REFERENCE : QUOTED_REFERENCE,
+	)) {
+		referenceCount += 1;
+		if (!declaredTokens.has(reference.name)) {
+			complain(
+				file,
+				reference.line,
+				`asks for ${reference.name}, which ${TOKEN_FILE} never declares — the value resolves to nothing and the rule silently does nothing`,
+			);
+		}
+	}
+}
+
 /* ── the built stylesheet ──────────────────────────────────────────────────── */
 
 let builtBytes = 0;
@@ -209,6 +283,9 @@ write(
 );
 write(`    token declarations outside ${relative('.', TOKEN_FILE)}: ${tokenDeclarationsElsewhere}`);
 write(
+	`    token references resolved: ${referenceCount} in ${referencedFiles.length} file(s) against ${declaredTokens.size} declaration(s)`,
+);
+write(
 	`    identity zones outside ${relative('.', TOKEN_FILE)}: ${
 		files.filter(
 			(file) => file !== TOKEN_FILE && identityRanges(readFileSync(file, 'utf8')).length > 0,
@@ -232,6 +309,7 @@ write(
 	`  css-gate: OK — no bang-important, ${identityLiterals} colour literal(s) all inside the identity layer,`,
 );
 write(
-	`  every --tablify-* token declared in ${relative('.', TOKEN_FILE)}, no percentage or viewport heights`,
+	`  every --tablify-* token declared in ${relative('.', TOKEN_FILE)} and every reference resolving to one,`,
 );
+write('  no percentage or viewport heights');
 write('');

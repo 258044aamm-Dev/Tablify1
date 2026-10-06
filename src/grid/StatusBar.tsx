@@ -50,7 +50,20 @@ export function StatusBar(props: StatusBarProps): ReactElement {
 	const { store } = props;
 	const summary = useStoreSelector(store, selectStatusSummary, sameSummary);
 	return (
-		<div className="tablify-statusbar" role="status">
+		/*
+		 * **Not a live region** (step 27's accessibility pass; regression guard in `tests/dom/a11y.test.ts`).
+		 *
+		 * This line reads `40 rows · 3 cells in 2 rows selected · 1 pending`, so an implied `aria-live="polite"`
+		 * would make a screen reader announce the selection count on *every* arrow key and shift-click — the
+		 * grid interrupting itself while it is being navigated. `role="status"` implies exactly that, so the
+		 * summary is a named group instead: readable on demand, silent otherwise.
+		 *
+		 * The one polite announcement the product promises (`docs/04` §Accessibility, *"412 cells updated in 137
+		 * notes"*) is `a11y/roles.tsx`'s `LiveRegion`, which is mounted once by `GridView` and changes only when
+		 * something has actually been written to the vault. The empty state keeps its own `role="status"`
+		 * (`Empty.tsx`) for the opposite reason: that text appears once, as the answer to a filter.
+		 */
+		<div className="tablify-statusbar" role="group" aria-label="Grid status">
 			<span className="tablify-status">{statusLine(summary)}</span>
 		</div>
 	);

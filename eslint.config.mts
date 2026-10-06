@@ -76,10 +76,11 @@ export default defineConfig(
 					allowDefaultProject: [
 						'eslint.config.mts',
 						'esbuild.config.mjs',
-						// The harness's two Node entry points: a bundler config and a static server, both plain
-						// ESM with no types to check, deliberately outside the TS program.
+						// The harness's Node entry points: a bundler config, a static server and the screenshot
+						// capture, all plain ESM with no types to check, deliberately outside the TS program.
 						'harness/build.mjs',
 						'harness/serve.mjs',
+						'harness/shots.mjs',
 					],
 				},
 				tsconfigRootDir: import.meta.dirname,
@@ -93,6 +94,7 @@ export default defineConfig(
 			'esbuild.config.mjs',
 			'harness/build.mjs',
 			'harness/serve.mjs',
+			'harness/shots.mjs',
 			'playwright.config.ts',
 		],
 		languageOptions: {
@@ -157,6 +159,7 @@ export default defineConfig(
 			'esbuild.config.mjs',
 			'harness/build.mjs',
 			'harness/serve.mjs',
+			'harness/shots.mjs',
 			'playwright.config.ts',
 		],
 		rules: {

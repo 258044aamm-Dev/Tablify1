@@ -77,9 +77,16 @@ function apply(host: Element, child: HTMLElement, info?: DomInfo): void {
 }
 
 /**
- * Installs the four helpers the dialogs call, on the real prototype. No `declare global` here: Obsidian's own
+ * Installs the helpers the dialogs call, on the real prototype. No `declare global` here: Obsidian's own
  * `obsidian.d.ts` already augments `Element` for the whole program (that is why `contentEl.createDiv()` type-checks
  * in `src/grid/dialogs/**`), and a second, slightly different declaration would be a second source of truth.
+ *
+ * **`setText`, `addClass`, `removeClass` and `toggleClass` are step 27's addition**, and they are the reason this
+ * function is worth a paragraph: without them the harness page threw on the *first* dialog it opened
+ * (`this.titleEl.setText is not a function`, from `Modal.onOpen`) and every dialog-shaped assertion in the suite
+ * measured an empty `contentEl`. The helpers existed for `createEl`/`createDiv`/`createSpan`/`empty` only, because
+ * those are what the *grid* calls; the dialogs — a later step — call four more, and nothing had run them in a
+ * browser to find out. A harness shim is a port like any other: it has to be complete before it is believable.
  */
 function installDomHelpers(): void {
 	if ('createDiv' in Element.prototype) {
@@ -109,6 +116,78 @@ function installDomHelpers(): void {
 	Object.defineProperty(Element.prototype, 'empty', {
 		value(this: Element): void {
 			this.replaceChildren();
+		},
+	});
+	Object.defineProperty(Element.prototype, 'setText', {
+		value(this: Element, text: string): Element {
+			this.textContent = text;
+			return this;
+		},
+	});
+	Object.defineProperty(Element.prototype, 'addClass', {
+		value(this: Element, ...classes: string[]): void {
+			this.classList.add(...classes);
+		},
+	});
+	Object.defineProperty(Element.prototype, 'removeClass', {
+		value(this: Element, ...classes: string[]): void {
+			this.classList.remove(...classes);
+		},
+	});
+	/*
+	 * `instanceOf` is Obsidian's cross-window-safe `instanceof` (`node.instanceOf(HTMLElement, win?)`), and the
+	 * harness calls it in two places that matter: `dialogChoose` (to find the button it is about to click) and the
+	 * harness's own `MutationObserver` (to count what a commit changed). Without it the observer threw on every
+	 * mutation batch — so `renderCounts()` was reporting zeroes and every render-count assertion was vacuous —
+	 * and `dialogChoose` threw the moment a dialog was open. Found by running the suite in step 27; the helpers
+	 * existed for the *grid's* DOM calls only.
+	 */
+	/*
+	 * `instanceOf` is answered by **walking the prototype chain**, not by an `instanceof` — and that is not a
+	 * stylistic choice. `obsidianmd/prefer-instanceof` forbids the operator here for the reason the rule exists
+	 * everywhere else (a cross-realm `instanceof` is a category error), and this function *is* the polyfill that
+	 * operator would call, so using it would recurse. The walk does exactly what `instanceof` does for an ordinary
+	 * constructor, in the element's own realm, and it is what makes `element.instanceOf(SomeClass)` — Obsidian's
+	 * own cross-window-safe idiom, which the grid uses — behave inside the harness.
+	 *
+	 * The scope is the element's own window (`ownerDocument.defaultView`) falling back to `window`, which is the
+	 * page: this file only ever runs in the harness page. No `globalThis` and no suppression comment, because the
+	 * repo bans both kinds of shortcut and a stand-in that needs an exemption is not standing in for anything.
+	 */
+	Object.defineProperty(Element.prototype, 'instanceOf', {
+		value(this: Element, type: { readonly name: string }, win?: Window): boolean {
+			const scope: unknown =
+				win ??
+				this.ownerDocument.defaultView ??
+				(typeof window === 'undefined' ? null : window);
+			const descriptor =
+				typeof scope === 'object' && scope !== null
+					? Object.getOwnPropertyDescriptor(scope, type.name)
+					: undefined;
+			const candidate: unknown = descriptor?.value;
+			if (typeof candidate !== 'function') {
+				// No constructor of that name in the scope: the reference is a lie, and a lie is not an instance.
+				return false;
+			}
+			const target: unknown = Object.getOwnPropertyDescriptor(candidate, 'prototype')?.value;
+			if (typeof target !== 'object' || target === null) {
+				return false;
+			}
+			let node: unknown = Object.getPrototypeOf(this);
+			while (node !== null) {
+				if (node === target) {
+					return true;
+				}
+				node = Object.getPrototypeOf(node);
+			}
+			return false;
+		},
+	});
+	Object.defineProperty(Element.prototype, 'toggleClass', {
+		value(this: Element, classes: string | string[], value: boolean): void {
+			for (const name of Array.isArray(classes) ? classes : [classes]) {
+				this.classList.toggle(name, value);
+			}
 		},
 	});
 }
@@ -266,14 +345,40 @@ export class Modal {
 		// Subclasses clean up.
 	}
 
+	/**
+	 * Escape closes the topmost modal.
+	 *
+	 * This is the **host's** behaviour, not a plugin's: `src/grid/a11y/focusContract.ts` describes what a real
+	 * Obsidian gives every modal — *"a focus trap, Escape and a restore of their own"* — and
+	 * `src/grid/dialogs/BulkEditDialog.ts` leans on it in a comment (*"the modal's own Escape still closes"*).
+	 * The stand-in had neither the trap nor Escape, and step 27 found it the hard way: tier-4 assertion 22 pressed
+	 * Escape to dismiss the View options dialog and then clicked the toolbar, and Playwright waited 90 s for a
+	 * click that a still-open `.modal-container` was intercepting. The suite was right and the shim was wrong.
+	 *
+	 * Only the top of the stack answers, so a dialog opened from a dialog closes first — and an event a surface has
+	 * already handled (`defaultPrevented`, e.g. an editor cancelling its own edit) is left alone, which is the same
+	 * precedence Obsidian's scopes give a focused surface.
+	 */
+	private readonly onDocumentKeyDown = (event: KeyboardEvent): void => {
+		if (event.key !== 'Escape' || event.defaultPrevented) {
+			return;
+		}
+		if (openedModals[openedModals.length - 1] !== this) {
+			return;
+		}
+		this.close();
+	};
+
 	open(): void {
 		this.doc.body.append(this.containerEl);
 		this.overlay = this.containerEl;
 		openedModals.push(this);
+		this.doc.addEventListener('keydown', this.onDocumentKeyDown);
 		this.onOpen();
 	}
 
 	close(): void {
+		this.doc.removeEventListener('keydown', this.onDocumentKeyDown);
 		this.overlay?.remove();
 		this.overlay = null;
 		const at = openedModals.indexOf(this);

@@ -89,6 +89,62 @@ body {
 	--radius-l: 12px;
 }
 
+/* ── the modal chrome ───────────────────────────────────────────────────────
+   `Modal` is an **Obsidian** class: it builds `.modal-container > .modal >
+   .modal-title + .modal-content` and the *host* app.css is what centres it
+   over a dim backdrop. Without these five rules the harness's dialogs are
+   plain blocks at the end of `<body>` — fine for the jsdom tests, useless for
+   the two screenshots `docs/images/` carries (`harness/shots.mjs` photographs
+   `.modal-container`). Obsidian's real values are close to these; what matters
+   here is structure, not taste, and every colour is a host variable.
+
+   :where() again, for the same reason as the block below: a stub rule that
+   out-specified a plugin rule would make the screenshots lie about the plugin.
+   ========================================================================== */
+
+:where(.modal-container) {
+	position: fixed;
+	inset: 0;
+	z-index: 100;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 24px;
+	background-color: var(--overlay-bg);
+}
+
+:where(.modal) {
+	width: 100%;
+	max-width: 560px;
+	max-height: 100%;
+	overflow-y: auto;
+	padding: 16px 18px 14px;
+	background-color: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-l);
+	box-shadow:
+		0 2px 6px rgba(0, 0, 0, 0.14),
+		0 18px 40px rgba(0, 0, 0, 0.22);
+	color: var(--text-normal);
+}
+
+:where(.modal-title) {
+	margin-bottom: 10px;
+	color: var(--text-normal);
+	font-size: var(--font-ui-medium);
+	font-weight: 600;
+}
+
+:where(.modal-content) {
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+}
+
+:where(.modal-content :is(button, input, select, textarea)) {
+	font-family: inherit;
+	font-size: inherit;
+}
+
 /* ── platform defaults Obsidian's own app.css provides ──────────────────────
    A button in Obsidian is styled by the *host*, not by a plugin: `docs/04` §Tier 1 says a control with no
    theme variable is not styled at all, so `.tablify-btn` deliberately carries only its primary/active/focus

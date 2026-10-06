@@ -23,6 +23,7 @@ import { cellMenuItems, CELL_MENU_IDS } from '../../src/grid/menus/cellMenu';
 import { headerMenuItems, HEADER_MENU_IDS } from '../../src/grid/menus/headerMenu';
 import { gutterMenuItems, GUTTER_MENU_IDS } from '../../src/grid/menus/gutterMenu';
 import { menuIds, runMenuItem, showMenu } from '../../src/grid/menus/items';
+import { toolbarMenuItems } from '../../src/grid/menus/toolbarMenu';
 import { menuBounds } from '../../src/grid/menus/context';
 import { createGridStore } from '../../src/grid/store/store';
 import { selectCell, setSelection } from '../../src/grid/store/commands';
@@ -516,5 +517,80 @@ describe('reaching a real Menu', () => {
 		expect(disabled?.click()).toBe(false);
 		expect(clear?.click()).toBe(true);
 		expect(store.getSnapshot().canUndo).toBe(true);
+	});
+});
+
+describe('the freeze control is not in a menu anywhere', () => {
+	/**
+	 * `docs/08` §P21: *"On narrow panes pin nothing… the freeze toggle is hidden on mobile"*, and `docs/04`'s
+	 * layout contract gives the freeze switch exactly one home — the View options dialog, which shows the row only
+	 * at `NARROW_PANE_PX` (600) and above. The inventory is therefore asserted as an **absence**, over every menu
+	 * this grid can build, so a future "quick freeze" item added to the gutter menu is a failing test rather than a
+	 * second control with a different rule.
+	 *
+	 * The toolbar menu is built here too (the other three are the fixtures above): it is the only menu whose items
+	 * are not a function of the store, and the only one that could sensibly grow such an item.
+	 */
+	it('offers no freeze or pin item in any of the four menus', () => {
+		const { store, ports } = makeFixture();
+		const { bounds, filePath } = contextOf({ store, ports });
+		const field = store.getSnapshot().fields[0];
+		const toolbar = toolbarMenuItems({
+			canUndo: false,
+			canRedo: false,
+			undoLabel: null,
+			onUndo: () => undefined,
+			onRedo: () => undefined,
+			onNewRow: () => undefined,
+			rangeSelect: null,
+			onToggleRangeSelect: () => undefined,
+		});
+		const inventories: { readonly menu: string; readonly ids: readonly string[] }[] = [
+			{
+				menu: 'cell',
+				ids: menuIds(
+					cellMenuItems({ store, filePath, field: field ?? null, bounds, ports }),
+				),
+			},
+			{
+				menu: 'header',
+				ids: menuIds(
+					headerMenuItems({
+						store,
+						field: field as ResolvedField,
+						columnIndex: 0,
+						order: store.getSnapshot().order,
+						bounds,
+						ports,
+					}),
+				),
+			},
+			{ menu: 'gutter', ids: GUTTER_MENU_IDS },
+			{
+				menu: 'toolbar',
+				ids: menuIds(toolbar),
+			},
+		];
+		for (const inventory of inventories) {
+			expect(inventory.ids.length).toBeGreaterThan(0);
+			expect(
+				inventory.ids.filter((id) => /freeze|pin/.test(id)),
+				`the ${inventory.menu} menu`,
+			).toEqual([]);
+		}
+		// …and the words cannot appear as a *title* either: an item with no id is still an item.
+		const titles = [
+			...cellMenuItems({ store, filePath, field: field ?? null, bounds, ports }),
+			...headerMenuItems({
+				store,
+				field: field as ResolvedField,
+				columnIndex: 0,
+				order: store.getSnapshot().order,
+				bounds,
+				ports,
+			}),
+			...toolbar,
+		].map((item) => item.title);
+		expect(titles.filter((title) => /freeze|pin/i.test(title))).toEqual([]);
 	});
 });

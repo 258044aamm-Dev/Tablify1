@@ -8,7 +8,7 @@
  *     subscribes to is a `string`, a `CellValue`, or a small object compared field by field. React compares
  *     the previous value with the new one using the hook's own equality, so a cell whose text did not change
  *     is not re-rendered at all — it is not even scheduled. This is the whole of the "a keystroke re-renders
- *     one cell" rule, and `tests/dom/store-render.test.tsx` counts it.
+ *     one cell" rule, and `tests/dom/store-render.test.ts` counts it.
  *   · **whole-snapshot reads** — `useStore(selector)` / `useStoreSelector(selector, isEqual)` for the
  *     toolbar, the status bar and the empty state. There are a handful of these, and they may re-render when
  *     anything changes.
