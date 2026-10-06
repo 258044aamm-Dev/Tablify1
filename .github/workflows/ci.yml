@@ -1,7 +1,13 @@
 name: CI
 
 on:
+    # `main` only, plus PRs and a manual dispatch. A tag used to run this job *and* the Release workflow, which
+    # runs the same gate a second time before it publishes — `release.yml` is the tag's verification, so the
+    # duplicate is not defence in depth, it is the same check twice. (Found by pushing the `0.1.0` pre-release
+    # and watching two runs start; the tag's own run is what the release was cut from.)
     push:
+        branches:
+            - main
     pull_request:
     workflow_dispatch:
 

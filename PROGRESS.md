@@ -2,8 +2,8 @@
 
 - Milestone: M0 — Foundation (complete) · M1 — Core domain (complete) · M2 — Data layer (complete) ·
   M3 — Grid v1 (complete) · M4 — Import/export (complete) · M5 — Sync (complete) ·
-  **M6 — Release (pre-release `0.1.0` published for device testing; the community submission stays blocked on
-  in-app verification)**
+  **M6 — Release (`0.1.0` published as a GitHub pre-release at 2026-10-06T13:01:42Z for device testing; the
+  community submission stays blocked on in-app verification)**
   Branch: main
 - Last completed step: **step 29 — the import coalesced, the view's own presentation persisted, and the release
   janitor closed.** Three things, all of them things step 28 recorded as *left for a person*:
@@ -25,15 +25,29 @@
      tests in `tests/unit/bases-source.test.ts`, including the non-vacuous one — a **fresh source** over the file
      as it now stands reads the density and the freeze back.
   3. **The janitor.** `timeout-minutes: 20` on the CI layout step (a hang detector, not a budget); `bun run
-     version` now exists (one command, so its argument reaches the script — see the finding below); three issue
-     templates and a config (`bug_report`, `feature_request`, `sync_problem`, and security routed to a private
-     advisory); and `.github/prerelease`, which makes `release.yml` publish a **pre-release** with an unverified-
-     build notice above the changelog.
+     version` now exists (one command, so its argument reaches the script — see the finding below); `ci.yml` no
+     longer runs on tags (the release workflow is the tag's verification, and the tag push proved the duplication);
+     three issue templates and a config (`bug_report`, `feature_request`, `sync_problem`, and security routed to a
+     private advisory); and `.github/prerelease`, which makes `release.yml` publish a **pre-release** with an
+     unverified-build notice above the changelog.
 
   **And the release itself, which is what all of the above was for:** `0.1.0` is published as a GitHub
-  **pre-release** at tag `0.1.0` with exactly three assets (`main.js`, `manifest.json`, `styles.css`), so BRAT can
-  install it on a desktop and a phone and `docs/manual-test-log.md` can finally be run. It is **not** in the
-  community directory, `docs/06` §M6 is still the gate for that, and the marker file is what says so.
+  **pre-release** at tag `0.1.0` (`prerelease: true`, `draft: false`, published **2026-10-06T13:01:42Z**, Release
+  run **37467442793**, all eleven steps success) with exactly three assets that were then **downloaded and
+  checked**: `main.js` 464,705 B (identical size to this tree's gate), `manifest.json` 359 B, `styles.css`
+  25,056 B; the released `manifest.json` is byte-identical to the committed one (`md5 d149e373…`) and reads
+  `id: tablify`, `version: 0.1.0`, `minAppVersion: 1.13.0`, `isDesktopOnly: false`. BRAT ≥1.1.0 installs from
+  release assets, so that is the whole installability condition. It is **not** in the community directory,
+  `docs/06` §M6 is still the gate for that, and `.github/prerelease` is what says so.
+
+  **Two findings from cutting it, both fixed or recorded rather than shrugged at.** (1) `git push <tag>` was
+  rejected **twice** with `Internal Server Error` while a branch push to the same repo a minute later succeeded —
+  no rulesets, no tag protection, admin permission, so it was not policy. The tag was created through the GitHub
+  API (`POST /git/refs`, and the short SHA is refused — the API wants all forty characters) and the `push` event
+  fired for it as normal, which is what ran Release. Recorded because a future release may hit it again: the API
+  route works, and the tag object it creates is an ordinary tag. (2) The tag's push started **two** workflows —
+  `release.yml` (correct) and `ci.yml` (the same gate a second time). `ci.yml` now runs on `main`, PRs and manual
+  dispatch only; `release.yml` is the tag's verification.
 - Previously completed step: **step 28 — publish: everything except the three acts that are not mine to take.** The
   README is the real one (`docs/09` §README requirements, in its order: what it is, a screenshot, install, what it
   does, the network disclosure **verbatim in substance**, limitations, the keyboard table, licence and
