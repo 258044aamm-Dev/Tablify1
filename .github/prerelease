@@ -1,0 +1,13 @@
+# Present ⇒ `release.yml` marks the release it publishes **pre-release**.
+#
+# Why this is a file and not a workflow input: the tag has to be a bare `x.y.z` (Obsidian matches it to
+# `manifest.json` exactly), so there is nowhere in the ref to carry "this one is not verified yet". A file
+# carries it in the history, where the reason stays attached to the state.
+#
+# Why it exists at all: `0.1.0` is being published so a real desktop and a real phone can run
+# `docs/manual-test-log.md` before anything is submitted to the community directory. BRAT installs pre-releases
+# (it takes the newest release *or* pre-release by version), the community submission does not exist yet, and
+# nobody should find this build by browsing and mistake it for a verified one — the release body says so too.
+#
+# Remove this file (`git rm .github/prerelease`) once the manual log is filled in and 0.1.0 is the release the
+# community directory gets. That commit is the record that verification happened; the tag itself never changes.

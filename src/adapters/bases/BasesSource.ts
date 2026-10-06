@@ -127,6 +127,66 @@ export const FIELD_OPTIONS_KEY = 'fieldOptions';
 /** The sidecar key for the rest of the view patch (widths, hidden columns, order, grouping). */
 export const VIEW_CONFIG_KEY = 'tablifyViewConfig';
 
+/**
+ * The sidecar key for how the view *looks* rather than what it shows: row density and the frozen primary
+ * column.
+ *
+ * These two are deliberately **not** in `ViewPatch` (`src/core/view/patch.ts`) and could not be grafted onto it
+ * without weakening the thing that file is built around. `ViewPatch` answers one question — which rows, and in
+ * what arrangement — and its parser is total over that question's vocabulary; its fields all feed the query
+ * pipeline. `density` and `frozenPrimary` feed nothing but a render, are not undoable, and were never part of a
+ * query document. Widening the patch would put two presentation fields behind a parser every pipeline test
+ * trusts. A second key costs one tolerant read and keeps both laws intact.
+ *
+ * One key per *view*, like the other two: a `.base` with two views can carry two densities.
+ */
+export const PRESENTATION_KEY = 'tablifyPresentation';
+
+/**
+ * The row density names the grid understands. Spelled out here on purpose: this is the adapter layer and
+ * `src/grid` is the UI layer, so the union is duplicated rather than imported, and the parser below is what
+ * guarantees the two spellings agree.
+ */
+export type StoredDensity = 'short' | 'medium' | 'tall';
+
+/** A presentation change as the sidecar carries it. Every field optional: absent means "leave it alone". */
+export type PresentationPatch = {
+	readonly density?: StoredDensity;
+	readonly frozenPrimary?: boolean;
+};
+
+/**
+ * The narrowing `parseViewPatch` uses too (`src/core/view/patch.ts`): a type guard rather than a type assertion,
+ * because the value came out of a file the user owns and `consistent-type-assertions` is a lint error here for
+ * exactly that reason.
+ */
+const isObject = (value: unknown): value is Record<string, unknown> =>
+	typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** Total, like `parseViewPatch`: anything unrecognisable is dropped, an unreadable value is `{}`, never a throw. */
+export function parsePresentation(raw: unknown): PresentationPatch {
+	let value: unknown = raw;
+	if (typeof raw === 'string') {
+		// `host.config()` hands back whatever the `.base` holds: a string on a real host, an object in a test.
+		try {
+			value = JSON.parse(raw);
+		} catch {
+			return {};
+		}
+	}
+	if (!isObject(value)) {
+		return {};
+	}
+	const patch: { density?: StoredDensity; frozenPrimary?: boolean } = {};
+	if (value.density === 'short' || value.density === 'medium' || value.density === 'tall') {
+		patch.density = value.density;
+	}
+	if (typeof value.frozenPrimary === 'boolean') {
+		patch.frozenPrimary = value.frozenPrimary;
+	}
+	return patch;
+}
+
 export type BasesSourceOptions = {
 	readonly host: BasesViewHost;
 	readonly writer: FrontmatterWriter;
@@ -175,6 +235,22 @@ export type BasesSource = RowSource & {
 	 * (`src/core/view/patch.ts` owns the tolerance).
 	 */
 	initialView(): ViewPatch;
+	/**
+	 * The presentation this view last stored, read out of the sidecar's `tablifyPresentation`. Empty when the
+	 * key is absent, unreadable or holds nothing recognisable — and empty is the same answer a view that has
+	 * never been configured gives, so the caller decides the defaults (see `parsePresentation`).
+	 */
+	initialPresentation(): PresentationPatch;
+	/**
+	 * Stores a presentation change. Presentation is not an edit: it is not undoable, it does not touch a note,
+	 * and it does not go through the op pipeline — so this is a direct write rather than an 18th `Op` kind that
+	 * every undo test would have to learn to ignore.
+	 *
+	 * Answers `false` on a read-only host (`setConfig` absent), which is the same answer the view-config path
+	 * gives and the reason a view on a read-only host still renders the change: the render is the view's, the
+	 * persistence is what is refused.
+	 */
+	setPresentation(patch: PresentationPatch): boolean;
 };
 
 /**
@@ -448,6 +524,21 @@ export function createBasesSource(options: BasesSourceOptions): BasesSource {
 
 		initialView(): ViewPatch {
 			return parseViewPatch(host.config(VIEW_CONFIG_KEY));
+		},
+
+		initialPresentation(): PresentationPatch {
+			return parsePresentation(host.config(PRESENTATION_KEY));
+		},
+
+		setPresentation(patch: PresentationPatch): boolean {
+			if (host.setConfig === undefined) {
+				return false;
+			}
+			// Merge onto what is there, so a density change does not drop the freeze and vice versa. The stored
+			// value is a string in the `.base` (the same way `VIEW_CONFIG_KEY` is stored), never a nested object.
+			const next = { ...parsePresentation(host.config(PRESENTATION_KEY)), ...patch };
+			host.setConfig(PRESENTATION_KEY, JSON.stringify(next));
+			return true;
 		},
 
 		getSchema(): PropertySchema {

@@ -24,6 +24,10 @@
  * the render happen — and there is exactly one timer in this file, awaited inside the loop, because the ban is on
  * callback chains, not on yielding.
  *
+ * **One repaint per chunk, not per note.** The run's caller may hand in a `bulk` window; the runner opens it
+ * before a chunk and closes it after, so a host that tells the grid about every created note still commits once
+ * per twenty-five. Step 27 measured the alternative: 400 notes, 400 commits, ~35 ms each.
+ *
  * **The one undo step.** `docs/03` §Import: *"note creation → single undo step that removes the created notes"*.
  * The run's created paths are its undo step (`ImportUndoStep`), and `undoImport` removes exactly those files
  * through the trash port — a note that is already gone is reported as missing rather than counted or thrown.
@@ -78,6 +82,19 @@ export type ImportRunOptions = {
 	/** Called once at 0 and after every chunk, with the running counts. */
 	readonly onProgress?: ((created: number, total: number) => void) | undefined;
 	/**
+	 * The bulk window: `begin()` before a chunk, `end()` after it. A caller with a grid behind the dialog passes
+	 * its store's `beginBulk`/`endBulk` (`src/grid/store/types.ts`), which turns one repaint per created note into
+	 * one repaint per chunk — the measurement behind that is in step 27's profile and repeated on `beginBulk`.
+	 *
+	 * It is **per chunk, not per run**, and that is the point rather than an implementation detail: the runner
+	 * yields to a macrotask between chunks *so the window can paint*, and a window that is deferred for the whole
+	 * run would paint the progress line and nothing else for fifteen seconds. Twenty-five notes at a time is
+	 * fast enough that the grid still looks alive.
+	 *
+	 * Optional, because the runner is also used with no UI at all (the node test project, a headless migration).
+	 */
+	readonly bulk?: { readonly begin: () => void; readonly end: () => void } | undefined;
+	/**
 	 * A way to stop between chunks. A modal's Cancel button sets this; a test sets it after N notes. The runner
 	 * checks it **only** between chunks, which is what makes a cancellation report exact counts.
 	 */
@@ -127,23 +144,47 @@ export async function runImport(options: ImportRunOptions): Promise<ImportSummar
 
 	options.onProgress?.(0, total);
 
-	for (const [index, note] of plan.notes.entries()) {
-		if (index > 0 && index % CHUNK === 0) {
-			await yieldTo();
-			if (options.shouldStop?.() === true) {
-				cancelled = true;
-				break;
+	/**
+	 * The bulk window, opened and closed **per chunk**, with the close in a `finally` rather than after the loop.
+	 * A window left open is a grid that has stopped repainting, so the one thing this must not do is depend on the
+	 * run finishing: a `shouldStop` break, a `createOne` that throws, or a vault port that rejects all have to
+	 * release it.
+	 */
+	let chunkOpen = false;
+	const closeChunk = (): void => {
+		if (chunkOpen) {
+			chunkOpen = false;
+			options.bulk?.end();
+		}
+	};
+
+	try {
+		for (const [index, note] of plan.notes.entries()) {
+			if (index > 0 && index % CHUNK === 0) {
+				closeChunk();
+				await yieldTo();
+				if (options.shouldStop?.() === true) {
+					cancelled = true;
+					break;
+				}
+			}
+			if (!chunkOpen) {
+				chunkOpen = true;
+				options.bulk?.begin();
+			}
+			const failure = await createOne(note.path, note.frontmatter, vault, plan.folder);
+			if (failure === null) {
+				created.push(note.path);
+			} else {
+				failures.push({ row: note.row, path: note.path, reason: failure });
+			}
+			if ((index + 1) % CHUNK === 0 || index === total - 1) {
+				closeChunk();
+				options.onProgress?.(created.length, total);
 			}
 		}
-		const failure = await createOne(note.path, note.frontmatter, vault, plan.folder);
-		if (failure === null) {
-			created.push(note.path);
-		} else {
-			failures.push({ row: note.row, path: note.path, reason: failure });
-		}
-		if ((index + 1) % CHUNK === 0 || index === total - 1) {
-			options.onProgress?.(created.length, total);
-		}
+	} finally {
+		closeChunk();
 	}
 
 	const progress = progressText(created.length, total);

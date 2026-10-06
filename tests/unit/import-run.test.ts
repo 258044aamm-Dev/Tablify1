@@ -29,7 +29,7 @@ import {
 	undoImport,
 	undoMessage,
 } from '../../src/plugin/import/runImport';
-import type { TrashVault } from '../../src/plugin/import/runImport';
+import type { ImportVault, TrashVault } from '../../src/plugin/import/runImport';
 import { resolveField } from '../../src/core/schema/propertySchema';
 import type { Matrix } from '../../src/core/selection/clipboard';
 import type { FieldTypeId } from '../../src/core/types';
@@ -134,6 +134,17 @@ function harness(rows: number, options?: { readonly existing?: readonly string[]
 	return { vault, api, plan: buildPlan(matrix, planOptions, environment), trashLog, trashPort };
 }
 
+/** The `ImportVault` port over the fake vault, exactly as the tests below build it inline. */
+function portFor(api: FakeVaultApi): ImportVault {
+	return {
+		has: (path) => api.getFileByPath(path) !== null,
+		hasFolder: () => true,
+		create: async (path, content) => {
+			await api.create(path, content);
+		},
+	};
+}
+
 /** A yield that counts its calls, so the chunk boundary is asserted rather than timed. */
 function countingYield(): { readonly yieldTo: () => Promise<void>; readonly calls: number[] } {
 	const calls: number[] = [];
@@ -144,6 +155,139 @@ function countingYield(): { readonly yieldTo: () => Promise<void>; readonly call
 		calls,
 	};
 }
+
+/**
+ * The bulk window (step 29): the port that turns *one repaint per created note* into *one per chunk*.
+ *
+ * The measured defect this closes is in step 27's report — 400 notes created 400 grid commits, ~35 ms each, with
+ * 23.7 % of a CDP profile inside React's `jsx`. What the runner owes is exactly this: a window opened before a
+ * chunk and closed after it, balanced on **every** exit path, because a window left open is a grid that has
+ * stopped repainting.
+ */
+describe('the bulk window the runner hands its caller', () => {
+	/** A window that counts, so "once per chunk" and "balanced" are numbers rather than a story. */
+	function countingBulk(): {
+		readonly bulk: { begin: () => void; end: () => void };
+		readonly begins: number;
+		readonly ends: number;
+		readonly events: string[];
+	} {
+		const counts = { begins: 0, ends: 0 };
+		const events: string[] = [];
+		return {
+			bulk: {
+				begin: () => {
+					counts.begins += 1;
+					events.push('begin');
+				},
+				end: () => {
+					counts.ends += 1;
+					events.push('end');
+				},
+			},
+			get begins() {
+				return counts.begins;
+			},
+			get ends() {
+				return counts.ends;
+			},
+			events,
+		};
+	}
+
+	it('opens and closes one window per chunk — three chunks for sixty notes, not sixty windows', async () => {
+		const { plan, api } = harness(60);
+		const bulk = countingBulk();
+		const summary = await runImport({
+			plan,
+			vault: portFor(api),
+			bulk: bulk.bulk,
+			yieldTo: async () => undefined,
+		});
+		expect(summary.created).toHaveLength(60);
+		expect(CHUNK).toBe(25);
+		expect(bulk.begins, '25 + 25 + 10').toBe(3);
+		expect(bulk.ends, 'every window closed').toBe(3);
+		// The first event is a begin and the last is an end: no window is left open at the end of a run.
+		expect(bulk.events[0]).toBe('begin');
+		expect(bulk.events[bulk.events.length - 1]).toBe('end');
+	});
+
+	it('closes the window it opened when the run is cancelled at a chunk boundary', async () => {
+		const { plan, api } = harness(60);
+		const bulk = countingBulk();
+		const summary = await runImport({
+			plan,
+			vault: portFor(api),
+			bulk: bulk.bulk,
+			// The stop is checked *between* chunks (`runImport`'s own doc), so the first check is at note 25: one
+			// chunk lands, and then the run breaks out — through the same `finally` a throw would take.
+			shouldStop: () => true,
+			yieldTo: async () => undefined,
+		});
+		expect(summary.cancelled).toBe(true);
+		expect(summary.created).toHaveLength(CHUNK);
+		expect(bulk.begins).toBe(1);
+		expect(bulk.ends, 'a cancel must not leave the grid deferred').toBe(1);
+	});
+
+	it('records a throwing create as a per-file failure, and still closes the window', async () => {
+		// `createOne` catches: "a failed note is recorded per file and the run continues, because abandoning the
+		// 200 rows after it would lose work one bad path should not destroy". So this run does **not** reject —
+		// and the window closes anyway, which is the half that matters when every single create fails.
+		const { plan, api } = harness(4);
+		const bulk = countingBulk();
+		const exploding = {
+			...portFor(api),
+			create: async () => {
+				throw new Error('the disk went away');
+			},
+		};
+		const summary = await runImport({
+			plan,
+			vault: exploding,
+			bulk: bulk.bulk,
+			yieldTo: async () => undefined,
+		});
+		expect(summary.created).toHaveLength(0);
+		expect(summary.failures).toHaveLength(4);
+		expect(summary.failures[0]?.reason).toBe('the disk went away');
+		expect(summary.ok).toBe(false);
+		expect(bulk.begins).toBe(1);
+		expect(bulk.ends, 'four failures, one window, still balanced').toBe(1);
+	});
+
+	it('closes the window when the yield itself throws, and lets the error out', async () => {
+		// The path a `finally` exists for: something between two chunks goes wrong that the runner cannot absorb.
+		const { plan, api } = harness(60);
+		const bulk = countingBulk();
+		await expect(
+			runImport({
+				plan,
+				vault: portFor(api),
+				bulk: bulk.bulk,
+				yieldTo: async () => {
+					throw new Error('the frame went away');
+				},
+			}),
+		).rejects.toThrow('the frame went away');
+		expect(bulk.begins).toBe(1);
+		expect(bulk.ends, 'the finally is the reason this is 1 and not 0').toBe(1);
+	});
+
+	it('opens no window at all when there is nothing to create', async () => {
+		const { plan, api } = harness(0);
+		const bulk = countingBulk();
+		await runImport({
+			plan,
+			vault: portFor(api),
+			bulk: bulk.bulk,
+			yieldTo: async () => undefined,
+		});
+		expect(bulk.begins).toBe(0);
+		expect(bulk.ends).toBe(0);
+	});
+});
 
 describe('runImport', () => {
 	it('creates exactly one note per planned row, with the plan’s frontmatter and no path of its own', async () => {

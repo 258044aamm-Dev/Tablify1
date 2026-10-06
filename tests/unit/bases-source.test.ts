@@ -7,7 +7,11 @@
  * therefore what `rawValue` receives. `host.displayName` is what would turn that into the column's label.
  */
 import { describe, expect, it } from 'vitest';
-import { createBasesSource, toCellValue } from '../../src/adapters/bases/BasesSource';
+import {
+	createBasesSource,
+	parsePresentation,
+	toCellValue,
+} from '../../src/adapters/bases/BasesSource';
 import type { BasesRowHost, BasesViewHost } from '../../src/adapters/bases/BasesSource';
 import type { FrontmatterWriter } from '../../src/adapters/writeQueue';
 import { resolveField } from '../../src/core/schema/propertySchema';
@@ -451,6 +455,106 @@ describe('writing through the queue', () => {
 		});
 		expect(source.initialView()).toEqual({});
 		expect(source.getSchema().fields.length).toBeGreaterThan(0);
+	});
+
+	it("round-trips the view's own presentation through a fresh source, so a pane switch keeps it", () => {
+		// Step 29's second decision: density and the frozen primary column live in their **own** sidecar key
+		// (`tablifyPresentation`), not in `ViewPatch`. This is the non-vacuous half — the read is performed by a
+		// source built *after* the write, over the file as it now stands, exactly like the view-config test above.
+		const { source, host } = build();
+		expect(source.initialPresentation()).toEqual({});
+		expect(source.setPresentation({ density: 'tall' })).toBe(true);
+		expect(source.setPresentation({ frozenPrimary: false })).toBe(true);
+		const written = host.lastConfig('tablifyPresentation');
+		expect(written).toBeDefined();
+		// Two writes, one key, and the second one merged rather than replaced.
+		expect(JSON.parse(written ?? '{}')).toEqual({ density: 'tall', frozenPrimary: false });
+		// Nothing leaked into the *view* patch key: these are two keys with two jobs.
+		expect(host.lastConfig('tablifyViewConfig')).toBeUndefined();
+
+		const reopened = fixtureHost({
+			rows: [{ filePath: 'Notes/A.md', label: 'A' }],
+			order: ['note.Name'],
+			values: { 'Notes/A.md': { 'note.Name': 'Alpha' } },
+			config: written === undefined ? {} : { tablifyPresentation: written },
+		});
+		const second = createBasesSource({
+			host: reopened,
+			writer: { processFrontMatter: async () => undefined },
+			env: { now: () => 0, timezone: 'UTC', locale: 'en-GB' },
+			schedule: () => undefined,
+		});
+		expect(second.initialPresentation()).toEqual({ density: 'tall', frozenPrimary: false });
+	});
+
+	it('keeps a density out of the view patch and a view patch out of the presentation', async () => {
+		/*
+		 * The reason for the second key, asserted rather than argued: whatever a `.base` holds under
+		 * `tablifyViewConfig`, the presentation reader ignores it — and the other way round. If the two ever
+		 * shared a key, this test is where a future widening of `ViewPatch` would fail.
+		 */
+		const { source, host } = build();
+		await source.apply([
+			{
+				kind: 'setViewConfig',
+				changes: { groupBy: 'note.Status' },
+				previous: {},
+			},
+		]);
+		expect(source.initialPresentation()).toEqual({});
+		const withDensity = fixtureHost({
+			rows: [{ filePath: 'Notes/A.md', label: 'A' }],
+			order: ['note.Name'],
+			values: { 'Notes/A.md': { 'note.Name': 'Alpha' } },
+			config: { tablifyPresentation: JSON.stringify({ density: 'short' }) },
+		});
+		const other = createBasesSource({
+			host: withDensity,
+			writer: { processFrontMatter: async () => undefined },
+			env: { now: () => 0, timezone: 'UTC', locale: 'en-GB' },
+			schedule: () => undefined,
+		});
+		expect(other.initialView()).toEqual({});
+		expect(host.lastConfig('tablifyPresentation')).toBeUndefined();
+	});
+
+	it('drops a hand-edited presentation one field at a time, and never throws', () => {
+		// Totality, the same law `parseViewPatch` is held to: a file the user owns cannot stop a view opening.
+		expect(parsePresentation('{"density": "enormous"}')).toEqual({});
+		expect(parsePresentation('{"density": "short", "frozenPrimary": "yes"}')).toEqual({
+			density: 'short',
+		});
+		expect(parsePresentation('{"groupBy": "note.Status"}')).toEqual({});
+		expect(parsePresentation('not json at all')).toEqual({});
+		expect(parsePresentation(null)).toEqual({});
+		expect(parsePresentation(7)).toEqual({});
+		// An already-parsed object, which is what the fixture host and a unit test hand it.
+		expect(parsePresentation({ density: 'medium', frozenPrimary: true })).toEqual({
+			density: 'medium',
+			frozenPrimary: true,
+		});
+	});
+
+	it('refuses to store a presentation on a read-only host, and says so', () => {
+		// The honest failure: the render is the view's own, so the change still takes effect; only the
+		// persistence is refused. A silent `undefined` here would make the caller think it had been saved.
+		const readOnly: BasesViewHost = {
+			rows: () => [{ filePath: 'Notes/A.md', label: 'A' }],
+			order: () => ['note.Name'],
+			displayName: () => undefined,
+			rawValue: (filePath, propertyId) =>
+				filePath === 'Notes/A.md' && propertyId === 'note.Name' ? 'Alpha' : undefined,
+			config: () => undefined,
+			watch: () => () => undefined,
+		};
+		const source = createBasesSource({
+			host: readOnly,
+			writer: { processFrontMatter: async () => undefined },
+			env: { now: () => 0, timezone: 'UTC', locale: 'en-GB' },
+			schedule: () => undefined,
+		});
+		expect(source.setPresentation({ density: 'short' })).toBe(false);
+		expect(source.initialPresentation()).toEqual({});
 	});
 
 	it('flushes to disk when asked and reports it', async () => {

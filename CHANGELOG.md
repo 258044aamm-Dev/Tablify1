@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] — unreleased, prepared 2026-10-06
+## [0.1.0] - 2026-10-06 (pre-release)
 
 **What works.** This is the first build with features rather than scaffolding. It is written for Obsidian 1.13.0
 and newer, on desktop and on mobile.
@@ -52,6 +52,16 @@ and newer, on desktop and on mobile.
   step.
 - Sync lives behind a lazy import: with no link configured it costs nothing at startup and contacts nothing.
 
+### Fixed since the internal build
+
+- **Importing no longer repaints the grid once per created note.** A 400 × 6 import measured 12.4–15.0 s and 400
+  React commits; it now measures **427–453 ms and 16 commits** — one repaint per chunk of 25, which is the whole
+  mechanism — with the same note count and the same single undo step. Nothing about *what* is imported changed;
+  only how often the grid is told about it.
+- **Row height and the frozen first column now survive closing the base.** They are stored per view in the
+  `.base` file, so a density you pick in View options is still there when you come back — it used to live only in
+  the open pane.
+
 ### Known limitations
 
 - No formulas, lookups, rollups or linked records in the grid; no CSV export (Bases has one); `.tabula` is
@@ -60,8 +70,12 @@ and newer, on desktop and on mobile.
 
 ### Not verified yet
 
-- The release is **not tagged**, because `docs/06-roadmap.md` §M6 requires in-app verification on a desktop and a
-  physical phone first, and `docs/manual-test-log.md` records every one of those checks as **NOT RUN**. The
-  plugin has never been loaded into a real Obsidian by anyone but its author's build harness.
+- `0.1.0` is published as a **pre-release**, and only as that, because `docs/06-roadmap.md` §M6 requires in-app
+  verification on a desktop and a physical phone first and `docs/manual-test-log.md` records every one of those
+  checks as **NOT RUN**. The plugin has never been loaded into a real Obsidian by anyone but its author's build
+  harness.
+- The pre-release exists to close that gap, not to bypass it: it is the build a desktop and a phone run the
+  manual log against, it is not in the community plugin directory, and it is not described here as verified. The
+  community submission stays blocked until those rows are filled in.
 
 [0.1.0]: https://github.com/258044aamm-Dev/Tablify/releases/tag/0.1.0

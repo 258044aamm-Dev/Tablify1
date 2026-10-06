@@ -95,12 +95,32 @@ No third-party company names — Anthropic, Claude, Airtable, Notion — in the 
 
 ## Release process
 
-1. `bun run version` (bumps `package.json`, `manifest.json`, `versions.json` in one commit).
-2. Update `CHANGELOG.md`.
-3. Commit, `bun run check`, push to `main`.
+1. `bun run version patch` (or `minor` / `major`) — bumps `manifest.json`, `package.json`, `versions.json` and
+   adds the dated `CHANGELOG.md` heading. It never commits and never tags, so the release stays a deliberate
+   step. The argument is required: run it bare and it prints its usage and exits non-zero rather than guessing.
+   (The npm script is deliberately **one** command. In a `&&` chain npm appends extra arguments to the *last*
+   command, so `bun run version patch` would hand `patch` to `git add` and the bump would never happen.)
+2. Fill in the `CHANGELOG.md` section the bump created.
+3. Stage and commit (`git add -A`), run `bun run check`, push to `main`.
 4. Tag the exact version string: `git tag 0.1.0 && git push --tags` (no `v`).
 5. `release.yml` builds, runs the size gate, attests provenance, and publishes the three assets with changelog-derived notes.
 6. Verify in-app: install from the release in a clean vault on desktop and phone.
+
+### Pre-releases (device testing, before submission)
+
+`0.1.0` is published as a **pre-release** so a real desktop and a real phone can run
+`docs/manual-test-log.md` before anything is submitted. Two rules make that work:
+
+- **The tag is always a bare `x.y.z`** — Obsidian matches it to `manifest.json` exactly, so "beta" cannot live in
+  the version string. Whether a release is a pre-release is decided by `.github/prerelease`: present, and
+  `release.yml` passes `--prerelease` and prefixes the notes with a notice that the build is unverified.
+- **Verification is what removes the marker.** `git rm .github/prerelease` once the log is filled in, and either
+  `gh release edit 0.1.0 --prerelease=false` or re-run the workflow to promote the existing release. The tag never
+  changes, and the commit that deletes the file is the record that the verification happened.
+
+BRAT installs a pre-release (it takes the newest release *or* pre-release by version, and reads `manifest.json`
+from the release assets), which is why the device-test build is a release rather than a branch or a bare tag. The
+community directory reads the same three assets; it is not told about pre-releases.
 
 ## Post-release
 

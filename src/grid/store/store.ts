@@ -108,6 +108,12 @@ export function createGridStore(options: GridStoreOptions): GridStore {
 	const selectionListeners = new Set<() => void>();
 	const globalListeners = new Set<() => void>();
 	let sourceSubscription: (() => void) | null = null;
+	/**
+	 * The bulk window: how deep the nesting is, and whether anything asked to be announced while it was open.
+	 * `src/grid/store/types.ts` (on `beginBulk`) carries the reasoning and the measurements for why this exists.
+	 */
+	let bulkDepth = 0;
+	let bulkSuspended = false;
 
 	let snapshot: GridSnapshot = {
 		revision,
@@ -132,7 +138,17 @@ export function createGridStore(options: GridStoreOptions): GridStore {
 
 	/* ── notifications ─────────────────────────────────────────────────────── */
 
+	/**
+	 * Every notification in this store funnels through here — `bump()`, a cell's channel, a row's channel, a
+	 * selection change and the whole-table sweep all end up in this one loop. That is what makes the bulk window
+	 * (`beginBulk`/`endBulk`) a single check rather than six: while one is open, notifications are **dropped and
+	 * remembered**, and `endBulk` performs one `refresh()` for all of them.
+	 */
 	function notify(listeners: Iterable<() => void>): void {
+		if (bulkDepth > 0) {
+			bulkSuspended = true;
+			return;
+		}
 		// Copy first: a listener that subscribes or unsubscribes while being notified must not corrupt the walk.
 		for (const listener of [...listeners]) {
 			listener();
@@ -615,6 +631,30 @@ export function createGridStore(options: GridStoreOptions): GridStore {
 
 		state(): GridState {
 			return { source, table, fields, result, selection, history, overlay, view };
+		},
+
+		beginBulk(): void {
+			bulkDepth += 1;
+		},
+
+		endBulk(): void {
+			if (bulkDepth === 0) {
+				// No window is open: nothing was deferred, so there is nothing to announce. Not an error — a
+				// caller that ends a window it never began is a bug in that caller, and a throw here would turn
+				// it into a crash during an import, which is the worst place to find out.
+				return;
+			}
+			bulkDepth -= 1;
+			if (bulkDepth > 0 || !bulkSuspended) {
+				return;
+			}
+			bulkSuspended = false;
+			if (disposed) {
+				return;
+			}
+			// One re-read, one `bump()`, one sweep of every narrow channel — and therefore one React commit for
+			// however many rows arrived while the window was open.
+			refresh();
 		},
 
 		subscribe(listener: () => void): () => void {

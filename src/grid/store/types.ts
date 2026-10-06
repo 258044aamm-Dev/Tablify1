@@ -147,6 +147,27 @@ export type GridStore = {
 	redo(): void;
 	/** Re-reads the source: the external-change path. Rows, values and order are replaced wholesale. */
 	refresh(): void;
+	/**
+	 * Defers **notification** — never state — until the matching {@link endBulk}, so a bulk external change
+	 * costs one repaint instead of one per row.
+	 *
+	 * The use case is the import path: a run creates up to 412 notes, each of which makes the host tell the
+	 * source the vault changed, and each of those turns into a refresh, a `bump()` and a React commit. Measured
+	 * in step 27 with a CDP profile: **400 notes created 400 commits, ~35 ms each** — 15 s of the run, with 23.7 %
+	 * of samples inside React's `jsx`. The state was never wrong; the *notifications* were, and this is the seam
+	 * that fixes it where the churn happens.
+	 *
+	 * Semantics, in four lines, because each one is a decision:
+	 *   · state is **never** deferred: `getSnapshot()` is correct throughout, so a reader during a bulk window
+	 *     (a dialog, a command, a test) sees the truth;
+	 *   · nested calls are counted, and only the outermost `endBulk` notifies — a chunk inside a run, or two
+	 *     callers arriving at once, cannot un-defer each other;
+	 *   · the wake-up is one `refresh()`, so a change that arrived while deferred is never missed;
+	 *   · `endBulk()` without a matching `beginBulk()` does nothing, and a `dispose()` during a bulk window
+	 *     notifies nobody.
+	 */
+	beginBulk(): void;
+	endBulk(): void;
 	/** Applies nothing; waits for the queue and the overlay to settle. */
 	flush(): Promise<void>;
 	/** Sets the range, or clears it. The keyboard, the pointer and the toolbar all come through here. */

@@ -73,6 +73,106 @@ const settle = async (): Promise<void> => {
 	await Promise.resolve();
 };
 
+/*
+ * The bulk window (step 29). `beginBulk`/`endBulk` exist because an import created 400 notes and therefore 400
+ * commits in step 27's profile; the rules asserted here are the four the type documents, and the *render* half is
+ * measured in the layout suite (tier-4 #17), where React is.
+ */
+describe('the bulk window defers notifications, never state', () => {
+	it('notifies a global listener once for a hundred changes, and not before the window closes', () => {
+		const { store } = harness(4);
+		let whole = 0;
+		let rowFires = 0;
+		store.subscribe(() => {
+			whole += 1;
+		});
+		store.subscribeRow('Notes/000.md', () => {
+			rowFires += 1;
+		});
+
+		store.beginBulk();
+		for (let index = 0; index < 100; index += 1) {
+			// A hundred ordinary edits inside one window — the shape an import has, minus the notes.
+			setCell(
+				store,
+				{ filePath: 'Notes/000.md', fieldId: 'note.Name' },
+				`Row ${String(index)}`,
+			);
+		}
+		expect(whole, 'nothing is announced while the window is open').toBe(0);
+		expect(rowFires, 'and no narrow channel either').toBe(0);
+
+		store.endBulk();
+		expect(whole, 'one announcement for the whole window').toBe(1);
+		expect(rowFires, 'including the channels that changed').toBe(1);
+	});
+
+	it('keeps the state correct *during* the window, so a reader is never lied to', () => {
+		const { store, source } = harness(4);
+		let fires = 0;
+		store.subscribe(() => {
+			fires += 1;
+		});
+		const valueOf = (): unknown =>
+			store.state().table.rows.find((row) => row.filePath === 'Notes/001.md')?.cells[
+				'note.Name'
+			];
+
+		store.beginBulk();
+		// An external change arrives *during* the window — another pane, another plugin, or (the case this exists
+		// for) the vault telling us an imported note now exists. The fake notifies only when asked, which is what
+		// makes this a test of the store rather than of the fake.
+		source.setQuietly('Notes/001.md', 'note.Name', 'Changed mid-window');
+		source.notify();
+		expect(fires, 'the window is silent').toBe(0);
+		// And the state moved anyway: what is deferred is the announcement, never the state. A reader during a
+		// window — a command, a dialog, a test — is never lied to.
+		expect(valueOf()).toBe('Changed mid-window');
+		store.endBulk();
+		expect(fires, 'the close announces what the window held').toBe(1);
+	});
+
+	it('counts nesting: an inner window that closes does not announce on behalf of an outer one', () => {
+		const { store } = harness(4);
+		let fires = 0;
+		store.subscribe(() => {
+			fires += 1;
+		});
+		store.beginBulk();
+		store.beginBulk();
+		setCell(store, { filePath: 'Notes/002.md', fieldId: 'note.Name' }, 'Nested');
+		store.endBulk();
+		expect(fires, 'the inner close holds the outer window open').toBe(0);
+		store.endBulk();
+		expect(fires, 'the outer close is the one that speaks').toBe(1);
+	});
+
+	it('does nothing when a window is ended without being begun, and nothing when nothing changed', () => {
+		const { store } = harness(4);
+		let fires = 0;
+		store.subscribe(() => {
+			fires += 1;
+		});
+		store.endBulk(); // A caller that ends a window it never began: not an error, and not a crash mid-import.
+		store.beginBulk();
+		store.endBulk(); // Opened and closed with no change in between: no wake-up is owed.
+		expect(fires).toBe(0);
+	});
+
+	it('announces nothing after dispose, even if a window was open', () => {
+		const { store } = harness(4);
+		let fires = 0;
+		store.subscribe(() => {
+			fires += 1;
+		});
+		store.beginBulk();
+		setCell(store, { filePath: 'Notes/003.md', fieldId: 'note.Name' }, 'After dispose');
+		store.dispose();
+		store.endBulk();
+		expect(fires).toBe(0);
+	});
+});
+
 describe('rule 1 — a keystroke notifies one cell', () => {
 	it('fires the edited cell’s listener, the row’s, and nothing else', async () => {
 		const { store, source, refOf } = harness(60);

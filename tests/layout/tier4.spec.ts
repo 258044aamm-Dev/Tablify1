@@ -958,7 +958,16 @@ test.describe('the import, end to end (step 23)', () => {
 	}, testInfo) => {
 		await open(page, fixtureOf(testInfo.project.name).id);
 		const before = await page.evaluate(() => window.__harness.rows());
+		await page.evaluate(() => window.__harness.mark());
 		const report = await page.evaluate(async () => window.__harness.importBlock(400, 6));
+		/*
+		 * The step-29 guard, and the reason this assertion is a count rather than a clock: 400 notes arrive in
+		 * chunks of 25, and each chunk is one bulk window, so the grid repaints **16 times** (from 400 before the
+		 * bulk window existed — one commit per created note, the profile step 27 took). A count is deterministic
+		 * on any runner; the wall-clock ceiling below is loose on purpose.
+		 */
+		const commits = (await page.evaluate(() => window.__harness.renderCounts())).commits;
+		expect(commits, '400 notes over 25-note chunks = 16 windows = 16 commits').toBe(16);
 		expect(report.created).toBe(400);
 		expect(report.cancelled).toBe(false);
 		expect(report.failures).toEqual([]);
@@ -973,7 +982,7 @@ test.describe('the import, end to end (step 23)', () => {
 		expect(report.elapsed).toBeLessThan(60_000);
 		testInfo.annotations.push({
 			type: 'import · assertion 17',
-			description: `400 × 6 imported in ${String(report.elapsed)} ms (of which ${String(report.rowMs)} ms in row insertion; ceiling 60 s), progress “${report.progress}”`,
+			description: `400 × 6 imported in ${String(report.elapsed)} ms (of which ${String(report.rowMs)} ms in row insertion; ceiling 60 s) in ${String(commits)} commits, progress “${report.progress}”`,
 		});
 	});
 

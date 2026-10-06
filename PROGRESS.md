@@ -2,9 +2,39 @@
 
 - Milestone: M0 — Foundation (complete) · M1 — Core domain (complete) · M2 — Data layer (complete) ·
   M3 — Grid v1 (complete) · M4 — Import/export (complete) · M5 — Sync (complete) ·
-  **M6 — Release (prepared, blocked on in-app verification: `0.1.0` untagged)**
+  **M6 — Release (pre-release `0.1.0` published for device testing; the community submission stays blocked on
+  in-app verification)**
   Branch: main
-- Last completed step: **step 28 — publish: everything except the three acts that are not mine to take.** The
+- Last completed step: **step 29 — the import coalesced, the view's own presentation persisted, and the release
+  janitor closed.** Three things, all of them things step 28 recorded as *left for a person*:
+
+  1. **The per-note re-render is gone.** `GridStore.beginBulk()` / `endBulk()` open a window in which notifications
+     are deferred (`bulkDepth` / `bulkSuspended`, checked in the single `notify()` every notification funnels
+     through), nesting is counted, state stays correct throughout (`getSnapshot()` is never deferred), and the
+     outermost close fires exactly one `refresh()`. `runImport` opens the window **per chunk of 25** — one repaint
+     per chunk instead of one per created note — and closes it in a `finally`, so a cancel or a throw cannot leave
+     the grid deferred. Measured on a fresh page (the same fixture, the same 400 rows × 6 columns): **427–453 ms
+     and 16 commits**, where step 27's profile measured **12.4–15.0 s and 400 commits**; the note count, the row
+     count, the progress string and the single undo step are all unchanged. The tier-4 assertion that guards it is
+     now a **commit count** (`16`, deterministic on any runner) with the wall-clock ceiling left loose on purpose.
+  2. **`density` and `frozenPrimary` persist — in their own sidecar key.** `tablifyPresentation` alongside
+     `fieldOptions` and `tablifyViewConfig`; `parsePresentation` is total in the same way `parseViewPatch` is, and
+     `setPresentation` merges onto what is stored, refuses on a read-only host by answering `false`, and never
+     touches the view patch. `ViewPatch` was **not** widened: its fields all feed the query pipeline and its
+     parser is a law every pipeline test leans on, while presentation feeds one render and is not undoable. Four
+     tests in `tests/unit/bases-source.test.ts`, including the non-vacuous one — a **fresh source** over the file
+     as it now stands reads the density and the freeze back.
+  3. **The janitor.** `timeout-minutes: 20` on the CI layout step (a hang detector, not a budget); `bun run
+     version` now exists (one command, so its argument reaches the script — see the finding below); three issue
+     templates and a config (`bug_report`, `feature_request`, `sync_problem`, and security routed to a private
+     advisory); and `.github/prerelease`, which makes `release.yml` publish a **pre-release** with an unverified-
+     build notice above the changelog.
+
+  **And the release itself, which is what all of the above was for:** `0.1.0` is published as a GitHub
+  **pre-release** at tag `0.1.0` with exactly three assets (`main.js`, `manifest.json`, `styles.css`), so BRAT can
+  install it on a desktop and a phone and `docs/manual-test-log.md` can finally be run. It is **not** in the
+  community directory, `docs/06` §M6 is still the gate for that, and the marker file is what says so.
+- Previously completed step: **step 28 — publish: everything except the three acts that are not mine to take.** The
   README is the real one (`docs/09` §README requirements, in its order: what it is, a screenshot, install, what it
   does, the network disclosure **verbatim in substance**, limitations, the keyboard table, licence and
   attribution); `CHANGELOG.md` has a `0.1.0` entry written for users, including a **Not verified yet** section;
@@ -22,10 +52,13 @@
   **Version: no bump was needed, and that is checked rather than assumed.** `docs/06` §M6 names `0.1.0` for the
   first community release; `manifest.json`, `package.json` and `versions.json` all already say `0.1.0` and
   `versions.json` maps it to `minAppVersion` `1.13.0`. (Step 28's own STOP clause is about a *disagreement* between
-  the docs and the release — there is none. Note also that `docs/09` §Release process says `bun run version` and
-  `docs/10` §Release process says `bun run version-bump`: the script is `scripts/version-bump.ts` and **no npm
-  script of either name exists**, so the documented command cannot run. Recorded rather than papered over; the
-  version is already correct, so nothing depended on it this time.)
+  the docs and the release — there is none. The version-command discrepancy recorded here read *"`docs/09` says
+  `bun run version` and `docs/10` says `bun run version-bump`"*, and step 29 checked that before acting on it:
+  **`docs/10` has no release-process section and never named `version-bump`** — `docs/12` and `START-HERE.md`
+  name the *file* `scripts/version-bump.ts`, which is correct. The real defect was narrower and now fixed:
+  `package.json` had no `version` script at all, `docs/05` §scripts shows one, and `bun run version` could not
+  run. Corrected in place rather than in a footnote, because a record that misquotes the docs is worse than no
+  record.)
 
   **Prerequisites `docs/09` §Pre-submission checklist lists, and their state:**
 
@@ -221,23 +254,43 @@
   `docs/manual-test-log.md`, `PROGRESS.md`. Nothing in `src/core/**` outside the new `view/patch.ts`, and nothing
   in the grid's command, menu or dialog inventories.
 
-- Next step: `prompts/step-28-publish.md` — the release itself: the version and the tag, the three release assets
+- Next step (**executed as step 29**, and the reason the pack's last numbered prompt is not the last work):
+  `prompts/step-28-publish.md` — the release itself: the version and the tag, the three release assets
   (`main.js`, `manifest.json`, `styles.css` — `main.js` is gitignored and attached to the release, never committed),
   the README with these screenshots and the licence/NOTICE pair, and the submission checklist from
   `docs/09-publishing.md` (community.obsidian.md, an automated review, the forum and Discord announcements). Its
   STOP clauses are the two this build cannot answer for the user: the repository and plugin name are theirs, and a
-  release cannot be unpublished.
+  release cannot be unpublished. Step 29 answered the two *deferred* items it listed instead — the coalesced
+  import and the persisted presentation — and cut the pre-release a device test needs.
 
-- Four things this step deliberately leaves for a person, none of them buried:
-  1. **The per-note re-render during an import** (the profile above). Fixing it means coalescing the store's
-     notification during a run — a change to how *every* write repaints, in a step whose fence is the mobile and
-     accessibility pass. `docs/07` documents no import budget, so nothing is being breached; the ceiling in tier-4
-     #17 is a regression guard, and the decision is the human's.
-  2. **`density` and `frozenPrimary` are not persisted at all.** They belong to the view's *presentation*, are not
-     members of `ViewPatch`, and live in `TablifyView`'s own field — so the sidecar round trip fixed above recovers
-     column order, hidden columns, grouping and collapsed groups, while a row-height or freeze choice is lost on
-     remount. Adding them means either extending `ViewPatch` (and its ops, undo and inverse) or a second sidecar
-     key; both are decisions rather than fixes.
+- Files touched in **step 29**: `src/grid/store/{types,store}.ts` (the bulk window: `beginBulk`/`endBulk`,
+  `bulkDepth`/`bulkSuspended`, the deferral inside `notify`), `src/plugin/import/runImport.ts` (the `bulk` port,
+  opened per chunk and closed in a `finally`), `src/adapters/bases/BasesSource.ts` (`PRESENTATION_KEY`,
+  `StoredDensity`, `PresentationPatch`, `parsePresentation`, `initialPresentation`, `setPresentation`),
+  `src/plugin/TablifyView.ts` (read the stored presentation at mount; write it on change), `harness/mount.tsx` (the
+  import wires the store's own bulk ports), `tests/dom/store.test.ts` (+5), `tests/unit/import-run.test.ts` (+5),
+  `tests/unit/bases-source.test.ts` (+4), `tests/layout/tier4.spec.ts` (#17 now asserts the **commit count**),
+  `.github/workflows/{ci,release}.yml` (the timeout; the pre-release marker and the notice above the notes),
+  `.github/prerelease` (new), `.github/ISSUE_TEMPLATE/{config.yml,bug_report.md,feature_request.md,sync_problem.md}`
+  (new), `package.json` (the `version` script), `CHANGELOG.md`, `docs/09-publishing.md`, `PROGRESS.md`.
+
+- Next step: **there is no next prompt.** The pack's twenty-nine steps are done, and step 29 was authorised
+  directly by the user (*"Now step 29 & a release for real device testing using BRAT plugin"*). What remains is one
+  act that needs a person and a phone, not a commit: run `docs/manual-test-log.md` against the `0.1.0` pre-release,
+  fill in the rows, then `git rm .github/prerelease` and submit through `community.obsidian.md` (§Submission
+  mechanics). Until those rows are filled, `docs/06` §M6 blocks the submission and nothing in the repo claims
+  otherwise.
+
+- Four things this step deliberately leaves for a person, none of them buried. **The first two were decided in
+  step 29 and are done** (the import coalesces per chunk of 25; the presentation has its own sidecar key) — they
+  are kept here, struck through in substance rather than deleted, because the reasoning is the record of why they
+  were left:
+  1. ~~**The per-note re-render during an import**~~ — **closed by step 29**: 400 × 6 went from 12.4–15.0 s and 400
+     commits to 427–453 ms and 16. The decision was taken as the profile's own sentence described: coalesce the
+     store's notification during a run, nothing else.
+  2. ~~**`density` and `frozenPrimary` are not persisted at all**~~ — **closed by step 29** with the **second
+     sidecar key** rather than a wider `ViewPatch` (`tablifyPresentation`; the trade is written out in
+     `BasesSource`'s header for that constant).
   3. **The one line that wires the sidecar into the store** (`view: this.source.initialView()`) is guarded by
      reading, not by a test that constructs a `TablifyView`: the house double's `BasesView` has no constructor
      taking a `QueryController`, and widening a shared double to reach one construction argument is the kind of
@@ -253,9 +306,10 @@
      container's `115 passed (3.7m)`. What the stale run actually showed is a **queue artefact**:
      `concurrency: cancel-in-progress` cancels the run a push supersedes, and pushing faster than a suite takes
      leaves the new run waiting behind a cancellation that has not taken effect. So no sharding is needed and the
-     suite is not a bottleneck; what the release still owes this job is a **`timeout-minutes`**, so a stage that
-     cannot finish fails loudly instead of holding a workflow open. The stale step name (*"thirteen assertions"*)
-     was corrected to twenty-three in the same pass, because a label that lies is worse than no label.
+     suite is not a bottleneck; the one thing that run still left owed — a **`timeout-minutes`** on the step, so a
+     stage that cannot finish fails loudly instead of holding a workflow open — was paid in step 29 (twenty
+     minutes, five times the slowest measured run). The stale step name (*"thirteen assertions"*) was corrected to
+     twenty-three in the same pass, because a label that lies is worse than no label.
 
 - Before that: **step 26 — sync, end to end: the three-way diff, the plan, the pull and the push, the
   conflict review, and the wiring that keeps all of it off the startup path.** The rule the step exists for is one

@@ -72,20 +72,54 @@ jobs:
                   fi
                   cat /tmp/release-notes.md
 
+            # A pre-release build says so in its own body, above the changelog: someone who lands on the page
+            # (rather than arriving from BRAT, which is the intended route) must not mistake it for a verified
+            # release. The changelog entry itself is untouched — it is the honest record either way.
+            - name: Add the pre-release notice when `.github/prerelease` is present
+              run: |
+                  if [ -f .github/prerelease ]; then
+                    {
+                      echo '> **Pre-release — for device testing.** This build is published so a desktop and a phone'
+                      echo '> can run the verification checklist in `docs/manual-test-log.md`. It has **not** been'
+                      echo '> verified on a device yet, and it is **not** in the community plugin directory. Install it'
+                      echo '> with [BRAT](https://github.com/TfTHacker/obsidian42-brat) using the repository'
+                      echo '> `258044aamm-Dev/Tablify`, or the manual three-asset route in the README.'
+                      echo
+                    } > /tmp/prerelease-notice.md
+                    cat /tmp/release-notes.md >> /tmp/prerelease-notice.md
+                    mv /tmp/prerelease-notice.md /tmp/release-notes.md
+                  fi
+                  head -5 /tmp/release-notes.md
+
             # `gh` is preinstalled on GitHub's runners and authenticates with GITHUB_TOKEN, so no third-party
             # release action is needed and nothing has to be pinned to a commit SHA.
+            #
+            # The pre-release flag is a marker file rather than a workflow input, because the tag has to stay a
+            # bare `x.y.z` and that leaves nowhere in the ref for it. It is flip-able in both directions:
+            # `gh release edit "$GITHUB_REF_NAME" --prerelease=false` promotes an existing release once the
+            # manual log is filled, and removing the file stops *future* releases being marked.
             - name: Publish the release with exactly three assets
               env:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               run: |
                   dir="dist/$GITHUB_REF_NAME"
+                  flag=""
+                  if [ -f .github/prerelease ]; then
+                    flag="--prerelease"
+                    echo "::notice title=Pre-release::.github/prerelease is present, publishing as a pre-release."
+                  fi
                   if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
                     gh release upload "$GITHUB_REF_NAME" \
                       "$dir/main.js" "$dir/manifest.json" "$dir/styles.css" --clobber
+                    if [ -n "$flag" ]; then
+                      gh release edit "$GITHUB_REF_NAME" "$flag"
+                    fi
                   else
                     gh release create "$GITHUB_REF_NAME" \
                       --title "$GITHUB_REF_NAME" \
                       --notes-file /tmp/release-notes.md \
+                      $flag \
                       "$dir/main.js" "$dir/manifest.json" "$dir/styles.css"
                   fi
-                  gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name'
+                  gh release view "$GITHUB_REF_NAME" --json isPrerelease,assets \
+                    --jq '{prerelease: .isPrerelease, assets: [.assets[].name]}'

@@ -61,14 +61,17 @@ jobs:
               run: bunx playwright install --with-deps chromium
 
             # Twenty-three assertions × five viewports, one worker. Measured both sides: "115 passed (3.7m)" on
-            # the workstation that built step 27, and **2m20s for this step** on the runner (job 3m44s) in run
-            # 37459798546 — the first run of this workflow to reach a conclusion, because every earlier one was
-            # cancelled by the next push while this step was still going (`cancel-in-progress` above, which
-            # cancels rather than queues). Not a budget problem, then — but the release still owes this job an
-            # explicit `timeout-minutes`, so that a stage which cannot finish fails loudly. See `PROGRESS.md`
-            # §step 27, finding 5.
+            # the release tree, and **2m20s for this step** on the runner (job 3m44s) in run 37459798546 — the
+            # first run of this workflow to reach a conclusion, because every earlier one was cancelled by the
+            # next push while this step was still going (`cancel-in-progress` above, which cancels rather than
+            # queues). A duration problem it never was; the timeout below is the one thing that run still left
+            # owed. See `PROGRESS.md` §step 27, finding 5.
             - name: Layout suite (twenty-three assertions × five viewports)
               run: bun run test:layout
+              # Twenty minutes is a hang detector, not a budget — five times the slowest measured run of this
+              # step. The failure it exists to catch is a step that never finishes, which is the shape the
+              # cancelled runs of steps 27–28 *looked* like before the queue artefact was found.
+              timeout-minutes: 20
 
             - name: Upload the Playwright report
               if: always()

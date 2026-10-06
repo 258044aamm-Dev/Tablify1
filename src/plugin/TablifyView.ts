@@ -198,12 +198,21 @@ export class TablifyView extends BasesView {
 			view: this.source.initialView(),
 		});
 
-		// The settings the grid's *presentation* needs. Read through the store so a change in the settings tab
-		// reaches an open view; `density` is the only one the grid takes today (step 19 adds the rest).
+		/*
+		 * The settings the grid's *presentation* needs. Read through the store so a change in the settings tab
+		 * reaches an open view.
+		 *
+		 * The order is the point (step 29): the **view's own** stored presentation wins, then the plugin-wide
+		 * setting, then the shipped default. Before this, the view's decision lived only in memory — a density
+		 * picked in View options survived until the pane was closed, and the `.base` never learned it, even
+		 * though the sidecar write path for the *rest* of the view options has existed since step 19.
+		 */
+		const stored = this.source.initialPresentation();
 		const density =
+			stored.density ??
 			settings?.get().appearance.defaultRowHeight ??
 			DEFAULT_SETTINGS.appearance.defaultRowHeight;
-		this.presentation = { density, frozenPrimary: true };
+		this.presentation = { density, frozenPrimary: stored.frozenPrimary ?? true };
 		if (settings !== undefined) {
 			this.cleanup.push(
 				settings.subscribe(() => {
@@ -496,6 +505,17 @@ export class TablifyView extends BasesView {
 			rows: this.rowPorts(),
 			onPresentation: (patch) => {
 				this.presentation = { ...this.presentation, ...patch };
+				// Persist the two the sidecar carries; `rowHeight` is not one of them (a density *name* is what
+				// a `.base` stores — `src/grid/layout.ts` says why) and a read-only host just refuses.
+				const stored = {
+					...(patch.density === undefined ? {} : { density: patch.density }),
+					...(patch.frozenPrimary === undefined
+						? {}
+						: { frozenPrimary: patch.frozenPrimary }),
+				};
+				if (Object.keys(stored).length > 0) {
+					this.source.setPresentation(stored);
+				}
 				this.remount();
 			},
 		};

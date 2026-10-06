@@ -1041,6 +1041,20 @@ export function boot(): HarnessApi {
 						await createImportedRow(path);
 					},
 				},
+				/*
+				 * The bulk window (step 29), wired exactly as the view will wire it: each created note would
+				 * otherwise be its own commit (step 27 measured 400 notes → 400 commits, ~35 ms each), and this
+				 * turns that into one commit per chunk of 25. The port is the *store's*, so what the layout suite
+				 * measures here is the product's own mechanism rather than a harness-local imitation.
+				 */
+				bulk: {
+					begin: () => {
+						store.beginBulk();
+					},
+					end: () => {
+						store.endBulk();
+					},
+				},
 				onProgress: (done, total) => {
 					lastImportProgress = progressText(done, total);
 				},
