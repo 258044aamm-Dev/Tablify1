@@ -206,7 +206,7 @@
 
 	--tablify-row-h-short: 32px; /* the three row heights; "short" is the densest the grid offers */
 	--tablify-row-h-medium: 40px; /* the default, and the minimum on a phone */
-	--tablify-row-h-tall: 52px;
+	--tablify-row-h-tall: 64px; /* docs/02 §row windowing; the window maths in src/grid/store/window.ts is this number */
 	--tablify-row-h: var(
 		--tablify-row-h-medium
 	); /* the live value; a view overrides it inline (step 17) */

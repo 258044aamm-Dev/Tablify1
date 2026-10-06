@@ -25,6 +25,8 @@
 	"devDependencies": {
 		"@eslint/js": "9.39.5",
 		"@types/node": "20.19.43",
+		"@types/react": "19.3.0",
+		"@types/react-dom": "19.3.0",
 		"@vitest/coverage-v8": "3.2.7",
 		"esbuild": "0.25.5",
 		"eslint": "9.39.4",
@@ -38,5 +40,8 @@
 		"typescript-eslint": "8.59.1",
 		"vitest": "3.2.7"
 	},
-	"dependencies": {}
+	"dependencies": {
+		"react": "19.3.0",
+		"react-dom": "19.3.0"
+	}
 }

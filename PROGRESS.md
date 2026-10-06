@@ -1,8 +1,17 @@
 # PROGRESS
 
-- Milestone: M0 — Foundation (complete) · M1 — Core domain (complete) · **M2 — Adapters (in progress)**
+- Milestone: M0 — Foundation (complete) · M1 — Core domain (complete) · M2 — Data layer (complete) ·
+  **M3 — Grid v1 (in progress)**
   Branch: main
-- Last completed step: **step 15 — the stylesheet foundation: tokens, brand layer, grid layout, and the two
+- Last completed step: **step 16 — the UI store, its selectors, and the command layer.** Everything that
+  mutates the grid now goes through one hand-rolled store on `useSyncExternalStore` — no state library, no
+  context for cell data, no `useReducer`. One user action is one `history.push`, one undo step and one queued
+  batch; the four **Tier 3** rules from `docs/07` are asserted with measured numbers (a keystroke = **three
+  renders out of 181 mounted components**, and zero renders of the other 178). React 19.3.0 and react-dom
+  19.3.0 are real dependencies from this step, and the bundle is **unchanged to the byte** anyway, because
+  nothing imports the store tree yet. 992 tests, 28 files; `eslint .` 0 errors, 0 warnings.
+
+- Before that: **step 15 — the stylesheet foundation: tokens, brand layer, grid layout, and the two
   styling gates.** `src/styles/tokens.css` owns every value in three marked zones (identity → semantic →
   host); `brand.css` spends the accent and sizes the wordmark's slot; `grid.css` is layout only and states
   the measurement behind each block. `styles.css` at the root is now a **built** artefact — esbuild bundles
@@ -34,6 +43,131 @@
   `processFrontMatter` call per file per flush, a promise chain per file so two writers never overlap, a
   250 ms debounce with a `flush()` that bypasses it, per-file failure reporting, and an overlay that holds
   pending values only.
+
+---
+
+**Step 16 — the UI store, its selectors, and the command layer.**
+
+- Verified (`bun run check` — raw, exit 0): `tsc --noEmit` clean; `eslint .` **0 errors, 0 warnings**;
+  `brand-gate: OK — 61 permitted match(es), 0 violations`; `manifest:check: OK`; Prettier clean;
+  **992 tests across 28 files** (was 959 / 25: +33 tests, +3 files, all of them this step's); `contrast: OK —
+  all 32 gated checks pass (light, dark); 0 host gap(s), 3 host pair(s) below our minimums`;
+  `css-gate — 4 file(s) under src/styles, 12711 bytes of built styles.css`; `bundle-size: OK` —
+  `main.js raw 68920 bytes (67.30 KB)` and `gzip 21985 bytes (21.47 KB)`, **identical to step 15**.
+
+- **React is a dependency and costs nothing yet.** `react` and `react-dom` **19.3.0** went into
+  `dependencies` (a plugin bundles them; a devDependency would be a lie about what ships), with
+  `@types/react` and `@types/react-dom` **19.3.0** in `devDependencies`. Installed beside TypeScript 5.8.3
+  and `@types/node` 20.19.43 with **no peer warnings** — the prompt's STOP leg ("React's version constraints
+  conflict with the step-01 pin") **did not fire**, and re-pinning React to a 19.0.x backport was not
+  needed. The bundle delta is **0 raw / 0 gzip**: `bun install` pulled 443 packages, `bun.lock` grew 18
+  lines, and esbuild bundles only what is imported — nothing imports `src/grid/**` yet. The number will move
+  in step 17, when `GridView` is imported by the view for the first time, and that is the honest place for
+  it to move.
+
+- The four **Tier 3** rules, each with its measured number:
+
+  | Rule (`docs/07` §Tier 3) | Test | Measured result |
+  |---|---|---|
+  | a keystroke re-renders the edited cell and nothing else | `tests/dom/store-render.test.ts` | **181 mounted components** (1 chrome + 60 rows + 120 cells); one keystroke re-renders **3** — the edited cell, its row, the status line — and **0** of the other 178. The write's confirmation renders the same 3 again, for the same one fact. |
+  | selection survives a re-query; degrades to the nearest surviving row | `tests/dom/store.test.ts` | unchanged row set ⇒ the range is **deep-equal** after `notify()`; `Notes/003.md` removed from 8 rows ⇒ the range re-seats at **index 3 of the new order** (`Notes/004.md`), keeping its far corner; all rows gone ⇒ selection `null`; an edit target that leaves the view ⇒ `editing` `null`. |
+  | undo of a 400-cell paste is **one** queued batch, and writes = distinct files | `tests/dom/store.test.ts` | paste 400 cells ⇒ **1 batch, 400 writes, 4 distinct files touched**; undo ⇒ **2 batches, 800 writes**, `canUndo` false after one undo, `canRedo` true. The step's label ("Paste 400 cells") is the one the menu will show. |
+  | external change wins over a stale snapshot; deleted rows are not resurrected | `tests/dom/store.test.ts` | another writer's value wins on re-query; a pending value for a row deleted elsewhere is **dropped, never written, never shown** (pending 0); a value the source confirms first **settles without waiting for the queue**. |
+
+- **The render-count rule is three renders, not one, and the code says so where it does it.** A keystroke is
+  one fact that three surfaces display: the cell's text *and its pending ring*, the row's pending dot, the
+  status line's count. Reporting "one render" would have been a lie that a later reader would have to
+  un-learn. What the rule exists to protect — *the grid does not re-render* — holds exactly: 178 of 181
+  components are not re-rendered, not even scheduled. Written on the test, the mechanism is that a cell
+  subscribes to a `string` (`useCellDisplay`) plus a small object compared field by field (`useCellFlags`),
+  so React's own `Object.is`/`isEqual` decides — a subscription fires, the value is unchanged, nothing
+  renders.
+
+- **The bug this step found is the one worth recording.** `bump()` (new revision, new snapshot, notify) was
+  originally called *after* the narrow-channel notifications. React's `useSyncExternalStore` asks the store
+  for its value **synchronously, inside the change handler**: woken before the new snapshot existed, it read
+  the old one, found no change, and silently skipped the render — a selection that moved with nothing on
+  screen moving with it. It took a jsdom render probe to see it. Fixed by making the order an explicit
+  contract in the code (`bump()` first, then the narrow channels), which is now documented at `bump()`
+  itself. The general rule: **notify after the state you are describing exists**, because a listener is
+  allowed to read synchronously.
+
+- The rest of the fixes this step made in its own fresh code, all found by its own tests: a value write now
+  wakes its **row** channel as well as its cell (the row's `dirty` flag changes, and a row is notified once
+  however many of its cells moved); an external `refresh()` wakes **every narrow channel**, because a vault
+  change is genuinely unbounded and diffing the whole table to find out which cells moved costs more than
+  waking the components that are mounted; and `setEditing` notifies **the two cells whose appearance
+  changes** — the one that had the cursor and the one that took it.
+
+- The window maths, as a table (14 tests). 100 rows of 40 px in an 800 px viewport, `OVERSCAN_ROWS = 8`:
+
+  | `scrollTop` | `start` | `end` | why it matters |
+  |---|---|---|---|
+  | 0 | 0 | 28 | the first screen and its overscan |
+  | 40 (one row) | 0 | 29 | a row straddling the bottom edge stays mounted |
+  | 400 (mid-list) | 2 | 38 | overscan on both sides; the slice is `Notes/002.md` … `Notes/037.md` |
+  | 3200 (the last screen) | 72 | 100 | the last screen whole, with no overscan past the end |
+  | 999999 | 72 | 100 | **clamped to `totalHeight − viewportHeight`**, never a blank grid |
+  | −500 | 0 | 28 | clamped to the top |
+  | 0, 3 rows | 0 | 3 | fewer rows than one screen |
+  | 0, 0 rows | 0 | 0 | an empty view mounts nothing and reports no scroll range |
+  | 0, viewport 0 | 0 | 9 | an unmeasured pane still mounts the first row — the failure mode this rule prevents |
+
+  Densities are **short 32 / medium 40 / tall 64**, from `docs/02` §row windowing; `rowIndexAt` answers the
+  row under a y offset and `null` past either end.
+
+- The `getSnapshot` identity assertion the prompt asks for: two reads with nothing in between return the
+  **same object** (and re-selecting the already-active cell is not a change — **0 notifications**, same
+  object); after a change the object is replaced once and its `revision` is `previous + 1`, and the new
+  object is then stable in turn.
+
+- **One number in `tokens.css` was wrong and is corrected here: `--tablify-row-h-tall` 52 px → 64 px.** The
+  window maths is arithmetic on a fixed row height, and the CSS is what draws it; if the two disagree, every
+  mounted row drifts against the scroll position by the difference. Three sources say 64 (`docs/02`
+  §row windowing, `PLAN-ui-ux-pass.md` §spacing, and `window.ts`), so the CSS was the outlier — a
+  transcription slip in step 15. The fence for this step does not list `src/styles/**`; it is edited anyway,
+  because shipping a grid whose maths and styles disagree is not an option, and a 12 px-per-row drift is a
+  bug that would have been blamed on the renderer in step 17.
+
+- `tests/dom/`, not `tests/unit/`, and the architecture made that choice, not convenience:
+  `eslint.config.mts` forbids `tests/**` outside `tests/dom/**` from importing `src/grid/**` ("it needs a
+  DOM and React"). The window maths has no DOM in it, but the grid is one module with one test home, so all
+  three new test files live there. `tests/fakes/rowSource.ts` stayed in `tests/fakes/` because it imports
+  only `src/adapters` and `src/core` — a fake of a port, not of the grid.
+
+- ASSUMED, stated as such:
+  1. **"jsdom renders" is not "a browser paints".** The render counts are React's own scheduling decisions,
+     measured in jsdom. What a browser then does with them (paint, compositing) is step 21's Playwright
+     harness, and no number in this step claims to be a paint measurement.
+  2. **The store has no user.** Nothing in `src/plugin/**` imports `src/grid/**` yet, so every rule here is
+     asserted against tests and not against a running view; step 17 is the first real caller.
+  3. **`RowSource` is the fake, not a vault.** Rule 4 ("external change wins") is exercised through
+     `tests/fakes/rowSource.ts`'s `notify()`, which is what a real vault watcher would do — not against a
+     real vault. There is no real vault here (carried forward from step 12).
+
+- Open questions for the human:
+  1. **Should the status line really wake on every keystroke?** It shows a pending count, so today it does.
+     A cheaper rule would be to let the cell and the row carry the "unsaved" signal while editing, and have
+     the status line report only the *settled* count — one fewer render per keystroke, at the cost of the
+     count lagging a beat behind. The test asserts 3 renders either way, so it is a one-line change.
+  2. **`selectStatusSummary` returns a fresh object**, so it needs `useStoreSelector(…, isEqual)`; there is
+     no shallow comparator exported yet. The status bar in step 17 will want one — export it from
+     `selectors.ts`, or give the summary a revision-stamped identity?
+  3. (unchanged) **Twelve settings defaults are choices, not quotations** (step 14's table);
+     **does anything ever write `.tablify/migrations/<timestamp>.json`?**; `docs/01` §undo; `docs/02`
+     §Query vs step 08; the three step-10 `FINDINGS.md` corrections; **twelve `docs/04` geometry numbers**
+     (step 15's three open questions).
+
+- Next step: `prompts/step-17-grid-components.md` — `GridView`, the `useWindow` hook, `rows/{Row,Cell}`,
+  `Empty`, and `pinnedPrimary` (pinned only at ≥ 600 px of pane, `ResizeObserver`-driven). **Before writing
+  any component:** `tsconfig.json` `include` has **no `.tsx`** glob — it must gain `src/**/*.tsx` and
+  `tests/**/*.tsx` first, or `tsc` will silently skip every component file the step creates.
+
+- Files touched in **step 16**: new — `src/grid/store/{types,window,store,selectors,commands}.ts`,
+  `tests/fakes/rowSource.ts`, `tests/dom/{window-math,store,store-render}.test.ts`; changed — `package.json`
+  and `bun.lock` (React 19.3.0, the step's declared dependency decision), `src/styles/tokens.css` (one
+  number: `--tablify-row-h-tall` 52 → 64 px, justified above), `PROGRESS.md`. Nothing outside
+  `src/grid/**`, `src/styles/tokens.css`, `tests/**`, `package.json`, `bun.lock` and `PROGRESS.md`.
 
 ---
 
