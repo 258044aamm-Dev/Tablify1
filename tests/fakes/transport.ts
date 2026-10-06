@@ -11,7 +11,10 @@ import type { Clock } from './clock';
 export type TransportResponse = {
 	status: number;
 	headers?: Record<string, string>;
+	/** A parsed body. A real `requestUrl` response carries `text` instead; a fixture may queue either. */
 	body?: unknown;
+	/** A raw body, exactly as `requestUrl` returns one. `queuePage` uses this channel. */
+	text?: string;
 };
 
 export type TransportRequest = {
@@ -57,6 +60,17 @@ export type FakeTransport = {
 	calls: RecordedRequest[];
 	/** Queue an exact response. */
 	queue(response: TransportResponse): void;
+	/**
+	 * Queue a `GET /records` page: the shape the client's own validators accept, with an `offset` when the test
+	 * wants a second page. The body travels as JSON **text**, the way a real `requestUrl` response arrives.
+	 */
+	queuePage(
+		records: readonly {
+			readonly id: string;
+			readonly fields: Readonly<Record<string, unknown>>;
+		}[],
+		offset?: string,
+	): void;
 	/** Queue `status` with an optional body and headers, e.g. 429 with `retry-after`. */
 	queueStatus(
 		status: number,
@@ -114,6 +128,15 @@ export function createFakeTransport(options: { clock: Clock }): FakeTransport {
 		},
 		queue(response) {
 			queued.push({ kind: 'response', response });
+		},
+		queuePage(records, offset) {
+			// `offset` omitted means "this was the last page": the client's loop ends when the field is absent, so a
+			// test that queues two pages gets three requests if it queues the second one wrongly, and fails loudly.
+			const body = offset === undefined ? { records } : { records, offset };
+			queued.push({
+				kind: 'response',
+				response: { status: 200, text: JSON.stringify(body) },
+			});
 		},
 		queueStatus(status, extra) {
 			queued.push({

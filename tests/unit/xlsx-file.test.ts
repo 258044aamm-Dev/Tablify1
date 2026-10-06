@@ -98,7 +98,9 @@ describe('a real .xlsx, written and read back', () => {
 		);
 		const result = await writeXlsxSheet(sheet, 'Tablify export 2026-10-06 1432.xlsx');
 		const path = join(directory, 'export.xlsx');
-		writeFileSync(path, Buffer.from(result.bytes));
+		// A `Uint8Array` view over the writer's `ArrayBuffer`: no `Buffer`, which is not a global in this file's
+		// lint environment and would be a warning on every run.
+		writeFileSync(path, new Uint8Array(result.bytes));
 
 		// A real archive: `PK\x03\x04` is the local-file-header signature of every zip, and an .xlsx is a zip.
 		const bytes = readFileSync(path);
@@ -140,7 +142,9 @@ describe('a real .xlsx, written and read back', () => {
 		);
 		const result = await writeXlsxSheet(sheet, 'display.xlsx');
 		const path = join(directory, 'display.xlsx');
-		writeFileSync(path, Buffer.from(result.bytes));
+		// A `Uint8Array` view over the writer's `ArrayBuffer`: no `Buffer`, which is not a global in this file's
+		// lint environment and would be a warning on every run.
+		writeFileSync(path, new Uint8Array(result.bytes));
 
 		const rows = (await readXlsxFile(path))[0]?.data ?? [];
 		expect(rows[1]?.[1]).toBe('€1,200.00');

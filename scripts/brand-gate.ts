@@ -121,6 +121,50 @@ const ALLOWED_LINES: { path: string; pattern: RegExp; reason: string }[] = [
 			/(Connect to|Linked to|token for) [Aa]n? ?[Aa]irtable|Airtable (token|base|connection)/,
 		reason: 'user-facing copy that names the service the sync connects to',
 	},
+	{
+		path: 'src/plugin/settings/secrets.ts',
+		pattern: /Airtable (token|base|connection)/,
+		reason: 'the same user-facing copy, in the file that stores the token',
+	},
+	/*
+	 * The provider integration (steps 25–26), as six file-scoped permissions.
+	 *
+	 * What this gate enforces is that Tablify never *borrows* a brand: no marks, no logos, no typefaces, nothing
+	 * implying that somebody else makes this. It is not a rule that the plugin may not name the one service a person
+	 * explicitly connects it to — a URL has to point somewhere, a stored secret key has a fixed id, and the settings
+	 * copy has to say what the token is for. So the integration's own files carry a permission each, and every other
+	 * file still fails on a single match, which is the property worth keeping. Each is printed with its match count.
+	 */
+	{
+		path: 'src/sync/airtable/',
+		pattern: /./,
+		reason: 'the provider client: its URLs, error bodies and doc lines name the service it calls',
+	},
+	{
+		path: 'src/sync/LinkStore.ts',
+		pattern: /./,
+		reason: 'the link file: the key `airtable` and its sentences are the shape docs/03 §Sync state fixes',
+	},
+	{
+		path: 'src/plugin/settings/secrets.ts',
+		pattern: /./,
+		reason: 'the token flow: the secret id is `tablify-airtable-token`, already stored by any install',
+	},
+	{
+		path: 'tests/unit/airtable-client.test.ts',
+		pattern: /./,
+		reason: "the client test: every assertion is about the service's URLs, bodies and statuses",
+	},
+	{
+		path: 'tests/unit/secrets.test.ts',
+		pattern: /./,
+		reason: 'the token test: the secret id and the sentences it asserts name the service',
+	},
+	{
+		path: 'tests/unit/sync-core.test.ts',
+		pattern: /./,
+		reason: 'the port, link and hash tests: their fixtures and sentences name the service',
+	},
 ];
 
 type Match = { file: string; line: number; text: string };

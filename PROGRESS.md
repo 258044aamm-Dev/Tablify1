@@ -1,9 +1,118 @@
 # PROGRESS
 
 - Milestone: M0 — Foundation (complete) · M1 — Core domain (complete) · M2 — Data layer (complete) ·
-  M3 — Grid v1 (complete) · **M4 — Import/export (complete)** · M5 — Sync (not started)
+  M3 — Grid v1 (complete) · M4 — Import/export (complete) · **M5 — Sync (in progress — the port, the link file and
+  the client are in; the diff, the review and the wiring are step 26)**
   Branch: main
-- Last completed step: **step 24 — export: TSV and XLSX, to the clipboard or a file, in the mode the person
+- Last completed step: **step 25 — the sync foundation: the token, the port, the link file and the client.**
+  Nothing in this step is reachable from the grid yet, and that is the point of it: `src/sync/**` is a leaf,
+  `main.js` does not contain a line of it, and the only file outside the new tree that changed is the settings
+  door it will come through. The step's own two STOP clauses were checked **first**, because both would have
+  invalidated the plan: `SecretStorage` (`obsidian.d.ts` 1.13.1, line 5635, `@since 1.11.4`) with exactly
+  `setSecret(id, secret)` — *"Lowercase alphanumeric ID with optional dashes … @throws Error if ID is invalid"* —
+  `getSecret(id): string | null` and `listSecrets(): string[]`; and `requestUrl` (line 5442, `@since 0.12.8`) with
+  `RequestUrlParam {url, method?, contentType?, body?: string | ArrayBuffer, headers?: Record<string,string>,
+  throw?}`, so **every header the client needs is expressible** and `minAppVersion: 1.13.0` is past both. No STOP.
+
+  **The port (`src/sync/SyncTarget.ts`) has four methods and no fifth.** `describe()`, `pull(since)`, `push(changes)`,
+  `capabilities()` — **there is no `delete`**, because `docs/01` §Sync UX says *"Records deleted remotely are never
+  silently deleted locally"* and `docs/08` §P9 keeps the remote schema untouched; a port that cannot express a delete
+  is a stronger guarantee than a comment saying not to call one. The five failure kinds are named types
+  (`AuthError`, `RateLimitError`, `NetworkError`, `SchemaError`, `ValidationError`) plus the union they narrow, and
+  the retry policy is a **table next to the kinds**, not a `catch` block:
+
+  | Kind | Attempts | Delay | Doc line behind it |
+  |---|---|---|---|
+  | `auth` | 1 (never retries) | — | A token that is wrong stays wrong; the fix is a person. |
+  | `rateLimit` | 5 | honours `Retry-After`, then full jitter from 1 s | `docs/02` §Sync: *"retry/backoff"*; the 429's own header is the best information available. |
+  | `network` | 4 | full jitter from 500 ms, doubling | 5xx and a dropped socket are the same problem. |
+  | `schema` | 1 | — | A response we do not recognise will not become recognisable by asking again. |
+  | `validation` | 1 | — | The provider refused *our* data; the data is what has to change. |
+
+  `retryDelayFor` is the only function that decides a delay: full jitter (`random()` in `[0, 1)`), capped at 30 s,
+  with `Retry-After` winning over the curve, and it answers `null` at the cap — which is how the client's loop knows
+  to stop rather than sleep forever. Jitter is injected, so the tests' waits are exact numbers rather than
+  probabilistic ones.
+
+  **`src/sync/airtable/{transport,client}.ts` is the only place that talks to the network**, and it reaches it
+  through a one-function port so every line above it is testable without a provider. The caps, each with its reason
+  in the file: `pageSize` 100 (the provider's own maximum), `maxPages` 50 (**5,000 records**, and the promise that a
+  wrong `offset` cannot loop forever — a truncated read sets `truncated: true` rather than presenting a partial read
+  as complete, because missing records look deleted), `chunkSize` 10 (`docs/02` §Sync: *"batch endpoints in chunks of
+  10"*), `maxSeconds` 30. Writes are `PATCH` with `typecast: false` **written out on purpose** (the plugin never asks
+  a provider to coerce a value a person typed), per-record outcomes, and a failed chunk does **not** abandon the
+  chunks after it. `requestUrl` is called with `throw: false` — with the default, a 429 would arrive as a rejected
+  promise and lose the status and the `Retry-After` the retry table is built from. Response headers are lower-cased
+  on the way in, because servers spell `Retry-After` three different ways. Every response body is walked as
+  `unknown`: a shape error is a `SchemaError` naming what was wrong (`records[]`, each with `id` and `fields`), never
+  a crash and never a silent `undefined` travelling on as a value. An error message never quotes raw markup — an
+  HTML page from a proxy is reported as *"the server sent 431 bytes that were not JSON"*.
+
+  **The token (`src/plugin/settings/secrets.ts`) exists only in `SecretStorage`.** Id `tablify-airtable-token`,
+  lower-case with dashes as the API requires (asserted against that rule, with a double that throws on an invalid id
+  the way the real one does). `assertNoSecret` is the guard the step asked for: it walks a value about to be saved
+  and **throws** if any string is token-shaped (`pat…`) or contains the stored token. `checkToken` is the *"test the
+  token"* action, and it makes **no request at all** when no token is stored — a person who has not pasted one
+  learns nothing about the network from pressing the button. The `Notice` is injected, not imported.
+
+  **The link file (`src/sync/LinkStore.ts`) is `docs/03` §Sync state, not a paraphrase**: `.tablify/links/<key>.json`
+  where the key is *"a stable hash of the `.base` path plus the view name"* — **one deliberate deviation from the
+  step's wording**, which said `<base>-<table>.json`: the docs' rule is the more specific one (the prompt also says
+  to read it), and a hash keeps two views over one table apart, which a base+table name cannot. The hash is FNV-1a in
+  two 32-bit halves, 16 hex characters, and the key's inputs are joined with a newline so `a` + `b/c` cannot collide
+  with `a/b` + `c`. The document holds `version`, `basePath`, `viewName`, `airtable{…}`, `recordMap`, `fieldMap`,
+  `snapshot`, `lastPulledAt`, `lastPushedAt`; unknown keys survive a save cycle **and are written back after the
+  known ones**, so a newer build's field is not lost and a diff of the file shows what changed. A **corrupt** file is
+  reported with a sentence and never silently re-created, because re-creating it would drop the field mapping a
+  person cannot rebuild; a **missing** file is not an error at all — the docs say deleting the folder only loses the
+  linkage. A `version` newer than this build refuses to load, naming both versions.
+
+  **The field mapping resolves both directions and reports both.** A stored id wins while that remote field still
+  exists (a rename keeps the id, so a name is the weaker key); otherwise the names must match **exactly**. A pair
+  differing only in case is *reported*, not folded: a vault can hold both `name` and `Name`, and silently joining
+  them would write one column's values into the other field. The panel in step 26 is where a person resolves it.
+
+  **Two proofs the step asked for, both raw.** *Redaction:* every error carries the request that produced it with the
+  credential already replaced, and the client test asserts `JSON.stringify(error)` contains the host and **not** the
+  token — while the transport's own recording *does* contain it, because a leak has to be looked for in what the
+  client reports rather than in what it holds. *The bundle:* `grep -c` for `createAirtableClient`,
+  `tablify-airtable-token`, `LAST_MODIFIED_TIME` and `returnFieldsByFieldId` in `main.js` is **0 for each**, and
+  `main.js` is byte-for-byte step 24's build. The honest form of that claim: nothing imports `src/sync/**` yet, so
+  what is proved is *"the sync client is not in the shipped bundle"* — the dynamic-import half of it (that it stays
+  out once a link exists) belongs to step 26, which is where the import goes, and step 24 already measured that a
+  dynamic import under CJS does **not** defer by itself.
+
+  **The fake grew rather than being duplicated.** `tests/fakes/transport.ts` already existed with the property the
+  step requires — *"no queued response"* throws, so no test can reach the network by accident — so it gained
+  `queuePage(...)` (the `{records, offset?}` answer) and a `text` channel beside `body`, and its existing tripwire
+  is asserted by the first test in the new client suite. Extended rather than forked: a second transport double is
+  the thing that would let one suite's rule drift from the other's.
+
+  **The brand gate was extended deliberately, and this is the one change a reviewer should look at.** The gate
+  refuses `anthropic|claude|airtable` except on named, printed permissions, and the sync work names the service it
+  connects to: the API host is a URL, the secret id is a stored key, the settings copy has to say what the token is
+  for. Six **file-scoped** permissions were added — the provider client, the link store, the token flow, and the
+  three sync test files — each with its reason, printed line by line by the gate. Everything outside those files
+  still fails on a single match, which is the property worth keeping. The permitted count went 62 → 157, 0
+  violations; the gate's own run over this log reads 164, because this entry quotes the rules it is describing. Two doc comments in the port and the hash module were reworded to *"the provider"* instead of needing
+  a permission at all, because a provider-agnostic port should not name one.
+
+  `bun run check` green end to end: **1396 tests in 50 files** (+76 tests, +3 files over step 24); `eslint .` **0
+  errors, 0 warnings** (the two `Buffer` warnings inherited from step 24's xlsx test are fixed in it — that file now
+  writes `new Uint8Array(result.bytes)`, so step 24's *"0/0"* claim is true as of this step and was 0 errors /
+  2 warnings before it); typecheck clean; prettier clean; brand-gate 157 permitted / 0 violations; manifest OK;
+  contrast 32/32; css-gate clean; **`main.js` 416,471 bytes / 129,329 gzip — unchanged from step 24**, which is the
+  bundle proof; styles.css 21,813 bytes.
+
+- Files touched in **step 25**: new — `src/sync/{SyncTarget,hash,LinkStore}.ts`,
+  `src/sync/airtable/{transport,client}.ts`, `src/plugin/settings/secrets.ts`,
+  `tests/unit/{airtable-client,secrets,sync-core}.test.ts`; changed — `scripts/brand-gate.ts` (the six file-scoped
+  permissions above, with a comment stating why they exist), `tests/fakes/transport.ts` (the `queuePage` answer and
+  the `text` channel), `tests/unit/xlsx-file.test.ts` (the `Buffer` warnings), `PROGRESS.md`. **Nothing outside
+  `src/sync/**`, `src/plugin/settings/secrets.ts`, `tests/**`, `scripts/brand-gate.ts` and `PROGRESS.md`**; the grid
+  is untouched, and no file that the grid imports changed.
+
+- Before that: **step 24 — export: TSV and XLSX, to the clipboard or a file, in the mode the person
   chooses.** Two formats, two destinations, two value modes, and **no CSV** — `docs/01` §Export, *"CSV is already
   native in Bases; do not duplicate it"*, so the dialog offers TSV and XLSX and the runner refuses a third.
   `src/core/export/serialize.ts` is the whole of it, and it is deliberately thin: **`toTsv`/`toHtml` are the
@@ -283,12 +392,13 @@
      `Command`; `@standard-schema/spec`; `docs/04` §cell-rendering and L57's stale `.theme-dark .tablify-root`
      sample; `attachment` links; `docs/09` line 33.
 
-- Next step: `prompts/step-25-sync-port-secrets-client.md` — the sync foundation: the token in `SecretStorage`
-  only (key `tablify-airtable-token`), the `SyncTarget` port with its typed error union and retry policy,
-  `LinkStore` in `.tablify/links/`, and the Airtable client over Obsidian's `requestUrl` (pagination with caps,
-  backoff with jitter honouring `Retry-After`, chunked writes, every response validated), against a transport fake
-  that throws if a test tries to reach the network. Its two STOP clauses are checked first: `SecretStorage` at
-  1.13.1 and `requestUrl`'s headers.
+- Next step: `prompts/step-26-sync-diff-and-conflict-review.md` — finish sync: `src/sync/diff.ts` (the three-way
+  diff as a pure function, one case per row of `docs/03` §sync behaviour, with a conflict that *cannot* resolve
+  silently), `src/sync/pullPush.ts` (plan → apply as **one** undo step → push in chunks → a per-file/field report),
+  the two `Modal`s (`SyncPanel` with the field mapping and the plan's counts on the buttons; `ConflictReview` with
+  every conflict chosen before the primary action enables), the dynamic import in `src/plugin/main.ts` with a
+  status-bar badge, and the five new test files. Its STOP clauses: any behaviour-table row with no defined outcome,
+  or a plan that cannot be computed before writing.
 
 - Two things step 24 leaves for the human, both named rather than buried: **the export path has no door yet** —
   `src/plugin/export/ExportDialog.ts` exports the `Modal` and the tested `ExportPanel`, and no command or menu item
