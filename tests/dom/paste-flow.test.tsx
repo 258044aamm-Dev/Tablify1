@@ -23,6 +23,7 @@ import { createGridStore } from '../../src/grid/store/store';
 import { addRow, selectCell } from '../../src/grid/store/commands';
 import { pasteBlockSpec } from '../../src/grid/dialogs/PasteBlockDialog';
 import { resolveField } from '../../src/core/schema/propertySchema';
+import { augment } from './support/dom';
 import { createFakeRowSource } from '../fakes/rowSource';
 import type { DialogPort } from '../../src/grid/dialogs/port';
 import type { DialogSpec } from '../../src/grid/dialogs/base';
@@ -94,53 +95,6 @@ function pasteEvent(payload: { readonly html?: string; readonly text: string }):
 		},
 	});
 	return event;
-}
-
-/**
- * The Obsidian DOM helpers a dialog body uses, installed on the element it is handed.
- *
- * Real jsdom elements are what the dialog builds (so the assertion can be a real `querySelectorAll`), and this is
- * the eleven lines of `createDiv`/`createSpan`/`toggleClass` the host normally provides. It is in the test rather
- * than in the `obsidian` double on purpose: the double's elements are *stubs* that record calls, and a dialog
- * whose body was rendered into a recorder could only be asserted on the recorder.
- */
-function augment(el: HTMLElement): HTMLElement {
-	const make = (
-		tag: string,
-		options?: { readonly cls?: string; readonly text?: string },
-	): HTMLElement => {
-		const child = augment(document.createElement(tag));
-		if (options?.cls !== undefined) {
-			child.className = options.cls;
-		}
-		if (options?.text !== undefined) {
-			child.textContent = options.text;
-		}
-		// Appended to the element the helper was called on, which is what makes the body a tree rather than a
-		// pile of detached nodes.
-		el.append(child);
-		return child;
-	};
-	return Object.assign(el, {
-		createEl: (tag: string, options?: { readonly cls?: string; readonly text?: string }) =>
-			make(tag, options),
-		createDiv: (options?: { readonly cls?: string; readonly text?: string }) =>
-			make('div', options),
-		createSpan: (options?: { readonly cls?: string; readonly text?: string }) =>
-			make('span', options),
-		addClass: (cls: string): void => {
-			el.classList.add(cls);
-		},
-		toggleClass: (cls: string, on: boolean): void => {
-			el.classList.toggle(cls, on);
-		},
-		setText: (text: string): void => {
-			el.textContent = text;
-		},
-		empty: (): void => {
-			el.replaceChildren();
-		},
-	});
 }
 
 /** One value per element carrying `cls`, in document order — the reading a person's eye would take. */

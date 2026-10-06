@@ -27,25 +27,58 @@ export class Notice {
 	}
 }
 
-/** A stand-in for an element: enough of the Obsidian DOM augmentation to assert on. */
+/**
+ * A stand-in for an element: enough of the Obsidian DOM augmentation to assert on.
+ *
+ * It stays a **recorder**, not a driver, and that is a decision rather than an unfinished widening: a step-24
+ * attempt grew listeners, attributes and form-control state so a dialog could be clicked through stubs, and the
+ * experiment was dropped for a better technique — the surfaces that need driving render into real jsdom elements
+ * (`tests/mocks/dom.ts`'s `augment`, the pattern `paste-flow.test.tsx` established), where a click is a real click
+ * and `querySelectorAll` reads what a person would see. A stub that pretends to be an element is only ever
+ * asserted on itself.
+ */
 export type ElementStub = {
 	tag: string;
 	text: string;
 	classes: string[];
 	children: ElementStub[];
 	emptied: number;
+	/** Attributes by name: `disabled`, `title`, `aria-pressed` — what an assertion about a control needs. */
+	attributes: Record<string, string>;
 	createEl(tag: string, options?: { cls?: string; text?: string }): ElementStub;
 	createDiv(options?: { cls?: string; text?: string }): ElementStub;
+	createSpan(options?: { cls?: string; text?: string }): ElementStub;
 	addClass(...classes: string[]): void;
 	setText(text: string): void;
+	setAttribute(name: string, value: string): void;
 	empty(): void;
 };
+
+/** Every element in a stub tree, self first — the shape every "no X anywhere" assertion walks. */
+export function allElements(root: ElementStub): ElementStub[] {
+	return [root, ...root.children.flatMap(allElements)];
+}
+
+/** The text of a stub tree, depth-first with newlines, for a `toContain` on a whole surface. */
+export function textOf(root: ElementStub): string {
+	return allElements(root)
+		.map((stub) => stub.text)
+		.filter((text) => text !== '')
+		.join('\n');
+}
+
+/** The first element whose own text is `text`, or `null`. Used to click the button a person would click. */
+export function findByText(root: ElementStub, text: string): ElementStub | null {
+	return allElements(root).find((stub) => stub.text === text) ?? null;
+}
 
 function buildChild(tag: string, options?: { cls?: string; text?: string }): ElementStub {
 	const child = elementStub(tag);
 	child.text = options?.text ?? '';
 	if (options?.cls !== undefined) {
-		child.classes.push(options.cls);
+		// `createDiv({ cls: 'a b' })` sets a class *list*, and the DOM would hold two classes. Keeping the
+		// string whole would make `classes.includes('a')` false for a real class — the bug this split fixes.
+		child.classes.push(...options.cls.split(/\s+/).filter((name) => name !== ''));
 	}
 	return child;
 }
@@ -57,6 +90,7 @@ export function elementStub(tag = 'div'): ElementStub {
 		classes: [],
 		children: [],
 		emptied: 0,
+		attributes: {},
 		createEl(childTag, options) {
 			const child = buildChild(childTag, options);
 			el.children.push(child);
@@ -67,11 +101,21 @@ export function elementStub(tag = 'div'): ElementStub {
 			el.children.push(child);
 			return child;
 		},
+		createSpan(options) {
+			const child = buildChild('span', options);
+			el.children.push(child);
+			return child;
+		},
 		addClass(...classes) {
-			el.classes.push(...classes);
+			el.classes.push(
+				...classes.flatMap((name) => name.split(/\s+/).filter((part) => part !== '')),
+			);
 		},
 		setText(text) {
 			el.text = text;
+		},
+		setAttribute(name, value) {
+			el.attributes[name] = value;
 		},
 		empty() {
 			el.emptied += 1;

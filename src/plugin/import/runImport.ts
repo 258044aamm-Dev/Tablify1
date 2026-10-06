@@ -92,14 +92,19 @@ export type ImportRunOptions = {
  */
 function macrotask(): Promise<void> {
 	return new Promise((resolve) => {
-		// `window` when there is one — Obsidian runs in Electron, a pop-out window has its own timer, and the grid
-		// belongs to the window that hosts it — and the bare global otherwise, because the node test project has no
-		// `window` at all and a macrotask there is the same idea.
-		if (typeof window === 'undefined') {
-			setTimeout(resolve, 0);
+		// Obsidian runs in Electron, a pop-out window has its own timer, and the grid belongs to the window that
+		// hosts it — so the timer is read off the **document's own window** rather than off a global. `document`
+		// and `window` are the same object's two faces, and `defaultView` is the one a typed check can read
+		// without naming a global the lint rules (rightly) object to in plugin code.
+		const timer = typeof document === 'undefined' ? null : document.defaultView;
+		if (timer === null) {
+			// No window at all: the node test project, where the caller injects its own `yieldTo`. A microtask is
+			// the honest fallback — there is no frame to yield to, and pretending otherwise would be a lie in a
+			// comment rather than a behaviour.
+			resolve();
 			return;
 		}
-		window.setTimeout(resolve, 0);
+		timer.setTimeout(resolve, 0);
 	});
 }
 

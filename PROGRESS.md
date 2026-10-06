@@ -1,9 +1,82 @@
 # PROGRESS
 
 - Milestone: M0 — Foundation (complete) · M1 — Core domain (complete) · M2 — Data layer (complete) ·
-  M3 — Grid v1 (complete) · **M4 — Import/export and sync (in progress)**
+  M3 — Grid v1 (complete) · **M4 — Import/export (complete)** · M5 — Sync (not started)
   Branch: main
-- Last completed step: **step 23 — the import path, the multi-note undo, and bulk column editing.** The wizard is
+- Last completed step: **step 24 — export: TSV and XLSX, to the clipboard or a file, in the mode the person
+  chooses.** Two formats, two destinations, two value modes, and **no CSV** — `docs/01` §Export, *"CSV is already
+  native in Bases; do not duplicate it"*, so the dialog offers TSV and XLSX and the runner refuses a third.
+  `src/core/export/serialize.ts` is the whole of it, and it is deliberately thin: **`toTsv`/`toHtml` are the
+  clipboard's own writers, re-exported** (a test asserts function *identity*, not equality, so a second escaping
+  rule cannot appear without a red test), `toMatrix(table, { mode })` is the two questions a person can ask of a
+  value, and `toXlsxData(matrix, columns)` types every cell once, at the edge, with no library import in the core.
+
+  **The value-mode rule, which is the part users notice.** `display` is `descriptor.formatDisplay` — what the cell
+  shows — and `raw` is `descriptor.formatPlain` — *"the text a spreadsheet reads back unchanged"*, in the
+  descriptor's own words. `tests/unit/export.test.ts` pins the table type by type: currency `€1,200.00` / `1200`,
+  date `1 Mar 2026` / `2026-03-01`, percent `25%` / `25`, checkbox `Yes` / `true`, multiSelect `Alpha, Beta` /
+  `Alpha, Beta`, number `12.5` / `12.5`. **XLSX typing may fail, and failing is the honest answer**: a *displayed*
+  currency or a percent is not a number (rewriting `€1,200.00` to `1200` would be inventing data), so it stays a
+  text cell, while a raw one becomes a number with a format — currency `#,##0.00`, percent `0"%"` (this product
+  stores 25 for 25 %, and a spreadsheet's own `0%` format multiplies by 100, so the sign is literal), date
+  `yyyy-mm-dd`, datetime `yyyy-mm-dd hh:mm`. Dates and booleans always type: a date is a real `Date` at UTC
+  midnight, a tick is a real boolean.
+
+  **A real file was written and read back** — the step asked for exactly that, and no spreadsheet application
+  exists in this sandbox, so the check is the next best thing and stronger in one respect than a screenshot: the
+  bytes come from the **shipped** writer (`src/plugin/export/xlsx.ts`, whose `import('write-excel-file/browser')`
+  is the shipping dynamic import), and they are read by a *different* library (`read-excel-file`), so our typing
+  cannot be self-consistent. `tests/unit/xlsx-file.test.ts` does it on every run: a 2,935-byte zip beginning
+  `504b0304`, three rows plus a header, `Cost` back as the number `1200`, `Due` as `Date 2026-03-01T00:00:00.000Z`,
+  `Share` as `25`, `Done` as `true`, `Tags` as `Alpha, Beta`, a half-filled row still six cells wide. Hand-checked
+  structure, quoted in the step's report: the zip holds the eight standard OOXML parts, `xl/workbook.xml` names the
+  sheet **Tablify**, and `xl/styles.xml` carries the three custom formats (`#,##0.00`, `yyyy-mm-dd`, `0"%"`).
+  **What is still ASSUMED: how it *looks* in Excel.** No spreadsheet was opened; a person should open one exported
+  file once before release.
+
+  **The dependency decision, and the bundle measurement that came with it.** `write-excel-file` 4.1.1 (MIT, one
+  runtime dependency — `fflate`, the zipper) against the field: `exceljs` 4.4.0 (MIT but last published 2023,
+  unmaintained, 21 MB unpacked, nine dependencies including `archiver`/`unzipper` — server-shaped), the SheetJS
+  `xlsx` line (npm artifact frozen at 0.18.5 from 2022 and Apache-2.0 with an unpriced Pro tier for styling),
+  `xlsx-populate` (2020), `@office-kit/xlsx` (0.23.4, active, MIT — but a young project, and its draw is charts and
+  pivots this plugin does not write). The pair already recorded in `docs/08` §E9 is what shipped, at the versions
+  recorded there. Measured, not estimated: with the export path **wired**, `main.js` goes from 416,240 B raw /
+  127,775 B gzip to 500,089 B raw / 151,537 B gzip — **+81.9 KB raw / +23.2 KB gzip**, well inside the 900 KB /
+  300 KB budgets. **The dynamic import does not keep it out of the file, and that is a platform fact rather than a
+  mistake**: Obsidian loads one CommonJS `main.js` and esbuild cannot code-split CJS, so what the import buys is
+  deferred *evaluation* (no top-level work at plugin load), not a smaller download. Step 24's own `main.js` is
+  byte-identical to step 23's 416,471 B for a related reason: **nothing reaches `src/plugin/export/**` from
+  `src/plugin/main.ts` yet** — no command, no menu item — so esbuild tree-shakes the whole path out. That is the
+  step's one open item, named below rather than hidden.
+
+  **Two STOP clauses were checked.** (1) *Can the writer be dynamically imported in the ES2018/CJS bundle Obsidian
+  requires?* Yes — the import resolves and runs (the real-file test above proves it end to end) — but see the
+  measurement: in CJS it is *bundled*, so the honest statement is "dynamically imported, not code-split". The
+  fallback if the budget ever breaks is the documented one: `docs/08` §O5 keeps a minimal OOXML writer open as an
+  option, and the 60 KB single-dependency budget in `docs/05` is now **knowingly exceeded by one dependency**
+  (+81.9 KB raw) — recorded here as a decision to confirm, since the alternative is writing OOXML by hand.
+  (2) *Is display/raw defined for every type?* The docs define the two **modes** and name no per-type table, so the
+  proposal is the registry's own two methods (`formatDisplay`/`formatPlain`, one row per type in the step's
+  report) plus the XLSX typing rules above; a type that has no distinct raw form exports identically in both modes,
+  which the tests state case by case rather than assuming.
+
+  `bun run check` green end to end: **1320 unit+dom tests in 47 files** (+55 tests, +3 files over step 23);
+  `eslint .` 0 errors, 0 warnings; typecheck clean; prettier clean; brand-gate 62 permitted / 0 violations;
+  manifest OK; contrast 32/32 gated checks; css-gate clean; `main.js` 406.71 KB raw / 126.30 KB gzip (the running
+  build, unwired — see above); styles.css 21,813 bytes.
+
+- Files touched in **step 24**: new — `src/core/export/serialize.ts`, `src/plugin/export/{xlsx,runExport,ExportDialog}.ts`,
+  `tests/unit/{export,xlsx-file}.test.ts`, `tests/dom/export-dialog.test.tsx`, `tests/dom/support/dom.ts`;
+  changed — `tests/dom/paste-flow.test.tsx` (its local `augment` helper moved to `tests/dom/support/dom.ts`, one
+  home instead of two), `tests/mocks/obsidian.ts` (the `ElementStub` widening re-applied and then removed again —
+  see below), `src/plugin/import/runImport.ts` (the macrotask reads the timer off `document.defaultView` rather
+  than naming a global: the lint rules are right that plugin code must not touch `setTimeout` bare, and a
+  window-less host has no frame to yield to, so it falls back to a microtask), `package.json` + `bun.lock`
+  (`read-excel-file` 9.3.10 and `write-excel-file` 4.1.1 as **dependencies**, exact), `PROGRESS.md`.
+  **`src/plugin/import/runImport.ts` is outside the step's fence** and is reported as such: the change is one
+  helper, forced by the lint gate, with the comment explaining both branches.
+
+- Before that: **step 23 — the import path, the multi-note undo, and bulk column editing.** The wizard is
   three steps and one pure module: `src/core/import/preview.ts` decides *what a block is* (per column: the type,
   the sample it read, the evidence that forced the decision, the confidence, the type it *nearly* was, and the
   override a person may prefer), `src/core/import/plan.ts` decides *what will be written* (`estimateNotes` for the
@@ -210,12 +283,19 @@
      `Command`; `@standard-schema/spec`; `docs/04` §cell-rendering and L57's stale `.theme-dark .tablify-root`
      sample; `attachment` links; `docs/09` line 33.
 
-- Next step: `prompts/step-24-export.md` — export the view: CSV and XLSX out (`read-excel-file`/`write-excel-file`
-  9.3.10 / 4.1.1, dynamic imports so neither is in `main.js` unless used), `toMatrix(cells, { mode: 'display' |
-  'raw' })` with the mode explicit, and the current view's order and filter respected — plus the one-file follow-up
-  step 23 recorded: `src/adapters/notes/createNote.ts` drops its own naming copies in favour of
-  `src/core/import/naming.ts` (step 23 was fenced away from `src/adapters/**`; the equality is asserted by a test
-  in the meantime).
+- Next step: `prompts/step-25-sync-port-secrets-client.md` — the sync foundation: the token in `SecretStorage`
+  only (key `tablify-airtable-token`), the `SyncTarget` port with its typed error union and retry policy,
+  `LinkStore` in `.tablify/links/`, and the Airtable client over Obsidian's `requestUrl` (pagination with caps,
+  backoff with jitter honouring `Retry-After`, chunked writes, every response validated), against a transport fake
+  that throws if a test tries to reach the network. Its two STOP clauses are checked first: `SecretStorage` at
+  1.13.1 and `requestUrl`'s headers.
+
+- Two things step 24 leaves for the human, both named rather than buried: **the export path has no door yet** —
+  `src/plugin/export/ExportDialog.ts` exports the `Modal` and the tested `ExportPanel`, and no command or menu item
+  reaches them (the same state step 23's import wizard is in, and the last step of the pack is where the doors
+  go); and **`main.js` has not been built with the path wired**, so the +81.9 KB raw figure above comes from a
+  comparative build (`src/plugin/main.ts` alone vs `main.ts` + `export/ExportDialog`) rather than from the shipped
+  artefact, which is why the gate's `main.js` number is still step 23's.
 
 - Before that: **step 20 — the pointer: four drags, three menus, five dialogs, and one real bug found by
   a menu test.** One reusable pointer-capture drag session (4 px threshold, capture, `Escape`, exactly one
