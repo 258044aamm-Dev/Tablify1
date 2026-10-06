@@ -47,15 +47,18 @@ import { Toolbar } from './Toolbar';
 import { DEFAULT_COLUMN_WIDTH, FALLBACK_HEADER_HEIGHT, resolvePresentation } from './layout';
 import { readHeaderHeight } from './measure';
 import { selectLaneItems, useStore } from './store/selectors';
-import { clearSelection, selectCell, setSelection, toggleGroup } from './store/commands';
+import { clearSelection, selectCell, setCell, setSelection, toggleGroup } from './store/commands';
+import { createEditSession } from './editSession';
 import { useWindow } from './useWindow';
 import type { ScrollPosition } from './useWindow';
 import { usePinnedPrimary } from './usePinnedPrimary';
 import { windowSlice } from './store/window';
 import { rowRange } from '../core/selection/range';
+import type { EditSession } from './editSession';
 import type { GridPresentation } from './layout';
 import type { GridStore } from './store/types';
 import type { CellRef, RowId } from '../core/ops/types';
+import type { CellValue } from '../core/types';
 import type { LaneItem } from './store/selectors';
 
 export type GridViewProps = {
@@ -71,10 +74,17 @@ export type GridViewProps = {
 	readonly onNewRow?: (() => void) | undefined;
 	/** Offered by the empty state when a filter is what emptied the view. */
 	readonly onClearFilters?: (() => void) | undefined;
+	/**
+	 * Resolves an attachment path inside the vault, for `AttachmentEditor`. The grid may not ask that question
+	 * itself (`src/grid/**` does not import `obsidian`), so the view that owns one answers it here. Omit it and
+	 * the attachment editor simply cannot promise a file exists — see that file's header.
+	 */
+	readonly resolveLink?: ((path: string) => boolean) | undefined;
 };
 
 export function GridView(props: GridViewProps): ReactElement {
 	const { store, presentation: patch, initialPaneWidth = 0, onNewRow, onClearFilters } = props;
+	const { resolveLink } = props;
 	const presentation = useMemo(() => resolvePresentation(patch), [patch]);
 
 	const rootRef = useRef<HTMLDivElement | null>(null);
@@ -105,6 +115,61 @@ export function GridView(props: GridViewProps): ReactElement {
 	const visibleRowCount = useStore(store, (snapshot) => snapshot.rows.length);
 
 	const pinned = usePinnedPrimary(areaRef, presentation.frozenPrimary, initialPaneWidth);
+
+	/**
+	 * The one edit session. Built once per store: `useState` with an initialiser rather than `useMemo`, because
+	 * a session is stateful and must never be rebuilt by a re-render (that would abandon a draft mid-edit).
+	 *
+	 * Its three collaborators are all callbacks into this component, which is why it lives here rather than in
+	 * the store: `commit` is the command layer, `parse` is the column's own descriptor (the only thing that
+	 * knows what text means in that column), and `onFinish` is focus management — the part that needs the DOM.
+	 */
+	const [session] = useState<EditSession>(() =>
+		createEditSession({
+			commit: (ref, value) => {
+				const result = setCell(store, ref, value as CellValue);
+				return result.ok ? { ok: true } : { ok: false, reason: result.reason };
+			},
+			parse: (ref, draft) => {
+				const field = store
+					.getSnapshot()
+					.fields.find((candidate) => candidate.definition.id === ref.fieldId);
+				if (field === undefined) {
+					return { ok: false, reason: 'this column is no longer in the view' };
+				}
+				// An empty draft is "no value" for every type — the write path turns that into a deleted key
+				// (`docs/03` §Frontmatter write rules, rule 3).
+				if (draft.trim() === '') {
+					return { ok: true, value: null };
+				}
+				const parsed = field.descriptor.parse(draft, field.context);
+				return parsed.ok
+					? { ok: true, value: parsed.value }
+					: { ok: false, reason: parsed.error };
+			},
+			// The store's mirror of "which cell is being edited", which is what every cell subscribes to.
+			onActiveChange: (ref) => {
+				store.setEditing(ref);
+			},
+			// Focus goes back to the cell that was being edited, so the grid is where the keyboard left it.
+			onFinish: (ref) => {
+				const area = areaRef.current;
+				if (area === null) {
+					return;
+				}
+				const target =
+					ref === null
+						? null
+						: area.querySelector<HTMLElement>(
+								`[data-cell="${ref.filePath}::${ref.fieldId}"]`,
+							);
+				(target ?? rootRef.current)?.focus();
+			},
+		}),
+	);
+
+	/** The layer popovers mount in: the grid area, which sits **outside** the scroller (step 17's geometry). */
+	const popoverHost = useCallback((): HTMLElement | null => areaRef.current, []);
 
 	/** Built once per revision: a scroll must not rebuild it, or every row would re-render. */
 	const columns = useMemo<readonly ColumnView[]>(
@@ -269,6 +334,9 @@ export function GridView(props: GridViewProps): ReactElement {
 									gutter={!pinned}
 									onActivate={onActivate}
 									onToggleRow={onToggleRow}
+									session={session}
+									popoverHost={popoverHost}
+									{...(resolveLink === undefined ? {} : { resolveLink })}
 								/>
 							),
 						)}
@@ -292,6 +360,9 @@ export function GridView(props: GridViewProps): ReactElement {
 							columns={pinnedColumns}
 							onActivate={onActivate}
 							onToggleRow={onToggleRow}
+							session={session}
+							popoverHost={popoverHost}
+							{...(resolveLink === undefined ? {} : { resolveLink })}
 						/>
 					</div>
 				) : null}

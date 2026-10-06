@@ -20,6 +20,7 @@ import type { ReactElement } from 'react';
 
 import { Row } from './rows/Row';
 import type { ColumnView } from './rows/Row';
+import type { EditSession } from './editSession';
 import type { GridStore } from './store/types';
 import type { CellRef, RowId } from '../core/ops/types';
 
@@ -33,10 +34,14 @@ export type FrozenLaneProps = {
 	readonly columns: readonly ColumnView[];
 	readonly onActivate: (ref: CellRef, extend: boolean) => void;
 	readonly onToggleRow: (filePath: RowId, checked: boolean) => void;
+	readonly session: EditSession;
+	readonly popoverHost: () => HTMLElement | null;
+	readonly resolveLink?: ((path: string) => boolean) | undefined;
 };
 
 function FrozenLaneView(props: FrozenLaneProps): ReactElement {
 	const { store, rows, firstRowIndex, columns, onActivate, onToggleRow } = props;
+	const { session, popoverHost, resolveLink } = props;
 	return (
 		<div className="tablify-lane is-column">
 			{rows.map((filePath, at) => (
@@ -48,6 +53,9 @@ function FrozenLaneView(props: FrozenLaneProps): ReactElement {
 					columns={columns}
 					columnOffset={0}
 					gutter
+					session={session}
+					popoverHost={popoverHost}
+					{...(resolveLink === undefined ? {} : { resolveLink })}
 					onActivate={onActivate}
 					onToggleRow={onToggleRow}
 				/>

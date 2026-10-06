@@ -18,6 +18,7 @@ import type { PointerEvent as ReactPointerEvent, ReactElement } from 'react';
 import { Cell } from './Cell';
 import { useRowFlags } from '../store/selectors';
 import type { GridStore } from '../store/types';
+import type { EditSession } from '../editSession';
 import type { RowId } from '../../core/ops/types';
 import type { CellRef } from '../../core/ops/types';
 import type { ResolvedField } from '../../core/schema/propertySchema';
@@ -41,11 +42,16 @@ export type RowProps = {
 	readonly gutter: boolean;
 	readonly onActivate: (ref: CellRef, extend: boolean) => void;
 	readonly onToggleRow: (filePath: RowId, checked: boolean) => void;
+	/** The grid's one edit session and the layer its popovers mount in. Both are stable across renders. */
+	readonly session: EditSession;
+	readonly popoverHost: () => HTMLElement | null;
+	readonly resolveLink?: ((path: string) => boolean) | undefined;
 };
 
 function RowView(props: RowProps): ReactElement {
 	const { store, filePath, rowIndex, columns, columnOffset, gutter, onActivate, onToggleRow } =
 		props;
+	const { session, popoverHost, resolveLink } = props;
 	const flags = useRowFlags(store, filePath);
 
 	const onGutterToggle = useCallback(
@@ -101,11 +107,15 @@ function RowView(props: RowProps): ReactElement {
 					store={store}
 					filePath={filePath}
 					fieldId={column.field.definition.id}
+					field={column.field}
 					width={column.width}
 					rowIndex={rowIndex}
 					columnIndex={columnOffset + at}
 					readOnly={column.field.readOnly || !column.field.descriptor.editable}
 					onActivate={onActivate}
+					session={session}
+					popoverHost={popoverHost}
+					{...(resolveLink === undefined ? {} : { resolveLink })}
 				/>
 			))}
 			{/* A row with pending writes says so on the row, not only on the cells (docs/02 §write states). */}

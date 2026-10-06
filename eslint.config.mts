@@ -208,7 +208,11 @@ export default defineConfig(
 	// browser) and drags React into the fast project. Grid behaviour is asserted in tests/dom.
 	{
 		files: ['tests/**/*.ts', 'tests/**/*.tsx'],
-		ignores: ['tests/dom/**'],
+		// `tests/unit/edit-session.test.ts` is the one exception, and it is narrow on purpose: step 18's prompt
+		// puts the edit session's state-machine test in the unit project, and `src/grid/editSession.ts` is a
+		// pure module — no React, no DOM, no `obsidian` import (see the file's own header). The rule below exists
+		// to keep React out of the fast project, and this file does not bring any.
+		ignores: ['tests/dom/**', 'tests/unit/edit-session.test.ts'],
 		rules: {
 			'no-restricted-imports': restrict({
 				patterns: [

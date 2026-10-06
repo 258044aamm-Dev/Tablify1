@@ -300,6 +300,199 @@
 .cell-editor {
 	width: 100%;
 	min-width: 0;
+	/* `docs/04` §Mobile: inputs are >= 16 px, so iOS never zooms the viewport on focus. The token is the
+	   host's UI font size, which is 16 px in the default theme; the floor is written out because a theme
+	   may set anything. */
+	font-size: max(16px, var(--tablify-fs-m));
+	font-family: var(--font-text);
+	color: var(--tablify-text);
+	background: var(--tablify-surface);
+	border: 1px solid var(--tablify-accent);
+	border-radius: var(--tablify-radius-s);
+	padding: 0 var(--tablify-sp-2);
+}
+/* The editor fills the cell it replaces — never the row's flow, so an open editor cannot change a row's
+   height (docs/04 §The layout contract: the row height belongs to the density, everywhere, always). */
+.cell-editor,
+.cell-editor-wrap,
+.cell-editor-check {
+	/* The row's own height token, never a percentage: `docs/04` §The layout contract forbids any element in
+	   the grid from negotiating a height, and a percentage here would be exactly that negotiation. */
+	height: var(--tablify-row-h);
+}
+.cell {
+	/* The editor draws *over* the cell, never inside its flow: the row's height belongs to the density. */
+	position: relative;
+}
+.cell-editor-wrap {
+	display: flex;
+	align-items: center;
+	gap: var(--tablify-sp-1);
+	min-width: 0;
+}
+.cell-editor-wrap .cell-editor {
+	flex: 1 1 auto;
+}
+.cell-editor-affix {
+	flex: none;
+	color: var(--tablify-text-muted);
+	font-size: var(--tablify-fs-m);
+}
+/* A refusal is shown where the value is, never in a dialog (docs/01 §Editing: a failed write must never
+   look like a success — and the same is true of a value the column cannot read). */
+.cell-editor-error {
+	position: absolute;
+	left: 0;
+	top: 100%;
+	z-index: 5; /* the handles layer (docs/04 §z-index scale): a refusal outranks the lanes */
+	max-width: 260px;
+	padding: var(--tablify-sp-1) var(--tablify-sp-2);
+	background: var(--tablify-surface-raised);
+	border: 1px solid var(--tablify-warning);
+	border-radius: var(--tablify-radius-s);
+	color: var(--tablify-text);
+	font-size: var(--tablify-fs-xs);
+	white-space: normal;
+}
+.cell-editor-check {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.cell-check {
+	width: 18px;
+	height: 18px;
+	margin: 0;
+	accent-color: var(--tablify-accent);
+}
+
+/* ── the popover editors ─────────────────────────────────────────────────────
+   Appended to `.tablify-grid-area` — the layer *above* the scroller — because a popover inside the
+   scroller is clipped the moment its cell scrolls (step 17's geometry), and one on `document.body` would
+   outlive the view that owns it. It is absolutely positioned, so no lane geometry moves. */
+.cell-pop {
+	position: absolute;
+	/* The corner's own layer is 4 (docs/04 §z-index scale); a popover is above every lane of the grid it
+	   belongs to but still inside the area, so it never escapes its own view. */
+	z-index: 5;
+	display: flex;
+	flex-direction: column;
+	gap: var(--tablify-sp-2);
+	padding: var(--tablify-sp-2);
+	background: var(--tablify-surface-raised);
+	border: 1px solid var(--tablify-line-strong);
+	border-radius: var(--tablify-radius-m);
+	box-shadow: var(--tablify-shadow-2);
+	color: var(--tablify-text);
+}
+.cell-pop-stack {
+	display: flex;
+	flex-direction: column;
+	gap: var(--tablify-sp-2);
+}
+.cell-pop-row {
+	display: flex;
+	align-items: center;
+	gap: var(--tablify-sp-1);
+}
+.cell-pop-list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--tablify-sp-1);
+}
+.cell-pop-search {
+	width: 100%;
+	height: var(--tablify-tap);
+	padding: 0 var(--tablify-sp-2);
+	background: var(--tablify-surface);
+	border: 1px solid var(--tablify-line-strong);
+	border-radius: var(--tablify-radius-s);
+	color: var(--tablify-text);
+	font-size: max(16px, var(--tablify-fs-m));
+}
+.cell-pop-items {
+	display: flex;
+	flex-direction: column;
+	max-height: 240px;
+	overflow-y: auto;
+}
+.cell-pop-item {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--tablify-sp-2);
+	/* docs/04 §Touch: a tap target is >= 44 px; a list row can afford it, and this is the control a phone
+	   user actually touches. */
+	min-height: var(--tablify-tap);
+	padding: 0 var(--tablify-sp-2);
+	background: none;
+	border: 0;
+	border-radius: var(--tablify-radius-s);
+	color: var(--tablify-text);
+	font-size: var(--tablify-fs-m);
+	text-align: left;
+	cursor: pointer;
+}
+.cell-pop-item.is-cursor {
+	background: var(--tablify-selection);
+}
+.cell-pop-item.is-picked .cell-pop-tick {
+	color: var(--tablify-accent);
+}
+.cell-pop-create {
+	color: var(--tablify-accent-text);
+	font-style: italic;
+}
+.cell-pop-empty {
+	padding: var(--tablify-sp-2);
+	color: var(--tablify-text-muted);
+	font-size: var(--tablify-fs-xs);
+}
+.cell-pop-note {
+	color: var(--tablify-text-muted);
+	font-size: var(--tablify-fs-xs);
+}
+.cell-pop-note.is-warning {
+	color: var(--tablify-text-muted);
+}
+.cell-pop-textarea {
+	width: 100%;
+	min-height: calc(var(--tablify-row-h) * 4);
+	padding: var(--tablify-sp-2);
+	background: var(--tablify-surface);
+	border: 1px solid var(--tablify-line-strong);
+	border-radius: var(--tablify-radius-s);
+	color: var(--tablify-text);
+	font-family: var(--font-text);
+	font-size: max(16px, var(--tablify-fs-m));
+	line-height: 1.5;
+	resize: vertical;
+}
+.cell-pop-action {
+	min-height: var(--tablify-tap);
+	padding: 0 var(--tablify-sp-2);
+	background: none;
+	border: 0;
+	border-radius: var(--tablify-radius-s);
+	color: var(--tablify-text-muted);
+	font-size: var(--tablify-fs-xs);
+	cursor: pointer;
+}
+/* A rating star: the glyph is the mark, the button is the target (>= 44 px, docs/04 §Touch). */
+.star-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--tablify-tap);
+	height: var(--tablify-tap);
+	background: none;
+	border: 0;
+	color: var(--tablify-line-strong);
+	font-size: var(--tablify-fs-l);
+	cursor: pointer;
+}
+.star-btn.is-on {
+	color: var(--tablify-accent);
 }
 
 /* ── the gutter ──────────────────────────────────────────────────────────────

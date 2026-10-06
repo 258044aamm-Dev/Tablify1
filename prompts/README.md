@@ -152,6 +152,16 @@ forced by a tool, not chosen for convenience; the full reasoning is in `PROGRESS
   `obsidianmd/no-nodejs-modules` off for Node-only build tooling, `@typescript-eslint/unbound-method`
   off inside `tests/**`. Keep the fence (no `any`, no `as`, no `@ts-ignore`, no non-null assertions,
   no inline disables) on for everything that ships.
+- **Step 18's `tests/unit/edit-session.test.ts` is exempt from the `src/grid` import ban** (one commented
+  `ignores` entry). The step puts the edit session's state-machine test in the unit project, and
+  `src/grid/editSession.ts` is a pure module — no React, no DOM, no `obsidian`. The rule is unchanged for
+  every other file, and `tests/unit/boundaries.test.ts` still proves it bites.
+- **Step 18's four undocumented write timings were decided by the human, not by the prompt** (the step's own
+  STOP clause): date/datetime commit on a pick; rating is click-only (the prompt's arrow keys were dropped,
+  because `docs/01` gives the arrows to the grid); multiSelect writes per toggle; longText keeps the
+  prototype's popover with Save rather than the prompt's inline textarea. See `PROGRESS.md` §step 18.
+- **Step 18's 44 px / 40 px conflict was decided by the human**: the row axis accepts 40 px
+  (`--tablify-row-h`), every other control keeps `--tablify-tap`; `docs/04` should record that answer.
 
 ## Error protocol
 
