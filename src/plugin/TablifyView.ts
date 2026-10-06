@@ -1,21 +1,26 @@
 /**
- * The real Bases view, with a deliberately plain body.
+ * The real Bases view: a `GridView` over a `BasesSource`, mounted once and then driven by the store.
  *
- * Step 12's job is the **data path**, not the grid: this view proves that a Bases view can read rows,
- * resolve columns through the registry, write a cell through the queue, and show the result. The DOM below
- * is a five-line placeholder on purpose — the grid, the tokens and the layout contract arrive in steps 15
- * and 17, and building a pretty table now would only be thrown away.
+ * **What changed in step 17.** Steps 12–16 built the data path and rendered a five-line placeholder, on
+ * purpose: the grid did not exist yet. This file is now the thin half — it owns the lifecycle and the
+ * Obsidian APIs, and renders `GridView` with a store. There is no per-change `render()` any more: React
+ * subscribes to the store's own channels, so a keystroke never walks up to this class.
  *
- * It is also the **only** file in the plugin that touches `BasesView`, `config`, `BasesEntry.getValue`,
- * `fileManager.processFrontMatter` and `createFileForView`. Everything else works against the structural
- * ports in `src/adapters/`, which is what keeps the core testable without a vault.
+ * **The one measurement that happens before the first paint.** `initialPaneWidth` is read from the container
+ * here, synchronously, and handed to `GridView`. That is what stops the first frame from painting a pinned
+ * column in a 389 px pane and removing it on the second frame; and it is why pinning lives in one derived
+ * value rather than in a media query — a media query answers for the *window*, and the question is about the
+ * *pane*.
  *
- * Facts this file leans on, all read from `obsidian.d.ts` @ 1.13.1 (see `spike/bases-path/FINDINGS.md`):
- * `BasesView` declares `type`, `app`, `config`, `allProperties`, `data`, `onDataUpdated()`,
- * `createFileForView()` — and **no `containerEl`**, so the factory's second argument is kept here (the one
- * doc correction the spike produced). `BasesEntry` has exactly `file` and `getValue()` and no write path,
- * so every write goes through `fileManager.processFrontMatter` (`@since 1.4.4`).
+ * **The APIs this file touches, and nothing else does.** `BasesView`, `queryController`, `config`,
+ * `data`, `onDataUpdated()`, `createFileForView()`, `fileManager.processFrontMatter`
+ * (`@since 1.4.4`), `metadataCache.on('changed')` and `offref`. All of them are read from `obsidian.d.ts`
+ * @ 1.13.1 and cross-checked against `spike/bases-path/FINDINGS.md`; `BasesView` still declares no
+ * `containerEl`, which is why the factory's second argument is kept here.
  */
+import { createElement } from 'react';
+import { createRoot } from 'react-dom/client';
+import type { Root } from 'react-dom/client';
 import {
 	BasesView,
 	type BasesPropertyId,
@@ -27,6 +32,11 @@ import {
 import { createBasesSource } from '../adapters/bases/BasesSource';
 import type { BasesRowHost, BasesViewHost, CellProblem } from '../adapters/bases/BasesSource';
 import type { ApplyResult } from '../adapters/RowSource';
+import { GridView } from '../grid/GridView';
+import { createGridStore } from '../grid/store/store';
+import type { GridStore } from '../grid/store/types';
+import { DEFAULT_SETTINGS } from './settings/schema';
+import type { SettingsStore } from './settings/save';
 
 /**
  * Is this a Bases property id? `BasesPropertyId` is `` `${BasesPropertyType}.${string}` `` (obsidian.d.ts
@@ -42,10 +52,10 @@ function isBasesPropertyId(value: string): value is BasesPropertyId {
 	return prefix === 'file' || prefix === 'note' || prefix === 'formula';
 }
 
-/** The heading the placeholder shows. Kept as a constant so a test can assert on it. */
+/** The heading the placeholder used to show. Kept as a constant because step 12's tests assert on it. */
 export const TABLIFY_VIEW_STATUS_PREFIX = 'Tablify — ';
 
-/** Everything the placeholder needs to render one line of truth. */
+/** Everything the placeholder needed to render one line of truth. */
 export type ViewSummary = {
 	readonly rows: number;
 	readonly fields: number;
@@ -54,10 +64,9 @@ export type ViewSummary = {
 };
 
 /**
- * Builds the summary line the view shows: how many rows and columns, the first three rows' values rendered
- * by their own columns, and one sentence about the last write (or the last problem).
- *
- * It is a pure function on purpose — the interesting behaviour is testable without a DOM or a view.
+ * The summary line the view *would* show — still a pure function, and still the thing a status bar or a
+ * diagnostics dump can ask for. The grid itself does not use it any more (it renders cells), but the shape
+ * stays because it is the honest answer to "what does this view hold?" without a DOM.
  */
 export function summarize(input: {
 	readonly rows: readonly string[];
@@ -81,7 +90,7 @@ export function summarize(input: {
 	return { rows: input.rows.length, fields: input.fields.length, sample, status };
 }
 
-/** One sentence about the last thing that happened. Never empty, so the placeholder always says something. */
+/** One sentence about the last thing that happened. Never empty, so a caller always says something. */
 function describeStatus(
 	result: ApplyResult | null,
 	problems: readonly CellProblem[],
@@ -106,8 +115,9 @@ function describeStatus(
 }
 
 /**
- * The view. Bases calls `onDataUpdated()` whenever the query result or the config changes; this view hands
- * that event to its `BasesSource` and re-renders the placeholder from the source's snapshot.
+ * The view. Bases calls `onDataUpdated()` whenever the query result or the config changes; the source hears
+ * it (it subscribed through the host's own `watch`), the store re-queries, and React re-renders whatever the
+ * change actually touched.
  */
 export class TablifyView extends BasesView {
 	/** BasesView.type: abstract string — obsidian.d.ts, @since 1.10.0. Must equal the registered id. */
@@ -118,6 +128,8 @@ export class TablifyView extends BasesView {
 
 	private readonly host: HTMLElement;
 	private readonly source: ReturnType<typeof createBasesSource>;
+	private readonly store: GridStore;
+	private readonly root: Root | null = null;
 	private readonly cleanup: (() => void)[] = [];
 	/** The source's refresh listeners. Bases' own `onDataUpdated` is the event; no DOM listener is needed. */
 	private readonly watchers = new Set<() => void>();
@@ -133,6 +145,9 @@ export class TablifyView extends BasesView {
 			readonly timezone: string;
 			readonly locale: string;
 		},
+		/** The plugin's settings. Optional so a view can be built without them (and so step 12's tests, which
+		 * construct one directly, keep working): the defaults are what a fresh install would use anyway. */
+		settings?: SettingsStore,
 	) {
 		// BasesView constructor(controller: QueryController): protected — obsidian.d.ts, @since 1.10.0.
 		super(controller);
@@ -154,18 +169,65 @@ export class TablifyView extends BasesView {
 			},
 			env: environment,
 		});
+
+		this.store = createGridStore({ source: this.source });
+
+		// The settings the grid's *presentation* needs. Read through the store so a change in the settings tab
+		// reaches an open view; `density` is the only one the grid takes today (step 19 adds the rest).
+		const density =
+			settings?.get().appearance.defaultRowHeight ??
+			DEFAULT_SETTINGS.appearance.defaultRowHeight;
+		const presentation = { density };
+		if (settings !== undefined) {
+			this.cleanup.push(
+				settings.subscribe(() => {
+					this.remount({
+						density: settings.get().appearance.defaultRowHeight,
+					});
+				}),
+			);
+		}
+
+		/**
+		 * Mounting is guarded, and the guard is honest: a DOM-less environment (the unit project) has no
+		 * `document`, and a view that cannot mount still has to exist without throwing — the test that
+		 * constructs one asserts exactly that.
+		 */
+		if (typeof document !== 'undefined') {
+			// Measured before the first paint, on purpose (step 17 item 6): the first frame is already windowed
+			// and already knows whether this pane pins its primary column.
+			const paneWidth = this.host.clientWidth;
+			this.root = createRoot(this.host);
+			this.root.render(
+				createElement(GridView, {
+					store: this.store,
+					presentation,
+					initialPaneWidth: paneWidth,
+					onNewRow: () => {
+						void this.createRow();
+					},
+				}),
+			);
+		}
+
 		this.cleanup.push(
 			this.source.subscribe(() => {
-				this.render();
+				// The store subscribes to the source itself; this keeps the two halves in step, and keeps the
+				// DOM-less placeholder current after a write.
+				this.store.refresh();
+				if (this.root === null) {
+					this.render();
+				}
 			}),
 		);
+
 		/**
 		 * External changes. The step's contract for `subscribe` is "the view's data-update **and** vault
 		 * metadata changes that touch a file in the row set", and this is that second half: the app's own
 		 * `MetadataCache.on('changed')` event, filtered to the rows this view is showing. It is **not** a
-		 * `window` listener — the emitter is owned by the app and the ref is released in `dispose()` — which
-		 * is the alternative the step's STOP clause asks about. `typeof … === 'function'` guards the app
-		 * doubles in tests, which model a vault and a cache but not an event emitter.
+		 * `window` listener — the emitter is owned by the app and the ref is released in `dispose()`.
+		 * `typeof … === 'function'` guards the app doubles in tests, which model a vault and a cache but not an
+		 * event emitter.
 		 */
 		const cache = this.app.metadataCache;
 		if (typeof cache.on === 'function') {
@@ -196,8 +258,7 @@ export class TablifyView extends BasesView {
 			displayName: (propertyId: string): string | undefined => {
 				// BasesViewConfig.getDisplayName(propertyId: BasesPropertyId): string — obsidian.d.ts,
 				// @since 1.10.0. It always answers, so "undefined" means "same as the stored name" and the
-				// source keeps the real key. A bare name (no source prefix) is not a Bases property id at
-				// all, and narrowing to the prefixed form is a check rather than an assertion.
+				// source keeps the real key.
 				if (!isBasesPropertyId(propertyId)) {
 					return undefined;
 				}
@@ -224,15 +285,12 @@ export class TablifyView extends BasesView {
 			},
 			config: (key: string): unknown => this.config.get(key),
 			setConfig: (key: string, value: string): void => {
-				// BasesViewConfig.set(key, value): void — obsidian.d.ts, @since 1.10.0. This is the documented
-				// "store configuration data for the view" path, and it travels with the `.base` file.
+				// BasesViewConfig.set(key, value): void — obsidian.d.ts, @since 1.10.0.
 				this.config.set(key, value);
 			},
 			watch: (listener: () => void): (() => void) => {
 				// The view's own lifecycle *is* the watch: Bases calls `onDataUpdated` on every vault or config
-				// change that affects this query, so the source subscribes here rather than to `window`. That is
-				// the alternative to a global listener the step's STOP clause asks about: no listener exists to
-				// leak, and `dispose()` empties the set.
+				// change that affects this query, so the source subscribes here rather than to `window`.
 				this.watchers.add(listener);
 				return () => {
 					this.watchers.delete(listener);
@@ -240,11 +298,22 @@ export class TablifyView extends BasesView {
 			},
 			createFileForView: async (baseFileName, frontmatterProcessor) => {
 				// BasesView.createFileForView(baseFileName?, frontmatterProcessor?): Promise<void> —
-				// obsidian.d.ts, @since 1.10.2. Note the declaration's own wording: it *displays the new note
-				// menu*, so this is the single-row path, never a bulk one (see adapters/notes/createNote.ts).
+				// obsidian.d.ts, @since 1.10.2. The declaration's own wording is that it *displays the new note
+				// menu*, so this is the single-row path, never a bulk one.
 				await this.createFileForView(baseFileName, frontmatterProcessor);
 			},
 		};
+	}
+
+	/**
+	 * "New row" opens Bases' own new-note menu (its declaration says so: *displays the new note menu*), and
+	 * the row arrives the way every other row does — the vault changes, Bases reports it, the source
+	 * refreshes. The grid never invents a file path, and it never shows a row without one.
+	 *
+	 * This is deliberately *not* a bulk path; `adapters/notes/createNote.ts` is what an import uses.
+	 */
+	private async createRow(): Promise<void> {
+		await this.createFileForView();
 	}
 
 	/** BasesView.onDataUpdated(): abstract void — obsidian.d.ts, @since 1.10.0. */
@@ -252,10 +321,20 @@ export class TablifyView extends BasesView {
 		for (const notify of [...this.watchers]) {
 			notify();
 		}
-		this.render();
+		// The React tree subscribes to the store itself, so this is the *data* half. The placeholder half is
+		// the DOM-less path: without a `document` there is no React root, and something still has to say what
+		// this view holds — that is `render()` below.
+		this.store.refresh();
+		if (this.root === null) {
+			this.render();
+		}
 	}
 
-	/** Re-renders the placeholder line from the current snapshot. Cheap: it re-reads what is in memory. */
+	/**
+	 * The placeholder: one line of truth and up to three sample rows, drawn with Obsidian's own DOM helpers.
+	 * It survives because it is the honest answer in an environment without a DOM (the unit project), and
+	 * because step 12's contract — "the view says what it holds" — is worth keeping even once the grid exists.
+	 */
 	render(): void {
 		const schema = this.source.getSchema();
 		const rows = this.source.getRows();
@@ -279,6 +358,20 @@ export class TablifyView extends BasesView {
 		}
 	}
 
+	/** Re-renders the grid with a new presentation (a settings change). Cheap: React diffs the props. */
+	private remount(presentation: { readonly density: 'short' | 'medium' | 'tall' }): void {
+		this.root?.render(
+			createElement(GridView, {
+				store: this.store,
+				presentation,
+				initialPaneWidth: this.host.clientWidth,
+				onNewRow: () => {
+					void this.createRow();
+				},
+			}),
+		);
+	}
+
 	/** Called by the plugin when the view closes: release listeners, timers and queued writes. */
 	dispose(): void {
 		for (const stop of this.cleanup.splice(0, this.cleanup.length)) {
@@ -289,11 +382,18 @@ export class TablifyView extends BasesView {
 			this.app.metadataCache.offref(this.metadataRef);
 			this.metadataRef = null;
 		}
+		this.root?.unmount();
+		this.store.dispose();
 		this.source.dispose();
 	}
 
 	/** The source, for the plugin's commands (a debug write path, and the settings tab's diagnostics). */
 	get rowSource(): ReturnType<typeof createBasesSource> {
 		return this.source;
+	}
+
+	/** The store, for the same callers: a command with no open view is not a command this plugin offers. */
+	get gridStore(): GridStore {
+		return this.store;
 	}
 }

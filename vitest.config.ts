@@ -24,7 +24,7 @@ export default defineConfig({
 				test: {
 					name: 'dom',
 					environment: 'jsdom',
-					include: ['tests/dom/**/*.test.ts'],
+					include: ['tests/dom/**/*.test.ts', 'tests/dom/**/*.test.tsx'],
 				},
 			},
 		],
@@ -34,7 +34,7 @@ export default defineConfig({
 			// Product code only. The prototype is frozen reference material, the harness is a browser
 			// driver, the tests are not shipped, and `src/plugin/main.ts` is lifecycle glue that only a
 			// real Obsidian can run — measuring any of them would move the number without informing it.
-			include: ['src/**/*.ts'],
+			include: ['src/**/*.ts', 'src/**/*.tsx'],
 			exclude: ['src/plugin/main.ts', 'prototype/**', 'harness/**', 'tests/**'],
 			reporter: ['text', 'html'],
 			thresholds: {

@@ -3,13 +3,24 @@
 - Milestone: M0 — Foundation (complete) · M1 — Core domain (complete) · M2 — Data layer (complete) ·
   **M3 — Grid v1 (in progress)**
   Branch: main
-- Last completed step: **step 16 — the UI store, its selectors, and the command layer.** Everything that
-  mutates the grid now goes through one hand-rolled store on `useSyncExternalStore` — no state library, no
-  context for cell data, no `useReducer`. One user action is one `history.push`, one undo step and one queued
-  batch; the four **Tier 3** rules from `docs/07` are asserted with measured numbers (a keystroke = **three
-  renders out of 181 mounted components**, and zero renders of the other 178). React 19.3.0 and react-dom
-  19.3.0 are real dependencies from this step, and the bundle is **unchanged to the byte** anyway, because
-  nothing imports the store tree yet. 992 tests, 28 files; `eslint .` 0 errors, 0 warnings.
+- Last completed step: **step 17 — the grid view: one scroller, three sticky lanes, and a windowed row
+  lane.** The prototype's geometry is now the product's, in React: rows live **inside** the one scroller as a
+  windowed layer (`top: headerHeight`, `translateY(window.offsetY)`), while the header, the frozen column and
+  the corner are separate absolutely-positioned layers moved only by a transform the scroll frame writes. The
+  window runs over **lane items**, so a group header is an item and groups cost no second arithmetic.
+  `pinnedPrimary` is computed once from the pane's **padding box** and read everywhere; below 600 px nothing
+  is pinned and the gutter scrolls with the columns instead. A real Bases view (`TablifyView`) mounts the grid
+  and hands it the pane's width measured before the first paint. 1015 tests, 30 files; `eslint .` 0 errors,
+  0 warnings. **Two real bugs found by the new tests and fixed** (a view-config op that never reached the
+  pipeline; pinning flipping off on an unmeasurable pane) — both below.
+
+- Before that: **step 16 — the UI store, its selectors, and the command layer.** Everything that mutates the
+  grid goes through one hand-rolled store on `useSyncExternalStore` — no state library, no context for cell
+  data, no `useReducer`. One user action is one `history.push`, one undo step and one queued batch; the four
+  **Tier 3** rules from `docs/07` are asserted with measured numbers (a keystroke = **three renders out of 181
+  mounted components**, zero renders of the other 178). `react`/`react-dom` 19.3.0 became real dependencies
+  there; the bundle stayed byte-identical because nothing imported them yet — **step 17 is the step that
+  changed that**.
 
 - Before that: **step 15 — the stylesheet foundation: tokens, brand layer, grid layout, and the two
   styling gates.** `src/styles/tokens.css` owns every value in three marked zones (identity → semantic →
@@ -45,6 +56,121 @@
   pending values only.
 
 ---
+
+**Step 17 — the grid view: one scroller, three sticky lanes, and a windowed row lane.**
+
+- Verified (`bun run check` — raw, exit 0): `tsc --noEmit` clean; `eslint .` **0 errors, 0 warnings**;
+  `brand-gate: OK — 61 permitted match(es), 0 violations`; `manifest:check: OK`; Prettier clean;
+  **1015 tests across 30 files** (was 992 / 28: +23 tests, +2 files — `tests/dom/gridview.test.tsx` 12 and
+  `tests/dom/measure.test.ts` 11); `contrast: OK — all 32 gated checks pass (light, dark); 0 host gap(s),
+  3 host pair(s) below our minimums`; `css-gate: OK — 4 file(s) under src/styles, 14487 bytes of built
+  styles.css, no bang-important, 51 colour literal(s) all inside the identity layer`; `bundle-size: OK` —
+  `main.js raw 334989 bytes (327.14 KB)` / `gzip 104325 bytes (101.88 KB)`, and the growth is exactly the
+  point: React is now **imported** by the grid, so React is in the bundle (~260 KB raw, ~80 KB gzip of it).
+  The ceilings (900 KB / 300 KB) were chosen for this.
+
+- **The DOM contract, as built.** One scroller (`.tablify-scroller`), and rows **inside** it as a windowed
+  layer: `.tablify-canvas` is `width/height = content`, `.tablify-rows` sits at `top: headerHeight` and is
+  moved by `translateY(window.offsetY)`. The browser scrolls the rows natively — wheel, trackpad, touch pan,
+  momentum and `PageDown` are all the platform's. Header, frozen column and corner are layers **outside** the
+  scroller, moved only by `syncScroll` (`header translateX(-scrollLeft)`, frozen
+  `translateY(headerHeight - scrollTop)`). That is the prototype's geometry (`prototype/js/grid.js`), and it
+  is what step 17's prompt asks for; the alternative — a lane outside the scroller whose rows are simulated —
+  is what makes a grid feel wrong on a trackpad.
+
+- **Windowing runs over lane items, not rows.** `selectLaneItems(snapshot)` returns `LaneItem[]`
+  (`kind: 'group' | 'row'`, each with its own `index`; row items carry `rowIndex`), and every item is exactly
+  `--tablify-row-h` tall — a group header included. So grouping costs no second mapping between a scroll
+  offset and an index: `rowWindow` windows over `items.length`, and `selectLaneSlice` slices the same array.
+  A collapsed group is not in `snapshot.rows` at all, so the window never has to skip anything.
+
+- **Pinning is one derived value, and it is the pane's answer.** `usePinnedPrimary(area, desired, initialWidth)`
+  re-renders **only when the answer flips** (a sidebar drag fires the observer continuously and changes the
+  answer once), and `pinnedPrimary(desired, paneWidth)` is a pure function asserted at 900 / 600 / 599 / 389 px.
+  When pinned: the row lane draws `columns.slice(1)` with `columnOffset = 1`, the frozen lane draws
+  `columns.slice(0, 1)` **through the same `Row` component**, and the gutter moves to the frozen lane. When
+  not pinned there is no frozen lane and no corner at all, and the gutter rides the scrolling lane — §P21,
+  which is why a 389 px pane shows every column instead of spending a third of its width on row numbers.
+
+- **Two real bugs, found by the new tests, fixed in place.**
+  1. **A view-config op never reached the pipeline.** `rebuildView()` passed the module-level `view` binding
+     (`options.view`) into `buildView`, while `setViewConfig` — an op like any other — updates
+     `TableState.view`. Result: a search typed in the toolbar, a sort, or a group-by was *stored* and never
+     *applied*. Caught by the first two tests that build a scenario through the command layer
+     (`search: 'nothing matches this'` matched 30 of 30 rows). Fix: `rebuildView` adopts `table.view` as
+     authoritative. The old binding now has exactly one job — seeding the initial state.
+  2. **Pinning flipped off on an unmeasurable pane.** `usePinnedPrimary`'s first effect read
+     `paneWidthOf(element)`, which is `0` in jsdom, in `display: none`, or on a frame that has not been laid
+     out — and `0` is not a narrow pane, it is *no answer*. Fix: a non-positive measurement is a no-op, and the
+     width handed in before the first paint stays the answer until a real one arrives. This is the same rule
+     the row window already followed ("an unmeasured pane must show something").
+
+- **The view is real.** `src/plugin/TablifyView.ts` now mounts `GridView` over a `BasesSource`, measures its
+  container **before** the first paint and passes `initialPaneWidth`, keeps the DOM-less placeholder path
+  (`render()`) for environments without a `document`, and still owns every Obsidian call the plugin makes
+  (`config`, `data`, `onDataUpdated`, `createFileForView`, `processFrontMatter`, `metadataCache` +
+  `offref`) — with the same `watch`-based external-change path step 12 established, filtered to the rows this
+  view is showing. "New row" is bases' own new-note menu (`createFileForView()`); the grid never invents a
+  file path. `dispose()` unmounts the React root, clears subscriptions and disposes the store and the source.
+
+- **Measured, in jsdom (and labelled as jsdom).** Deterministic window: 30 configured rows, **9 mounted**
+  (`rowWindow({scrollTop: 0, viewportHeight: 0, rowHeight: 40, rowCount: 30})` → `0 … 9`), the rest of the
+  lane existing only as canvas height; **5,000 rows × 20 columns mount in 228 ms** with **180 cells** in the
+  DOM (`9 × 20`, split 19 + 1 across the two lanes), on **Intel(R) Xeon(R) @ 2.60 GHz, 2 vCPU, 1 GB RAM**;
+  **one edit changes one cell's text** (before/after comparison of every mounted cell, not a render count).
+  The browser-truth measurements this step's prompt asks for — the real host's padding box at 900 / 600 /
+  389 px, the cost of a 2,000 px scroll, and a first-paint timing a user would feel — are **not claimed here**:
+  jsdom has no layout and its scroller cannot be scrolled (CSSOM answers 0 without a layout box), so producing
+  those numbers now would be fabrication. They are step 21's harness, which is where the prompt puts them,
+  and the six numbers above are what this step can prove without a browser.
+
+- **One hand-off deliberately not made.** `TablifyView` accepts an optional `SettingsStore` and reads
+  `appearance.defaultRowHeight` for the grid's density, but `src/plugin/main.ts` does not pass it yet: the view
+  registration (line ~69) happens **before** the settings store is constructed (line ~114), and `main.ts` is
+  outside this step's file fence. So an open view currently renders at the `medium` default until that one line
+  is added — recorded here rather than quietly widening the fence.
+
+- Design decisions taken, with the contract line each one serves:
+  1. **The gutter is 74 px of the row, and its checkbox label is as tall as the row** (40 px medium), because
+     `docs/04` §Touch asks for 44 × 44 targets and §Mobile fixes the medium row at 40 px — the two cannot both
+     hold inside a row. The label is the target and takes `var(--tablify-row-h)`, never a percentage, so the
+     resolution is visible in one line and can be revisited without hunting for it.
+  2. **No percentage heights anywhere**, which the CSS gate enforced the moment the first one appeared
+     (`height: 100%` on two inner labels): the grid is the one element in the app that may not negotiate its
+     own height, and the gate is the reason that rule survives contact with a stylesheet.
+  3. **`.tablify-rows .grid-row { position: relative }`** — every row stretches to the lane's `max-content`
+     width, which is what keeps the columns of two different rows in line, and the pending accent is placed
+     against the row's own edge.
+
+- Open questions for the human:
+  1. **The gutter's 44 × 44 target** (`docs/04` §Touch) cannot be met inside a 40 px row. Options: accept the
+     row-height label (current), make the checkbox column 44 px wide and rely on width alone, or raise the
+     medium density to 44 px. The prototype's `GUTTER_W = 74` and the token table say 74 × 40; the doc's touch
+     rule says 44 × 44. This wants a decision before step 20 (pointer) hardens the hit targets.
+  2. **Should `main.ts` pass the settings store to the view** (the one hand-off above), and if so, is the
+     right shape a lazy getter so the registration closure sees the later-constructed store?
+  3. **`docs/02` §Grid rendering still describes the sticky lanes as if the rows were outside the scroller.**
+     This step implements the geometry the prompt specifies (rows inside, lanes outside). Worth an amendment
+     in `docs/02` so step 20's drag maths and step 21's harness read the same model.
+  4. (carried) `docs/01` §undo, `docs/02` §Store's `Command`, the query-layer notes, `@standard-schema/spec`,
+     `docs/04` §cell-rendering, `attachment` links, the layout guard, `docs/09` line 33.
+
+- Next step: `prompts/step-18-cell-editors.md` — `src/grid/editors/{registry.tsx,editSession.ts}`: one editor
+  per field type behind one registry, a session that opens on double-click/Enter/typing and commits on blur or
+  Enter, **no write per keystroke** (the queue's 250 ms debounce is not a licence to write on every key), and a
+  minimum 16 px text / 44 px target on touch. The three jsx/`.tsx` traps this step had to fix first
+  (`tsconfig.json` `jsx` + include globs, `esbuild.config.mjs` `jsx: 'automatic'`, the vitest dom project's
+  `.test.tsx` pattern) are already in place, so step 18 can just add the files.
+
+- Files touched in **step 17**: new — `src/grid/{layout,measure,useWindow,usePinnedPrimary,GridView,Toolbar,
+  StatusBar,Empty,Header,FrozenColumn,GroupHeader}.ts(x)`, `src/grid/rows/{Row,Cell}.tsx`,
+  `tests/dom/gridview.test.tsx`, `tests/dom/measure.test.ts`; changed — `src/grid/store/{types,store,selectors}.ts`
+  (`widths`/`widthsOf`, `laneItems`/`LaneItem`/`selectLaneItems`/`selectLaneSlice`/`useEditing`, the
+  `rebuildView` fix), `src/plugin/TablifyView.ts`, `src/styles/grid.css` (the lanes, the gutter, a group header,
+  the empty state's actions — each with the contract line it implements), `tsconfig.json` (`jsx`, `**/*.tsx`
+  in `include`), `esbuild.config.mjs` (`jsx: 'automatic'`), `vitest.config.ts` (the dom project also collects
+  `**/*.test.tsx`), `PROGRESS.md`. Nothing outside `src/grid/**`, `src/plugin/TablifyView.ts`, `tests/dom/**`,
+  `src/styles/grid.css` and those three config files.
 
 **Step 16 — the UI store, its selectors, and the command layer.**
 

@@ -268,7 +268,142 @@
 	font-size: var(--tablify-fs-xs);
 }
 
+/* ── the lanes ───────────────────────────────────────────────────────────────
+   The three sticky layers each hold one block that is exactly as wide as its
+   content, never as wide as the pane: the layers are moved by a transform, so
+   their geometry has to be the content's. Header and corner are a flex *line* of
+   header cells; the frozen lane is a *column* of rows (docs/04 §The layout
+   contract: "the frozen column is its own element whose rows translate with
+   translateY(-scrollTop)"). */
+.tablify-lane {
+	display: flex;
+	width: max-content;
+}
+.tablify-lane.is-column {
+	flex-direction: column;
+}
+
+/* The row lane's rows are block-level, so they stretch to the lane's max-content
+   width — every row exactly as wide as the widest one, which is what keeps the
+   columns in line (docs/02 §Grid rendering: "rows are keyed by RowId"). */
+.tablify-rows .grid-row {
+	position: relative;
+}
+
+/* A cell clips; its text ellipsises. The width belongs to the column, never to the
+   value (docs/04 §The layout contract: nothing here guesses a width). */
+.cell-text {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.cell-editor {
+	width: 100%;
+	min-width: 0;
+}
+
+/* ── the gutter ──────────────────────────────────────────────────────────────
+   A 16 px checkbox inside a 44 × 40 px label: `docs/04` §Touch asks for 44 × 44
+   targets and §Mobile fixes the medium row at 40 px, so the two rules cannot both
+   be met *inside* a row. The label is the target and takes the row's own height —
+   written as the same token the row uses, never as a percentage, because no part
+   of the grid is allowed to negotiate a height (`docs/04` §The layout contract).
+   The unresolved half (44 × 44) is recorded in the step-17 report as an open
+   question rather than quietly widening the label and overlapping the row above. */
+.gutter {
+	gap: var(--tablify-sp-2);
+	padding-right: var(--tablify-sp-2);
+}
+.gutter-check {
+	display: flex;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	width: var(--tablify-tap);
+	height: var(--tablify-row-h);
+	cursor: pointer;
+}
+.row-check {
+	width: 16px;
+	height: 16px;
+	margin: 0;
+	cursor: pointer;
+}
+.gutter-index {
+	font-variant-numeric: var(--tablify-nums);
+}
+.gutter-head {
+	width: var(--tablify-gutter-w);
+}
+
+/* ── a group header ──────────────────────────────────────────────────────────
+   Exactly one row tall, because it is a *lane item* rather than an overlay: the
+   windowing arithmetic is uniform-height arithmetic, so making the header one item
+   of `--tablify-row-h` means groups and rows are windowed by the same maths
+   (docs/02 §Grid rendering; the prototype's `.group-bar` makes the same choice). */
+.grid-group {
+	display: flex;
+	align-items: center;
+	gap: var(--tablify-sp-2);
+	height: var(--tablify-row-h);
+	width: max-content;
+	min-width: 100%;
+	padding-right: var(--tablify-sp-3);
+	background: var(--tablify-surface-sunken);
+	border-bottom: 1px solid var(--tablify-line);
+	color: var(--tablify-text-muted);
+	font-size: var(--tablify-fs-xs);
+	font-weight: 600;
+}
+.grid-group-toggle {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--tablify-gutter-w);
+	height: var(--tablify-row-h);
+	background: none;
+	border: 0;
+	color: var(--tablify-text-muted);
+	cursor: pointer;
+}
+.grid-group-chevron {
+	font-size: var(--tablify-fs-m);
+}
+.grid-group-label {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.grid-group-count {
+	color: var(--tablify-text-faint);
+	font-variant-numeric: var(--tablify-nums);
+}
+
+/* A row whose write has not landed yet: a hairline of accent at the lane's own
+   edge, in the same place on every row so it reads as a state, not a decoration. */
+.row-pending {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: 0;
+	width: 2px;
+	background: var(--tablify-accent);
+}
+
+/* The toolbar's two ends: the actions are left, the count is right. */
+.tablify-toolbar-spacer {
+	flex: 1 1 auto;
+}
+.tablify-count {
+	color: var(--tablify-text-muted);
+	font-size: var(--tablify-fs-xs);
+	font-variant-numeric: var(--tablify-nums);
+}
+
 /* ── the empty state: one block, centred, no illustration to load ──────────── */
+
+/* (the empty state's own rules follow) */
+
 .tablify-empty {
 	padding: var(--tablify-sp-8) var(--tablify-sp-6);
 	text-align: center;
@@ -280,4 +415,14 @@
 	color: var(--tablify-text);
 	font-size: var(--tablify-fs-l);
 	font-weight: 600;
+}
+.tablify-empty-body {
+	margin-bottom: var(--tablify-sp-4);
+	line-height: 1.5;
+}
+.tablify-empty-actions {
+	display: flex;
+	justify-content: center;
+	gap: var(--tablify-sp-2);
+	flex-wrap: wrap;
 }

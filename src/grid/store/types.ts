@@ -35,6 +35,13 @@ export type GridSnapshot = {
 	readonly rows: readonly RowId[];
 	/** The columns, resolved. Includes the descriptor a cell needs to render itself. */
 	readonly fields: readonly ResolvedField[];
+	/**
+	 * Render width per column id, already resolved through `columnWidthOf` (stored → clamped →
+	 * default). It is on the snapshot rather than read from `table.fields` per cell because a cell
+	 * must not walk the column list 1,200 times per frame, and because a width is exactly as
+	 * expensive to invalidate as everything else here: one revision.
+	 */
+	readonly widths: ReadonlyMap<PropertyId, number>;
 	/** The pipeline's answer: order, groups, hidden columns, totals. */
 	readonly result: ViewResult;
 	/** The two axes a range is expressed against, in render order. */

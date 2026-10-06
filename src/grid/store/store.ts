@@ -42,6 +42,7 @@ import { buildView } from '../../core/view/pipeline';
 import type { ViewConfig, ViewResult } from '../../core/view/pipeline';
 import { clampTo } from '../../core/selection/range';
 import type { Range, RangeOrder } from '../../core/selection/range';
+import { columnWidthOf, DEFAULT_COLUMN_WIDTH } from '../layout';
 import type {
 	CellRef,
 	FieldState,
@@ -112,6 +113,7 @@ export function createGridStore(options: GridStoreOptions): GridStore {
 		revision,
 		rows: [],
 		fields,
+		widths: widthsOf(table.fields),
 		result,
 		order: { rows: [], fields: [] },
 		selection,
@@ -185,6 +187,7 @@ export function createGridStore(options: GridStoreOptions): GridStore {
 			revision,
 			rows,
 			fields,
+			widths: widthsOf(table.fields),
 			result,
 			order: { rows, fields: result.columnOrder },
 			selection,
@@ -215,6 +218,20 @@ export function createGridStore(options: GridStoreOptions): GridStore {
 		revision += 1;
 		snapshot = buildSnapshot();
 		notify(globalListeners);
+	}
+
+	/**
+	 * Column id → render width. `FieldState.width` is `null` until the user drags a column edge, so the
+	 * fallback is the grid's own default and the clamp is `columnWidthOf`'s (min 64, max 900): a stored
+	 * width that a `.base` sidecar carried from another plugin must not be able to make a column
+	 * unusably narrow or 4,000 px wide.
+	 */
+	function widthsOf(states: readonly FieldState[]): ReadonlyMap<PropertyId, number> {
+		const widths = new Map<PropertyId, number>();
+		for (const state of states) {
+			widths.set(state.id, columnWidthOf(state.width, DEFAULT_COLUMN_WIDTH));
+		}
+		return widths;
 	}
 
 	/** Values as the source has them right now. */
@@ -251,7 +268,15 @@ export function createGridStore(options: GridStoreOptions): GridStore {
 		}));
 	}
 
+	/**
+	 * The view options live in **two places that must not drift**: the module's `view` binding, which the
+	 * initial `options.view` seeds, and `TableState.view`, which `applyOps` owns because `setViewConfig` is an
+	 * op like any other. Reading the binding here without re-adopting the table's copy meant a search typed in
+	 * the toolbar updated the table and left the *result* untouched — the filter was stored and never applied.
+	 * So the table's copy is authoritative, and it is adopted on every rebuild.
+	 */
 	function rebuildView(): void {
+		view = table.view;
 		result = buildView({ fields, rows: table.rows, view, queryAst });
 	}
 

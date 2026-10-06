@@ -31,7 +31,7 @@ import { useCallback, useRef, useSyncExternalStore } from 'react';
 import { fieldsOf, normalize, rowsOf, sizeOf } from '../../core/selection/range';
 import type { Bounds, Range, RangeOrder } from '../../core/selection/range';
 import { cellAt, isPending } from './store';
-import { rowWindow } from './window';
+import { rowWindow, windowSlice } from './window';
 import type { RowWindow } from './window';
 import type {
 	CellSnapshot,
@@ -57,6 +57,11 @@ type Derived = {
 	readonly fieldById: Map<PropertyId, ResolvedField>;
 	/** Where each group starts in the flat row order, in group order. */
 	readonly groupStarts: readonly { readonly group: ViewGroup; readonly start: number }[];
+	/**
+	 * The row lane's item list: group headers and rows, interleaved, in render order. See
+	 * {@link selectLaneItems} for why a header is an item rather than an overlay.
+	 */
+	readonly laneItems: readonly LaneItem[];
 };
 
 const derivedCache = new WeakMap<GridSnapshot, Derived>();
@@ -84,7 +89,13 @@ function derive(snapshot: GridSnapshot): Derived {
 		groupStarts.push({ group, start: at });
 		at += group.rows.length;
 	}
-	const built: Derived = { rowIndex, fieldIndex, fieldById, groupStarts };
+	const built: Derived = {
+		rowIndex,
+		fieldIndex,
+		fieldById,
+		groupStarts,
+		laneItems: buildLaneItems(snapshot),
+	};
 	derivedCache.set(snapshot, built);
 	return built;
 }
@@ -247,6 +258,88 @@ export function selectGroupSpans(snapshot: GridSnapshot, window: RowWindow): rea
 		});
 	}
 	return spans;
+}
+
+/**
+ * One thing the row lane draws. **A group header is exactly `rowHeight` tall**, so the uniform-row
+ * arithmetic from step 16 windows the item list unchanged — `rowCount` becomes `items.length` and every other
+ * line of the maths stays true. The prototype made the same decision, and it is the reason grouping needs no
+ * second windowing path: an item is an item.
+ */
+export type LaneItem =
+	| {
+			readonly kind: 'group';
+			/** Stable across revisions while the group exists: the pipeline's own `groupKey`. */
+			readonly key: string;
+			readonly label: string;
+			readonly count: number;
+			readonly collapsed: boolean;
+			/** Its position in the lane, so a key can be unique without composing one from two fields. */
+			readonly index: number;
+	  }
+	| {
+			readonly kind: 'row';
+			readonly filePath: RowId;
+			/** Its position in the *flat row order* — what `aria-rowindex` and the range model speak. */
+			readonly rowIndex: number;
+			readonly index: number;
+	  };
+
+/**
+ * The lane's items. Two readings were possible and the docs pick this one:
+ *
+ *  - a group header is a **row-height item** in the lane (what the prototype does: `.group-bar` is
+ *    `var(--row-h)` tall, and its item list is `[group, ...rows]`), so the existing windowing arithmetic
+ *    applies to groups and rows alike; or
+ *  - a header is an overlay pinned above its group, which needs a second mapping between scroll offset and
+ *    item index and therefore a second place for the arithmetic to be wrong.
+ *
+ * When the view does not group, `result.groups` is empty and the lane is exactly `result.rows` — the
+ * no-grouping path stays the one step 16 tested.
+ */
+export function selectLaneItems(snapshot: GridSnapshot): readonly LaneItem[] {
+	return derive(snapshot).laneItems;
+}
+
+/** The slice of the lane a window mounts. Same shape as `windowSlice`, but for items. */
+export function selectLaneSlice(snapshot: GridSnapshot, window: RowWindow): readonly LaneItem[] {
+	return windowSlice(selectLaneItems(snapshot), window);
+}
+
+function buildLaneItems(snapshot: GridSnapshot): readonly LaneItem[] {
+	const items: LaneItem[] = [];
+	const rowIndex = new Map<RowId, number>();
+	for (const [index, filePath] of snapshot.rows.entries()) {
+		rowIndex.set(filePath, index);
+	}
+	let at = 0;
+	const pushRow = (filePath: RowId): void => {
+		items.push({ kind: 'row', filePath, rowIndex: rowIndex.get(filePath) ?? 0, index: at });
+		at += 1;
+	};
+	if (snapshot.result.groups.length === 0) {
+		for (const filePath of snapshot.rows) {
+			pushRow(filePath);
+		}
+		return items;
+	}
+	for (const group of snapshot.result.groups) {
+		items.push({
+			kind: 'group',
+			key: group.key,
+			label: group.label,
+			count: group.rows.length,
+			collapsed: group.collapsed,
+			index: at,
+		});
+		at += 1;
+		// A collapsed group contributes its header and nothing else, which is why the pipeline leaves its
+		// rows out of `result.rows` too. The two must agree or the lane would draw rows the query hid.
+		for (const row of group.rows) {
+			pushRow(row.filePath);
+		}
+	}
+	return items;
 }
 
 /** The status bar's numbers. */
@@ -448,6 +541,21 @@ export function useRowFlags(store: GridStore, filePath: RowId): RowFlags {
 		};
 	}, [store, filePath]);
 	return useNarrow(subscribe, read, sameRowFlags);
+}
+
+/**
+ * Whether this cell is the one being edited. Subscribed to the cell's own channel — `setEditing` notifies the
+ * two cells whose appearance changes and nothing else — so moving the editing cursor does not wake the grid.
+ */
+export function useEditing(store: GridStore, ref: CellRef): boolean {
+	const subscribe = useCellChannel(store, ref);
+	const read = useCallback((): boolean => {
+		const editing = store.getSnapshot().editing;
+		return (
+			editing !== null && editing.filePath === ref.filePath && editing.fieldId === ref.fieldId
+		);
+	}, [store, ref.filePath, ref.fieldId]);
+	return useNarrow(subscribe, read, Object.is);
 }
 
 /** The selection's version. A number, so a surface that only cares *that* the range moved re-renders once. */

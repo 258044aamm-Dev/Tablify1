@@ -21,6 +21,10 @@ const plugin = await esbuild.context({
 	format: 'cjs',
 	platform: 'browser',
 	target: 'es2018',
+	// React 19's runtime: JSX compiles to `react/jsx-runtime` imports instead of `React.createElement`,
+	// so no file needs `import React`. esbuild's default is the classic runtime, which would fail the
+	// build with "React is not defined" the moment a `.tsx` file arrives.
+	jsx: 'automatic',
 	logLevel: 'info',
 	sourcemap: production ? false : 'inline',
 	treeShaking: true,
