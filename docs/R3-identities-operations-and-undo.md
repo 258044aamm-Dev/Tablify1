@@ -1,6 +1,6 @@
 # R3 — Stable identities, database operations, and undo
 
-**Mode:** design and future implementation guide. No source code is authorized by this document update. **Dependencies:** R1 schema is frozen; R2 provides a repository/session contract.
+**Mode:** implementation guide. Authorized for implementation 2026-10-07 (see [`08-decisions.md`](08-decisions.md) §Implementation authorization log): steps commit and push one at a time on `refactor/native-tablify`. **Status:** in progress — steps marked ✅ are implemented, gated and pushed; implementation state is always the source at HEAD. **Dependencies:** R1 schema frozen (✅ complete); R2 repository/session landed (✅ complete, steps 1–7 pushed at `71e6051` — `src/adapters/tablifyFile/**` is the repository R3 generalizes, and its `DatabaseDocument` is the one canonical state R3 step 1 adopts). **Blocking decisions:** ADR-0002 (deletion with inbound links), ADR-0003 (manual row order), and this phase's own boundary record, [ADR-0012](adr/ADR-0012-state-ownership-and-history.md). **Not in scope here:** the Bases-era grid path's removal (R6) — R3 replaces identities and persistence assumptions in the code the native path shares, and leaves the legacy view running until R6.
 
 ## Objective
 
