@@ -26,6 +26,14 @@ export {
 	isIdOfKind,
 } from './ids';
 export type { DocumentLoad, LoadError, LoadWarning } from './result';
-export type { DatabaseDocument, DatabaseTable } from './schema';
-export { DOCUMENT_VERSION, FORMAT_TAG, SUPPORTED_DOCUMENT_VERSIONS } from './schema';
+export type { DatabaseDocument, DatabaseTable, DocumentFieldTypeId } from './schema';
+export {
+	DOCUMENT_FIELD_TYPE_IDS,
+	DOCUMENT_VERSION,
+	FORMAT_TAG,
+	isDocumentFieldTypeId,
+	SUPPORTED_DOCUMENT_VERSIONS,
+} from './schema';
+export type { CanonicalCell, CellDecode, CellEncode, InvalidCell } from './values';
+export { decodeCell, encodeCell, invalidCell, isInvalidCell } from './values';
 export { parseDocument, readDocument, serializeDocument } from './envelope';

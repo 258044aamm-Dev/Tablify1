@@ -20,6 +20,25 @@
  *     document order, so a file written by a newer build degrades without losing anything.
  */
 import type { UnknownEntry } from './json';
+import type { FieldTypeId } from '../types';
+import { FIELD_TYPE_IDS } from '../types';
+
+/**
+ * The field types a **document** can declare: the plugin's field types plus `link`.
+ *
+ * `link` is new here — linked records are R1 scope and have no predecessor in the frontmatter
+ * model, whose `FieldTypeId` union has no relation type. Keeping the extension in one named alias
+ * means steps 4–6 cannot accidentally accept a legacy-only id or forget the relation type.
+ */
+export type DocumentFieldTypeId = FieldTypeId | 'link';
+
+/** Every document field type, for narrowing an untrusted name. Beside the union so they cannot drift. */
+export const DOCUMENT_FIELD_TYPE_IDS: readonly DocumentFieldTypeId[] = [...FIELD_TYPE_IDS, 'link'];
+
+/** True when `value` names a field type a document may declare. */
+export function isDocumentFieldTypeId(value: string): value is DocumentFieldTypeId {
+	return DOCUMENT_FIELD_TYPE_IDS.some((id) => id === value);
+}
 
 /** The literal discriminator at the top of every document. */
 export const FORMAT_TAG = 'tablify';
