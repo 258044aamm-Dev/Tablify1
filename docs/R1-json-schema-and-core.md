@@ -1,6 +1,6 @@
 # R1 — Native JSON schema and pure core
 
-**Mode:** implementation guide. Authorized for implementation 2026-10-07 (see [`08-decisions.md`](08-decisions.md) §Implementation authorization log): steps commit and push one at a time on `refactor/native-tablify`. **Status:** in progress — steps marked ✅ are implemented, gated and pushed; implementation state is always the source at HEAD. **Dependencies:** R0 docs closed; the blocking decisions are resolved in [`docs/adr/`](adr/README.md) (0001 links, 0003 row order, 0004 values).
+**Mode:** implementation guide. Authorized for implementation 2026-10-07 (see [`08-decisions.md`](08-decisions.md) §Implementation authorization log): steps commit and push one at a time on `refactor/native-tablify`. **Status:** complete — steps 1–9 landed ✅ (each gated and pushed on `refactor/native-tablify`); implementation state is always the source at HEAD. **Dependencies:** R0 docs closed; the blocking decisions are resolved in [`docs/adr/`](adr/README.md) (0001 links, 0003 row order, 0004 values).
 
 ## Objective
 
@@ -111,7 +111,17 @@ Before coding relation helpers, resolve:
 
 Recommended initial safety posture: validate target table and row IDs; never silently cascade-delete records; make any inbound-link cleanup one undoable transaction; refuse to save a corrupted reference graph without a visible error/report.
 
-### Step 7 — Specify parser/validator/serializer result types
+**Step 6b — the option sibling.** The six questions above are all about links; the other dangling-id
+case is a select cell naming an option the field does not declare. The value layer keeps it
+(ADR-0004 §2: "an optionId string, even unknown") and cannot judge membership, because the option
+list belongs to the field — so the judgment lives beside the link scan, with the same manners:
+`validateOptions` reports `unknown-option` for each stray id, naming the field, the id and the exact
+cell (or list position), as a warning, with the value untouched, and the parser attaches it after
+the link findings. Deleting an option never rewrites the cells that named it, and never hides them
+either. A value that is not an option id at all is the value layer's `invalid-cell-value`; the scan
+stays silent about it, because the file already says a clearer thing.
+
+### Step 7 — Specify parser/validator/serializer result types ✅ landed
 
 Separate successful load, warnings, and fatal errors. Avoid throwing on ordinary bad input.
 
@@ -123,7 +133,7 @@ type DocumentLoad =
 
 Required validation includes JSON syntax, format tag, version support, duplicate/empty IDs, duplicate field IDs/names policy, invalid field options, non-finite numbers, broken relation targets, wrong-table row references, missing saved-view fields, and unknown field types. Error results must retain the original bytes/text outside the pure parser so a future host can offer repair/export without overwriting.
 
-### Step 8 — Internal schema versioning
+### Step 8 — Internal schema versioning ✅ landed
 
 - `parseAndMigrate` applies deterministic pure migrations `vN → vN+1` for `.tablify` only.
 - A migration returns a new document plus warnings; it never mutates input.
@@ -131,7 +141,7 @@ Required validation includes JSON syntax, format tag, version support, duplicate
 - There is no importer from `.base`, Markdown frontmatter, or `.tabula` in the format migrator.
 - Do not implement sync-link metadata migration in R1.
 
-### Step 9 — Build a fixture matrix
+### Step 9 — Build a fixture matrix ✅ landed
 
 At minimum, create fixtures for: smallest empty database; multiple tables; multiple views; each current field type; every empty-value edge; linked rows in same and different tables; duplicate IDs; unknown field type; unknown v1 key; future version; malformed/truncated JSON; dangling table/row/option; attachment paths with spaces, Unicode, and missing targets; large database fixture generated reproducibly.
 
@@ -146,9 +156,21 @@ Do not create both a `DatabaseState` and an almost-identical `TableState` withou
 
 ## R1 test matrix and exit criteria
 
-- Golden parse → normalized serialize → parse round-trips all supported data without losing IDs, unknown v1 keys, views, or attachment paths.
-- Property-based tests cover ID uniqueness constraints, value codecs, migration determinism, and relation graph validation.
-- Corrupt/unsupported data never silently becomes an empty document.
-- JSON serialization is stable enough for readable diffs; exact key order is tested only if promised as a contract.
-- Core remains pure: no Obsidian, React, DOM, network, filesystem, or wall-clock dependence.
-- Every unresolved design choice is an ADR or a phase stop condition before R2.
+All six hold at HEAD, each with a place that fails if it stops holding:
+
+- **Round trips** — `tests/unit/core-fixture-matrix.test.ts` asserts, per fixture, parse → serialize →
+  parse is model-identical and serializing twice is byte-identical; `core-envelope.test.ts` proves the
+  same over 200 generated documents; IDs, unknown v1 keys, views and attachment paths are asserted by
+  name in the matrix's per-fixture cases.
+- **Property-based tests** — `core-links.property.test.ts` (150 seeded relation graphs: determinism,
+  every injected break reported and still written, parser findings ≡ the scans, with a counted
+  case-mix so the generator cannot go quiet), `core-migrations.test.ts` (100 generated documents,
+  same text in ⇒ same outcome out), plus the seeded generators in `core-envelope.test.ts` (round
+  trip) and `core-ids.test.ts` / `core-values.test.ts` (uniqueness, codecs).
+- **Nothing corrupt becomes empty** — `core-result-types.test.ts` (20 hostile inputs, every one
+  refused with `rawTextPreserved`) and the `truncated` / `future-version` / `duplicate-*` matrix rows.
+- **Diff-stable serialization** — key order asserted where it is promised (`core-envelope.test.ts`);
+  two-space JSON and a trailing newline everywhere.
+- **Purity** — `tests/unit/boundaries.test.ts` keeps `src/core/**` free of Obsidian, React, DOM,
+  network, filesystem and clock imports; R1 added none.
+- **Decisions recorded** — `docs/adr/` 0001–0010, plus the option-membership call in step 6b above.

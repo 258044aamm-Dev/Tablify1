@@ -81,4 +81,7 @@ One canonical in-memory model, one written form, one escape hatch:
   document-level codec around them rather than re-implementing per-type parsing.
 - Warnings are typed findings (`code`, `path`-in-document, `message`), because R1 step 9's corrupt
   fixtures assert *which* finding fired, and R4 will surface them in a repair panel.
+- A select cell naming an option its field does not declare is reported as an `unknown-option`
+  finding and kept (R1 step 6b): the rejected alternative stays rejected, and the deletion becomes
+  visible instead of silent.
 - No `Date` object appears in the canonical model: dates and datetimes are strings end to end.
