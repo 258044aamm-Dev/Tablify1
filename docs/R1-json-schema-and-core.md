@@ -98,7 +98,7 @@ A field definition should contain only serializable schema: `id`, `name`, `type`
 - Saved-view queries must use the existing core AST; the parser must validate field IDs against the table schema without importing the UI.
 - Keep view state distinct from global plugin preferences (theme/motion defaults). Opening a view or focusing a pane should not create writes.
 
-### Step 6 — Define linked-record invariants
+### Step 6 — Define linked-record invariants ✅ landed
 
 Before coding relation helpers, resolve:
 
