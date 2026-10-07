@@ -324,11 +324,10 @@ describe('a conflict is a choice, never a silent write', () => {
 		}
 		const fieldId = `fld_${'c'.repeat(25)}1`;
 		const applied = handle.session.dispatch({
-			kind: 'set-cell',
+			kind: 'set-cells',
 			tableId: `tbl_${'a'.repeat(25)}1`,
 			rowId: `row_${'e'.repeat(25)}0`,
-			fieldId,
-			value: 'Edited in the pane',
+			edits: [{ fieldId, value: 'Edited in the pane' }],
 		});
 		expect(applied.ok).toBe(true);
 		rig.vault.simulateExternalModify(PATH, databaseText('Edited elsewhere'));

@@ -5,7 +5,9 @@
   `docs/R0-contract-and-docs.md` Step 5, `docs/R1-json-schema-and-core.md` step 5).
 - **Phases:** R1 (the document shape), R4 (the drag/sort interaction)
 - **Proves:** R1: order round-trip and duplicate-id tests in `tests/unit/core-rows.test.ts` and the
-  schema tests; R4: the interaction tests for reorder-under-sort.
+  schema tests; R3: the explicit reorder operations in `tests/unit/core-operations.test.ts`
+  (step 4 — order changes only through `move-*`, and undo puts the index back); R4: the interaction
+  tests for reorder-under-sort.
 
 ## Context
 

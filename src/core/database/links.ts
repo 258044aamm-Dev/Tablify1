@@ -265,3 +265,49 @@ function checkInverse(
 		});
 	}
 }
+
+/** One table and field that point into a table, as the refusal names them (ADR-0002 §3). */
+export interface ReferringField {
+	readonly tableId: string;
+	readonly tableName: string;
+	readonly fieldId: string;
+	readonly fieldName: string;
+}
+
+/**
+ * Every link field of **another** table whose `targetTableId` is this table.
+ *
+ * This is the query ADR-0002 §3 refuses a table delete with, and it is deliberately about the
+ * *declaration*, not about stored values: a link field that names this table blocks the delete
+ * whether or not any cell currently resolves, because the field is what would be left pointing into
+ * nothing. Findings and staleness are not consulted — a document with dangling ids must still refuse
+ * to delete the table they dangle from.
+ *
+ * Results are in document order (tables, then fields), so a refusal's message is stable.
+ */
+export function validateLinksForTableDelete(
+	document: DatabaseDocument,
+	tableId: string,
+): readonly ReferringField[] {
+	const referring: ReferringField[] = [];
+	for (const table of document.tables) {
+		if (table.id === tableId) {
+			continue;
+		}
+		for (const field of table.fields) {
+			if (field.kind !== 'field' || field.type !== 'link') {
+				continue;
+			}
+			if (field.settings.targetTableId !== tableId) {
+				continue;
+			}
+			referring.push({
+				tableId: table.id,
+				tableName: table.name,
+				fieldId: field.id,
+				fieldName: field.name,
+			});
+		}
+	}
+	return referring;
+}

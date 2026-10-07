@@ -10,7 +10,8 @@
  * What this file is careful about:
  *
  *   - **It never parses on read-back.** The model is built once by R1's `parseAndMigrate` and then
- *     mutated only through `applyCommand`; subscribers get the same object until it genuinely changes.
+ *     mutated only through the operation algebra (`applyOperations`); subscribers get the same object
+ *     until it genuinely changes.
  *   - **It knows its own writes.** A vault event for this path is compared against the revision the
  *     session just wrote; our own write is not an "external change".
  *   - **It is host-free.** The port is `FilePort`; nothing here imports Obsidian, the DOM or React.
@@ -18,12 +19,12 @@
  *   - **It drops everything on `dispose()`** — the port subscription, the listeners, the in-flight
  *     flush — so closing a pane cannot leave a writer behind.
  */
-import { applyCommand, parseAndMigrate, serializeDocument } from '../../core/database/index';
+import { applyOperations, parseAndMigrate, serializeDocument } from '../../core/database/index';
 import type {
-	CommandRefusalCode,
 	DatabaseDocument,
-	DocumentCommand,
+	DatabaseOperation,
 	LoadError,
+	OperationRefusalCode,
 } from '../../core/database/index';
 import type { FilePort, FilePortEvent } from './port';
 import { detectRevision } from './revision';
@@ -42,11 +43,18 @@ export type SessionChange =
 
 export type SessionListener = (change: SessionChange) => void;
 
-/** Why a command was not applied. Session-level refusals are separate from the command algebra's. */
-export type DispatchRefusalCode = CommandRefusalCode | 'conflicted' | 'detached' | 'disposed';
+/**
+ * Why an operation was not applied. Session-level refusals (`conflicted`, `detached`, `disposed`)
+ * sit beside the algebra's own, so a caller can branch on either without reading messages.
+ */
+export type DispatchRefusalCode = OperationRefusalCode | 'conflicted' | 'detached' | 'disposed';
 
 export type DispatchResult =
-	| { readonly ok: true; readonly inverse: DocumentCommand; readonly state: SessionState }
+	| {
+			readonly ok: true;
+			readonly inverse: readonly DatabaseOperation[];
+			readonly state: SessionState;
+	  }
 	| { readonly ok: false; readonly code: DispatchRefusalCode; readonly message: string };
 
 export type FlushResult =
@@ -80,7 +88,8 @@ export interface DatabaseSession {
 	getRevision(): string;
 	getState(): SessionState;
 	subscribe(listener: SessionListener): () => void;
-	dispatch(command: DocumentCommand): DispatchResult;
+	/** Apply one operation, or one batch of them, as a single document revision (R3 step 4). */
+	dispatch(operation: DatabaseOperation | readonly DatabaseOperation[]): DispatchResult;
 	flush(): Promise<FlushResult>;
 	/** Adopt the file on disk, discarding in-memory edits. Called only on an explicit choice. */
 	reload(): Promise<OpenResult>;
@@ -155,7 +164,7 @@ class Session implements DatabaseSession {
 		this.listeners.clear();
 	}
 
-	dispatch(command: DocumentCommand): DispatchResult {
+	dispatch(operation: DatabaseOperation | readonly DatabaseOperation[]): DispatchResult {
 		if (this.state === 'disposed') {
 			return { ok: false, code: 'disposed', message: 'This session is closed.' };
 		}
@@ -173,7 +182,8 @@ class Session implements DatabaseSession {
 				message: 'The file changed on disk; reload or keep a copy before editing further.',
 			};
 		}
-		const result = applyCommand(this.document, command);
+		const batch = Array.isArray(operation) ? operation : [operation];
+		const result = applyOperations(this.document, batch);
 		if (!result.ok) {
 			return { ok: false, code: result.code, message: result.message };
 		}
@@ -181,7 +191,7 @@ class Session implements DatabaseSession {
 		this.documentVersion += 1;
 		this.state = 'dirty';
 		this.emit({ kind: 'document', state: this.state });
-		return { ok: true, inverse: result.inverse, state: this.state };
+		return { ok: true, inverse: result.inverses, state: this.state };
 	}
 
 	flush(): Promise<FlushResult> {

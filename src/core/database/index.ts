@@ -34,12 +34,19 @@ export type {
 	UnsupportedField,
 } from './fields';
 export { DURATION_UNITS, optionsOf, readFields, serializeField } from './fields';
-export type { LinkFinding, LinkFindingCode } from './links';
+export type { LinkFinding, LinkFindingCode, ReferringField } from './links';
 export type { OptionFinding, OptionFindingCode } from './options';
 export { validateOptions } from './options';
-export { validateLinks } from './links';
-export type { CommandRefusalCode, CommandResult, DocumentCommand } from './commands';
-export { applyCommand } from './commands';
+export { validateLinks, validateLinksForTableDelete } from './links';
+export type {
+	CellEdit,
+	DatabaseOperation,
+	OperationRefusalCode,
+	OperationResult,
+	OperationsResult,
+	ViewPatch,
+} from './operations';
+export { applyOperation, applyOperations } from './operations';
 export type { CreateDocumentOptions } from './create';
 export { createEmptyDocument } from './create';
 export type { CellState, TableRow } from './rows';

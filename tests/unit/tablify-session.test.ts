@@ -124,11 +124,10 @@ describe('commands apply through the pure algebra', () => {
 		const before = session.getDocument();
 
 		const applied = session.dispatch({
-			kind: 'set-cell',
+			kind: 'set-cells',
 			tableId: TABLE_ID,
 			rowId: R_TWO,
-			fieldId: F_TITLE,
-			value: 'Added later',
+			edits: [{ fieldId: F_TITLE, value: 'Added later' }],
 		});
 		expect(applied.ok).toBe(true);
 		if (!applied.ok) {
@@ -146,24 +145,24 @@ describe('commands apply through the pure algebra', () => {
 	it('clears a cell with null and restores it from the inverse', async () => {
 		const { session } = await openSession();
 		const applied = session.dispatch({
-			kind: 'set-cell',
+			kind: 'set-cells',
 			tableId: TABLE_ID,
 			rowId: R_ONE,
-			fieldId: F_TITLE,
-			value: null,
+			edits: [{ fieldId: F_TITLE, value: null }],
 		});
 		expect(applied.ok).toBe(true);
 		if (!applied.ok) {
 			return;
 		}
 		expect(session.getDocument().tables[0]?.rows[0]?.cells.has(F_TITLE)).toBe(false);
-		expect(applied.inverse).toEqual({
-			kind: 'set-cell',
-			tableId: TABLE_ID,
-			rowId: R_ONE,
-			fieldId: F_TITLE,
-			value: 'First',
-		});
+		expect(applied.inverse).toEqual([
+			{
+				kind: 'set-cells',
+				tableId: TABLE_ID,
+				rowId: R_ONE,
+				edits: [{ fieldId: F_TITLE, value: 'First' }],
+			},
+		]);
 		session.dispatch(applied.inverse);
 		expect(session.getDocument().tables[0]?.rows[0]?.cells.get(F_TITLE)).toBe('First');
 	});
@@ -178,21 +177,19 @@ describe('commands apply through the pure algebra', () => {
 			},
 			{
 				command: {
-					kind: 'set-cell',
+					kind: 'set-cells',
 					tableId: TABLE_ID,
 					rowId: 'row_' + '9'.repeat(26),
-					fieldId: F_TITLE,
-					value: 'x',
+					edits: [{ fieldId: F_TITLE, value: 'x' }],
 				},
 				code: 'no-such-row',
 			},
 			{
 				command: {
-					kind: 'set-cell',
+					kind: 'set-cells',
 					tableId: TABLE_ID,
 					rowId: R_ONE,
-					fieldId: 'fld_' + '9'.repeat(26),
-					value: 'x',
+					edits: [{ fieldId: 'fld_' + '9'.repeat(26), value: 'x' }],
 				},
 				code: 'no-such-field',
 			},
@@ -203,11 +200,10 @@ describe('commands apply through the pure algebra', () => {
 			},
 			{
 				command: {
-					kind: 'set-cell',
+					kind: 'set-cells',
 					tableId: TABLE_ID,
 					rowId: R_ONE,
-					fieldId: F_CREATED,
-					value: '2026-01-01T00:00:00Z',
+					edits: [{ fieldId: F_CREATED, value: '2026-01-01T00:00:00Z' }],
 				},
 				code: 'cell-not-writable',
 			},
@@ -230,18 +226,16 @@ describe('flushing: the whole document, revision-checked (ADR-0005)', () => {
 		const { port, session } = await openSession();
 		const seen = record(session);
 		session.dispatch({
-			kind: 'set-cell',
+			kind: 'set-cells',
 			tableId: TABLE_ID,
 			rowId: R_ONE,
-			fieldId: F_TITLE,
-			value: 'One',
+			edits: [{ fieldId: F_TITLE, value: 'One' }],
 		});
 		session.dispatch({
-			kind: 'set-cell',
+			kind: 'set-cells',
 			tableId: TABLE_ID,
 			rowId: R_TWO,
-			fieldId: F_TITLE,
-			value: 'Two',
+			edits: [{ fieldId: F_TITLE, value: 'Two' }],
 		});
 		const result = await session.flush();
 		expect(result.ok).toBe(true);

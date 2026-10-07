@@ -64,11 +64,10 @@ async function rig(debounceMs = 400): Promise<Rig> {
 
 function setCell(session: DatabaseSession, rowId: string, value: string): void {
 	const applied = session.dispatch({
-		kind: 'set-cell',
+		kind: 'set-cells',
 		tableId: TABLE_ID,
 		rowId,
-		fieldId: F_TITLE,
-		value,
+		edits: [{ fieldId: F_TITLE, value }],
 	});
 	expect(applied.ok).toBe(true);
 }

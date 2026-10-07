@@ -5,8 +5,9 @@
   `docs/03-data-model-and-migration.md` §relations). No silent cascade is a `user`-confirmed scope
   line ("Do not change confirmed scope" — linked records v1 with defined delete behaviour).
 - **Phases:** R3 (the operations), R1 (the validator preconditions this ADR names)
-- **Proves:** R1: validator halves in `tests/unit/core-link-invariants.test.ts`; R3: deletion and
-  undo tests with the R3 op suite.
+- **Proves:** R1: validator halves in `tests/unit/core-link-invariants.test.ts`; R3: deletion and undo
+  in `tests/unit/core-operations.test.ts` (R3 step 4 — clear-in-transaction, exact restore, refusal
+  while referenced, and the seeded sweep).
 
 ## Context
 

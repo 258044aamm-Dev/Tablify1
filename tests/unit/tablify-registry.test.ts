@@ -67,11 +67,10 @@ function rig(initial: Record<string, string> = { [PATH]: sampleText() }): Rig {
 
 function editTitle(handle: DatabaseHandle, value: string): boolean {
 	const applied = handle.session.dispatch({
-		kind: 'set-cell',
+		kind: 'set-cells',
 		tableId: 'tbl_' + 'a'.repeat(26),
 		rowId: 'row_' + 'e'.repeat(26),
-		fieldId: 'fld_' + 'c'.repeat(26),
-		value,
+		edits: [{ fieldId: 'fld_' + 'c'.repeat(26), value }],
 	});
 	return applied.ok;
 }
@@ -309,11 +308,10 @@ describe('the multi-pane exit criterion', () => {
 		// A command naming a field that is not in the table is refused, whoever sends it.
 		expect(
 			second.handle.session.dispatch({
-				kind: 'set-cell',
+				kind: 'set-cells',
 				tableId: 'tbl_' + 'a'.repeat(26),
 				rowId: 'row_' + 'e'.repeat(26),
-				fieldId: 'fld_' + 'b'.repeat(26),
-				value: 'ignored',
+				edits: [{ fieldId: 'fld_' + 'b'.repeat(26), value: 'ignored' }],
 			}).ok,
 		).toBe(false);
 

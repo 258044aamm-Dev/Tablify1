@@ -4,7 +4,9 @@
 - **Source:** adopted recommendation (`docs/03-data-model-and-migration.md` §relations,
   `docs/R1-json-schema-and-core.md` step 6). Scope item "linked records v1" is `user`-confirmed.
 - **Phases:** R1 (schema, codec, validation), R4 (links UI)
-- **Proves:** `tests/unit/core-link-invariants.test.ts` (R1 step 6)
+- **Proves:** `tests/unit/core-link-invariants.test.ts` (R1 step 6) and, for the write half,
+  `tests/unit/core-operations.test.ts` (R3 step 4: `set-link` cardinality, one-side storage,
+  generated-inverse refusal, order preserved through a delete).
 
 ## Context
 

@@ -149,7 +149,65 @@ identity is the destination.
 - Remove `FieldContext.path` dependence from pure field code. Add a relation lookup port/context only where link rendering/editing requires it; do not import Obsidian into a descriptor.
 - Keep missing attachment status as adapter/view resolution, while the core stores only a normalized vault-relative string.
 
-### Step 4 — Define database-scoped operations and inverses
+### Step 4 — Define database-scoped operations and inverses ✅ landed
+
+**What landed:** `src/core/database/operations.ts` — the document's whole mutation surface, replacing the
+provisional three-command seam (`commands.ts`, now deleted). Twenty-one user-facing kinds plus four
+restore-only ones, each with preconditions, affected ids, an inverse payload and a stale-id guard:
+
+| Group | Kinds |
+|---|---|
+| database | `set-document-name` |
+| table | `create-table`, `rename-table`, `move-table`, `delete-table` |
+| field | `create-field`, `rename-field`, `reconfigure-field`, `move-field`, `delete-field` |
+| record | `create-record`, `duplicate-record`, `set-cells`, `move-record`, `delete-record` |
+| view | `create-view`, `rename-view`, `duplicate-view`, `delete-view`, `update-view` |
+| relation | `set-link` |
+| restore-only (produced as inverses, never by a user action) | `insert-table`, `insert-field`, `insert-record`, `insert-view` |
+
+The decisions that matter, with what each one buys:
+
+- **Ids, never names or positions.** Every write names its target by stable id; the only index that
+  appears is the one a *reorder* sets, and its inverse carries the old index recorded from the state
+  that was actually there. A stale id is a `no-such-…` refusal, so *"never apply a write to an object
+  with a reused name but different id"* is true by construction rather than by a check.
+- **Whole-value inverses.** A deleted record comes back as the row it was (cells included); a deleted
+  column comes back with `cells` recorded per row; a deleted table comes back whole. Nothing is
+  recomputed from the current document, which is ADR-0002 §2 and the reason undo cannot drift.
+- **`delete-record` clears inbound links in the same operation** (ADR-0002 §1) — and it clears only the
+  one id, keeping the rest of a multi link **in order** (ADR-0001 §4). Undo restores the untouched lists
+  and the cleared cells exactly; the property sweep exercises this on every seed.
+- **`delete-table` is refused while referenced**, naming the referring tables and fields (ADR-0002 §3),
+  whether or not a cell currently resolves — the new `validateLinksForTableDelete` query in
+  `core/database/links.ts` answers "which fields point here", and it consults declarations, not values.
+- **`set-link` writes one side only.** The owning side stores (`string` for a single link, an ordered
+  `string[]` for a multi link, "no value" to clear); the generated inverse is refused
+  (`generated-field`) because it is derived and never stored (ADR-0001 §2/§3); an id that is not a row
+  of the target table, a repeat inside one list, and two ids on a single link are all refusals.
+- **A type change refuses to strand values** (`type-change-loses-data`) when a stored value cannot be
+  written as the new type. Option-list changes are *not* refusals: an option id the new list does not
+  know is kept and reported (ADR-0004, `validateOptions`), because that is the value the user has.
+- **A batch is one transaction.** `applyOperations` applies a list as a unit, stops at the first
+  refusal with the input untouched, and returns the inverses **in undo order** — so a bulk paste, an
+  import chunk or a delete-with-cleanup is one history entry and one document write, which is what
+  step 6 needs.
+- **Stale-revision guard, stated as a split.** The operation layer's guard is id resolution. The
+  *file*-level guard stays R2's: the session compares the document revision before writing and the
+  queue never writes over a revision it did not read (ADR-0005). Write-failure behaviour is R2's too —
+  memory first, dirty on success, visible and retryable on failure — because the core has no filesystem
+  to fail on.
+
+**Tests:** `tests/unit/core-operations.test.ts` (61 tests) replaces `core-commands.test.ts` and holds
+the guide's four claims: purity and sharing (untouched tables/rows come back by reference; the input is
+byte-identical after an operation), **apply-then-inverse restoring the document byte for byte** for
+every kind — as pairs *and* as a long sequence undone in reverse — the ADR-0001/0002/0003 behaviours,
+the refusal codes, and a seeded property sweep (60 seeds × 15 generators, plus 31 twelve-step random
+sequences) that re-runs the same round-trip assertion. The sweep found one real defect on its first
+run: clearing an inbound id replaced a multi link with the value it held before instead of removing that
+one entry, which is exactly the class of mistake the ADR-0001 §4 ordering rule exists to prevent. The
+session test file's `dispatch` now exercises the batch path (`session.dispatch(...)` returns the undo
+list); `commands.ts` and its test file are gone.
+
 
 Extend the existing typed operation model so each mutating user action carries enough identity and prior data to undo:
 
@@ -201,9 +259,13 @@ If a loaded document has dangling links, keep the data readable and surface a br
 ## R3 test matrix and exit criteria
 
 - Tests prove that renaming/reordering fields, tables, and rows preserves identity and cell values.
-- Property tests prove `apply` then inverse returns exact database state for every op, including linked references.
+- Property tests prove `apply` then inverse returns exact database state for every op, including linked
+  references. *(Proven at step 4: `tests/unit/core-operations.test.ts` — every kind as a pair, all kinds
+  as one sequence undone in reverse, and the seeded sweep.)*
 - Undo/redo across table changes, bulk cell edits, relation edits, deletion/link cleanup, and persistence failures is deterministic.
-- Stale operations are rejected or rebased by an explicit rule; never apply a write to an object with a reused name but different ID.
+- Stale operations are rejected or rebased by an explicit rule; never apply a write to an object with a
+  reused name but different ID. *(Proven at step 4 by construction — every operation is id-addressed, and
+  a vanished id refuses — with the file-level revision guard staying R2's, as the step-4 section says.)*
 - Multi-table query/filter/sort/group output is isolated to its selected table and saved view.
   *(Proven for the projection at step 2 — `tests/unit/core-projection.test.ts` §"view output is isolated
   to its own table"; the query/filter/group half arrives with steps 3–6.)*
