@@ -20,6 +20,7 @@
  *     document order, so a file written by a newer build degrades without losing anything.
  */
 import type { UnknownEntry } from './json';
+import type { TableField } from './fields';
 import type { FieldTypeId } from '../types';
 import { FIELD_TYPE_IDS } from '../types';
 
@@ -49,10 +50,11 @@ export const DOCUMENT_VERSION = 1;
 /** Every document schema version this build can load. Newer versions are refused, never migrated down. */
 export const SUPPORTED_DOCUMENT_VERSIONS: readonly number[] = [DOCUMENT_VERSION];
 
-/** One table: identity and display name, for now. Fields/rows/views arrive in steps 4–5. */
+/** One table: identity, display name, and its fields. Rows/views arrive in step 5. */
 export interface DatabaseTable {
 	readonly id: string;
 	readonly name: string;
+	readonly fields: readonly TableField[];
 	readonly unknown: readonly UnknownEntry[];
 }
 

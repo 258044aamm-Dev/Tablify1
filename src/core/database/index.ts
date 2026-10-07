@@ -25,6 +25,15 @@ export {
 	idKindOf,
 	isIdOfKind,
 } from './ids';
+export type {
+	DurationUnit,
+	FieldDefinition,
+	FieldSettings,
+	SelectOption,
+	TableField,
+	UnsupportedField,
+} from './fields';
+export { DURATION_UNITS, optionsOf, readFields, serializeField } from './fields';
 export type { DocumentLoad, LoadError, LoadWarning } from './result';
 export type { DatabaseDocument, DatabaseTable, DocumentFieldTypeId } from './schema';
 export {

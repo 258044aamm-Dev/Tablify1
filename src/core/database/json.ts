@@ -35,6 +35,28 @@ export function isJsonArray(value: unknown): value is readonly JsonValue[] {
 	return Array.isArray(value);
 }
 
+/** How a value of the wrong shape is described in an error message. Never used on a correct value. */
+export function describeJson(value: JsonValue): string {
+	if (value === null) {
+		return 'null';
+	}
+	if (Array.isArray(value)) {
+		return 'an array';
+	}
+	switch (typeof value) {
+		case 'string':
+			return 'a string';
+		case 'number':
+			return 'a number';
+		case 'boolean':
+			return 'a boolean';
+		case 'object':
+			return 'an object';
+		default:
+			return 'a value of an unknown kind';
+	}
+}
+
 /**
  * Convert a value of unknown origin — in practice, `JSON.parse`'s output — into the model, or
  * `undefined` when it is not a JSON value at all. Recurses through arrays and objects; a nested

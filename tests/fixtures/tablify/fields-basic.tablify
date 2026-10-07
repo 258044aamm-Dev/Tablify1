@@ -1,0 +1,76 @@
+{
+  "format": "tablify",
+  "version": 1,
+  "databaseId": "db_studio0000000000000000000a",
+  "name": "Studio",
+  "tables": [
+    {
+      "id": "tbl_shoots0000000000000000000b",
+      "name": "Shoots",
+      "fields": [
+        {
+          "id": "fld_title00000000000000000000c",
+          "name": "Title",
+          "type": "text",
+          "wobble": 3
+        },
+        {
+          "id": "fld_status0000000000000000000d",
+          "name": "Status",
+          "type": "singleSelect",
+          "options": [
+            {
+              "id": "opt_planned000000000000000000e",
+              "name": "Planned",
+              "color": "blue"
+            },
+            {
+              "id": "opt_done000000000000000000000f",
+              "name": "Done"
+            }
+          ]
+        },
+        {
+          "id": "fld_client0000000000000000000g",
+          "name": "Client",
+          "type": "link",
+          "targetTableId": "tbl_clients000000000000000000h",
+          "allowMultiple": false,
+          "inverseFieldId": "fld_shoots0000000000000000000i"
+        },
+        {
+          "id": "fld_rate000000000000000000000j",
+          "name": "Rating",
+          "type": "rating",
+          "max": 10
+        },
+        {
+          "id": "fld_fee0000000000000000000000k",
+          "name": "Fee",
+          "type": "currency",
+          "symbol": "€",
+          "precision": 2
+        },
+        {
+          "id": "fld_length0000000000000000000l",
+          "name": "Length",
+          "type": "duration",
+          "unit": "minutes"
+        },
+        {
+          "id": "fld_summary000000000000000000m",
+          "name": "Summary",
+          "type": "aiSummary",
+          "model": "x"
+        }
+      ],
+      "rows": []
+    },
+    {
+      "id": "tbl_clients000000000000000000h",
+      "name": "Clients",
+      "fields": [],
+      "rows": []
+    }
+  ]
+}

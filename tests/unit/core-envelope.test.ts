@@ -19,7 +19,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { parseDocument, serializeDocument } from '../../src/core/database/envelope';
-import type { JsonValue, LoadError } from '../../src/core/database/index';
+import type { JsonValue, LoadError, SelectOption, TableField } from '../../src/core/database/index';
 import type { DatabaseDocument, DatabaseTable } from '../../src/core/database/schema';
 import { FORMAT_TAG } from '../../src/core/database/schema';
 
@@ -95,19 +95,16 @@ describe('the committed fixtures', () => {
 		expect(document.unknown).toEqual([{ key: 'sidebar', value: { collapsed: false } }]);
 	});
 
-	it('keeps table unknown keys — including fields and rows, which later steps will claim', () => {
+	it('keeps table unknown keys — `rows` is still unknown, `fields` is claimed as of step 4', () => {
 		const document = documentOf('unknown-v1-key');
 		const tasks = document.tables[0];
 		expect(tasks?.unknown).toEqual([
 			{ key: 'color', value: 'blue' },
-			{ key: 'fields', value: [] },
 			{ key: 'rows', value: [] },
 		]);
+		expect(tasks?.fields).toEqual([]);
 		const projects = document.tables[1];
-		expect(projects?.unknown).toEqual([
-			{ key: 'fields', value: [] },
-			{ key: 'rows', value: [] },
-		]);
+		expect(projects?.unknown).toEqual([{ key: 'rows', value: [] }]);
 	});
 });
 
@@ -126,20 +123,17 @@ describe('round trip', () => {
 		expect(order).toEqual([...order].sort((a, b) => a - b));
 	});
 
-	it('serializes a table as id, name, then its unknown keys', () => {
+	it('serializes a table as id, name, fields, then its unknown keys', () => {
 		const text = serializeDocument(documentOf('unknown-v1-key'));
 		// Slice from the `{` that opens the table holding "Tasks", so the root document's own keys
 		// cannot be mistaken for the table's.
 		const tableStart = text.lastIndexOf('{', text.indexOf('"Tasks"'));
 		const table = text.slice(tableStart, text.indexOf('"tbl_01h8x3kq7vbody0pve4z9m2r4v"'));
-		const idIndex = table.indexOf('"id"');
-		const nameIndex = table.indexOf('"name"');
-		const colorIndex = table.indexOf('"color"');
-		const fieldsIndex = table.indexOf('"fields"');
-		expect(idIndex).toBeGreaterThan(-1);
-		expect(idIndex).toBeLessThan(nameIndex);
-		expect(nameIndex).toBeLessThan(colorIndex);
-		expect(colorIndex).toBeLessThan(fieldsIndex);
+		const indexes = ['"id"', '"name"', '"fields"', '"color"', '"rows"'].map((key) =>
+			table.indexOf(key),
+		);
+		expect(indexes.every((index) => index > -1)).toBe(true);
+		expect(indexes).toEqual([...indexes].sort((a, b) => a - b));
 	});
 
 	it('writes two-space JSON with one trailing newline', () => {
@@ -158,6 +152,33 @@ describe('round trip', () => {
 			}
 			expect(serializeDocument(second.document)).toBe(once);
 		}
+	});
+});
+
+describe('the fields-basic fixture (step 4)', () => {
+	it('loads seven fields, one unsupported, with one warning naming the unknown type', () => {
+		const result = parseDocument(textOf('fields-basic'));
+		expect(result.ok).toBe(true);
+		if (!result.ok) {
+			return;
+		}
+		expect(result.document.tables[0]?.fields).toHaveLength(7);
+		expect(result.warnings.map((warning) => warning.code)).toEqual(['unsupported-field-type']);
+		expect(result.warnings[0]?.path).toBe('$.tables[0].fields[6]');
+		expect(result.warnings[0]?.message).toContain('aiSummary');
+	});
+
+	it('round-trips: the unsupported field and the unknown setting survive exactly', () => {
+		const once = serializeDocument(documentOf('fields-basic'));
+		const again = parseDocument(once);
+		expect(again.ok).toBe(true);
+		if (!again.ok) {
+			return;
+		}
+		expect(serializeDocument(again.document)).toBe(once);
+		expect(once).toContain('"aiSummary"');
+		expect(once).toContain('"model": "x"');
+		expect(once).toContain('"wobble": 3');
 	});
 });
 
@@ -336,6 +357,71 @@ describe('the generated round trip', () => {
 		}
 	}
 
+	/** Zero to two fields of assorted types, so the generator exercises step 4's round trip too. */
+	function generatedFields(roll: () => number, tableIndex: number): readonly TableField[] {
+		const fields: TableField[] = [];
+		const count = Math.floor(roll() * 3);
+		for (let fieldIndex = 0; fieldIndex < count; fieldIndex += 1) {
+			const id = `fld_${idWord(roll, 8)}${tableIndex}${fieldIndex}x`;
+			const name = word(roll, 5);
+			const kind = Math.floor(roll() * 5);
+			if (kind === 1) {
+				fields.push({
+					kind: 'field',
+					id,
+					name,
+					type: 'rating',
+					settings: { max: 1 + Math.floor(roll() * 10) },
+					unknown: [],
+				});
+			} else if (kind === 2) {
+				fields.push({
+					kind: 'field',
+					id,
+					name,
+					type: 'currency',
+					settings: { symbol: word(roll, 1), precision: Math.floor(roll() * 6) },
+					unknown: [],
+				});
+			} else if (kind === 3) {
+				const options: SelectOption[] = [];
+				const optionCount = Math.floor(roll() * 3);
+				for (let optionIndex = 0; optionIndex < optionCount; optionIndex += 1) {
+					options.push({
+						id: `opt_${idWord(roll, 8)}${optionIndex}x`,
+						name: word(roll, 4),
+						color: roll() < 0.5 ? word(roll, 4) : null,
+						unknown: [],
+					});
+				}
+				fields.push({
+					kind: 'field',
+					id,
+					name,
+					type: 'singleSelect',
+					settings: { options },
+					unknown: [],
+				});
+			} else if (kind === 4) {
+				fields.push({
+					kind: 'field',
+					id,
+					name,
+					type: 'link',
+					settings: {
+						targetTableId: `tbl_${idWord(roll, 10)}`,
+						allowMultiple: roll() < 0.5,
+						inverseFieldId: `fld_${idWord(roll, 10)}`,
+					},
+					unknown: [],
+				});
+			} else {
+				fields.push({ kind: 'field', id, name, type: 'text', settings: {}, unknown: [] });
+			}
+		}
+		return fields;
+	}
+
 	function document(roll: () => number, index: number): DatabaseDocument {
 		const tables: DatabaseTable[] = [];
 		const tableCount = Math.floor(roll() * 4);
@@ -348,6 +434,7 @@ describe('the generated round trip', () => {
 			tables.push({
 				id: `tbl_${idWord(roll, 10)}`,
 				name: word(roll, 6),
+				fields: generatedFields(roll, tableIndex),
 				unknown,
 			});
 		}

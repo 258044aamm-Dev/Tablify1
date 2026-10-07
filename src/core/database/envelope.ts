@@ -18,6 +18,7 @@
  */
 import type { JsonObject, JsonValue } from './json';
 import {
+	describeJson,
 	isJsonArray,
 	isJsonObject,
 	parseJsonText,
@@ -26,37 +27,16 @@ import {
 	unknownEntries,
 } from './json';
 import { isIdOfKind } from './ids';
-import type { DocumentLoad, LoadError } from './result';
+import { readFields, serializeField } from './fields';
+import type { DocumentLoad, LoadError, LoadWarning } from './result';
 import type { DatabaseDocument, DatabaseTable } from './schema';
 import { FORMAT_TAG, SUPPORTED_DOCUMENT_VERSIONS } from './schema';
 
 /** The keys the envelope owns. Everything else at the root is preserved as unknown. */
 const DOCUMENT_KEYS: readonly string[] = ['format', 'version', 'databaseId', 'name', 'tables'];
 
-/** The keys a table owns at this step. `fields`/`rows`/`views` join this list in steps 4–5. */
-const TABLE_KEYS: readonly string[] = ['id', 'name'];
-
-/** How a value of the wrong shape is described in an error message. Never used on a correct value. */
-function describeJson(value: JsonValue): string {
-	if (value === null) {
-		return 'null';
-	}
-	if (Array.isArray(value)) {
-		return 'an array';
-	}
-	switch (typeof value) {
-		case 'string':
-			return 'a string';
-		case 'number':
-			return 'a number';
-		case 'boolean':
-			return 'a boolean';
-		case 'object':
-			return 'an object';
-		default:
-			return 'a value of an unknown kind';
-	}
-}
+/** The keys a table owns at this step. `rows`/`views` join this list in step 5. */
+const TABLE_KEYS: readonly string[] = ['id', 'name', 'fields'];
 
 /** What a string field of an object turned out to be. `absent` and `wrong` need different errors. */
 type StringField =
@@ -80,6 +60,7 @@ function readTable(
 	value: JsonObject,
 	path: string,
 	errors: LoadError[],
+	warnings: LoadWarning[],
 ): DatabaseTable | undefined {
 	let failed = false;
 	const id = stringField(value, 'id');
@@ -140,7 +121,13 @@ function readTable(
 	if (failed || id.kind !== 'string' || name.kind !== 'string') {
 		return undefined;
 	}
-	return { id: id.value, name: name.value, unknown: unknownEntries(value, TABLE_KEYS) };
+	const fields = readFields(value['fields'], `${path}.fields`, errors, warnings);
+	return {
+		id: id.value,
+		name: name.value,
+		fields,
+		unknown: unknownEntries(value, TABLE_KEYS),
+	};
 }
 
 /**
@@ -166,6 +153,7 @@ export function readDocument(value: JsonValue): DocumentLoad {
 	}
 
 	const errors: LoadError[] = [];
+	const warnings: LoadWarning[] = [];
 
 	const format = value['format'];
 	if (format === undefined) {
@@ -292,7 +280,7 @@ export function readDocument(value: JsonValue): DocumentLoad {
 					});
 				}
 			}
-			const table = readTable(item, path, errors);
+			const table = readTable(item, path, errors, warnings);
 			if (table !== undefined) {
 				tables.push(table);
 			}
@@ -317,7 +305,7 @@ export function readDocument(value: JsonValue): DocumentLoad {
 		tables,
 		unknown: unknownEntries(value, DOCUMENT_KEYS),
 	};
-	return { ok: true, document, warnings: [] };
+	return { ok: true, document, warnings };
 }
 
 /** Parse raw file text as a document. Unparseable text is an `invalid-json` refusal, not a throw. */
@@ -352,6 +340,7 @@ export function serializeDocument(document: DatabaseDocument): string {
 			[
 				['id', table.id],
 				['name', table.name],
+				['fields', table.fields.map((field) => serializeField(field))],
 			],
 			table.unknown,
 		),

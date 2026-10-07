@@ -1,16 +1,18 @@
 {
   "format": "tablify",
   "version": 1,
-  "databaseId": "db_01h8x3kq7vbody0pve4z9m2r4t",
+  "databaseId": "db_studio0000000000000000000a",
   "name": "Copy of a copy",
   "tables": [
     {
-      "id": "tbl_01h8x3kq7vbody0pve4z9m2r4u",
-      "name": "Tasks"
+      "id": "tbl_tasks00000000000000000000b",
+      "name": "Tasks",
+      "fields": []
     },
     {
-      "id": "tbl_01h8x3kq7vbody0pve4z9m2r4u",
-      "name": "Tasks again"
+      "id": "tbl_tasks00000000000000000000b",
+      "name": "Tasks again",
+      "fields": []
     }
   ]
 }
