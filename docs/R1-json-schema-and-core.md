@@ -1,6 +1,6 @@
 # R1 — Native JSON schema and pure core
 
-**Mode:** implementation guide. Authorized for implementation 2026-10-07 (see [`08-decisions.md`](08-decisions.md) §Implementation authorization log): steps commit and push one at a time on `refactor/native-tablify`. **Status:** in progress — implementation state is always the source at HEAD. **Dependencies:** R0 docs closed; the blocking decisions are resolved in [`docs/adr/`](adr/README.md) (0001 links, 0003 row order, 0004 values).
+**Mode:** implementation guide. Authorized for implementation 2026-10-07 (see [`08-decisions.md`](08-decisions.md) §Implementation authorization log): steps commit and push one at a time on `refactor/native-tablify`. **Status:** in progress — steps marked ✅ are implemented, gated and pushed; implementation state is always the source at HEAD. **Dependencies:** R0 docs closed; the blocking decisions are resolved in [`docs/adr/`](adr/README.md) (0001 links, 0003 row order, 0004 values).
 
 ## Objective
 
@@ -21,7 +21,7 @@ Freeze a small, explicit version-1 `.tablify` JSON contract and pure parser/seri
 
 ## Step-by-step design sequence
 
-### Step 1 — Freeze the envelope
+### Step 1 — Freeze the envelope ✅ landed
 
 The example is a shape sketch, not a released schema. Resolve all field names and required/optional rules in the schema ADR before publishing a fixture.
 
@@ -51,7 +51,7 @@ Specify:
 - Order is represented explicitly where it matters (table order, field order, record order, option order, saved-view order). Do not infer persistent order from object-key ordering.
 - Unknown keys at a supported version are preserved by the round trip unless a data-integrity reason requires refusal. Unsupported future versions open read-only in the host phase and are never rewritten.
 
-### Step 2 — Define stable IDs and references
+### Step 2 — Define stable IDs and references ✅ landed
 
 - Database ID identifies one logical database document.
 - Table ID identifies a table independently from its display name.
@@ -62,7 +62,7 @@ Specify:
 - A link field references exactly one target table. Cell values reference IDs in that table, not labels or row indexes.
 - ID generation belongs at an injected boundary; pure core tests use deterministic IDs. Do not call a platform random API from reducers or parsers.
 
-### Step 3 — Define JSON value rules
+### Step 3 — Define JSON value rules ✅ landed
 
 Use JSON-safe canonical cell values. A field type interprets its value; the serialized representation must not require YAML rules.
 
@@ -81,7 +81,7 @@ Use JSON-safe canonical cell values. A field type interprets its value; the seri
 
 Define empty semantics for each descriptor: omitted cell key, `null`, empty string, empty option/link list, `false`, and `0` must not collapse into one value unless that field explicitly defines them as equivalent.
 
-### Step 4 — Define fields and options
+### Step 4 — Define fields and options ✅ landed
 
 A field definition should contain only serializable schema: `id`, `name`, `type`, type-specific options, and any relation target. Use a discriminated union (or a validated extensible shape) that makes invalid combinations rejectable.
 
