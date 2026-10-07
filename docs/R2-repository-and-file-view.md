@@ -1,6 +1,6 @@
 # R2 — Database repository and Obsidian file view
 
-**Mode:** implementation guide. Authorized for implementation 2026-10-07 (see [`08-decisions.md`](08-decisions.md) §Implementation authorization log): steps commit and push one at a time on `refactor/native-tablify`. **Status:** in progress — steps marked ✅ are implemented, gated and pushed; implementation state is always the source at HEAD. **Dependencies:** R1 schema frozen (✅ complete); Obsidian API assumptions are checked against the pinned typings ([`10-verification-and-ai-hygiene.md`](10-verification-and-ai-hygiene.md) §Required claims ledger) and, for the app-version question, by the user-run probe kit in [`probes/r2-file-view/`](../probes/r2-file-view/README.md) — never claimed from typings alone (ADR-0010). **Blocking decisions:** ADR-0005 (external edit, never a silent overwrite), ADR-0010 (app-version floor stays at 1.13.0 until the probes report).
+**Mode:** implementation guide. Authorized for implementation 2026-10-07 (see [`08-decisions.md`](08-decisions.md) §Implementation authorization log): steps commit and push one at a time on `refactor/native-tablify`. **Status:** in progress — steps 1–6 are implemented, gated and pushed ✅ (step 7 next); implementation state is always the source at HEAD. **Real-device behaviour stays NOT RUN** until the user runs [`probes/r2-file-view/`](../probes/r2-file-view/README.md) on desktop and phone and the log is pasted into [`manual-test-log.md`](manual-test-log.md) §"R2 — FileView probe kit" (ADR-0010: the floor stays 1.13.0). **Dependencies:** R1 schema frozen (✅ complete); Obsidian API assumptions are checked against the pinned typings ([`10-verification-and-ai-hygiene.md`](10-verification-and-ai-hygiene.md) §Required claims ledger) and, for the app-version question, by the user-run probe kit in [`probes/r2-file-view/`](../probes/r2-file-view/README.md) — never claimed from typings alone (ADR-0010). **Blocking decisions:** ADR-0005 (external edit, never a silent overwrite), ADR-0010 (app-version floor stays at 1.13.0 until the probes report).
 
 ## Objective
 
@@ -12,7 +12,7 @@ The document is one multi-table write unit. The current `RowSource` assumes a si
 
 ## Step-by-step plan
 
-### Step 1 — Verify the host API surface
+### Step 1 — Verify the host API surface ✅ landed
 
 Read `node_modules/obsidian/obsidian.d.ts` from the repo’s pinned `obsidian@1.13.1` and the official Obsidian custom-view docs. The documented direction is `registerView` plus `registerExtensions`; exact callbacks/lifecycle must be verified for the oldest supported app version.
 
@@ -27,7 +27,7 @@ Before product changes, create a tiny throwaway API proof (future implementation
 
 Do not copy the old Bases spike or assume `registerExtensions` alone is the whole file-view lifecycle. Record symbol, signature, `@since`, test app versions, output, and any differences in the claim ledger.
 
-### Step 2 — Separate database lifetime from grid lifetime
+### Step 2 — Separate database lifetime from grid lifetime ✅ landed
 
 Use one repository/session per logical open database document. Suggested boundary:
 
@@ -53,7 +53,7 @@ The exact interface is a design proposal, not a mandated signature. It must:
 
 Keep `src/core` independent of Obsidian. Put Obsidian `TFile`, `Vault`, `Workspace`, event and view lifecycle in the adapter/plugin boundary.
 
-### Step 3 — Specify the file I/O port
+### Step 3 — Specify the file I/O port ✅ landed
 
 Introduce an injectable text-file port (name to be chosen in implementation) with operations for read, create, write/replace, event subscription, rename/delete handling, and optional recovery/backup. The unit tests use an in-memory fake. The real adapter uses a documented Obsidian-supported API that notifies the vault; verify exact guarantees instead of reaching around it with an untracked raw write.
 
@@ -64,7 +64,7 @@ File rules:
 - Preserve the last known-good text/snapshot on parse/write failure; do not overwrite a damaged file with defaults.
 - The host can offer a copy/export of corrupt text for recovery, but the core parser never writes it.
 
-### Step 4 — Define a document-level write queue
+### Step 4 — Define a document-level write queue ✅ landed
 
 The future queue should serialize whole-document revisions and coalesce work from one user action. Document the state machine before coding:
 
@@ -87,11 +87,11 @@ Decide and test:
 
 Never assume a successful `Promise` means the file is durably recoverable after process termination; state only guarantees the API actually provides and test what can be tested.
 
-### Step 5 — Handle multiple panes safely
+### Step 5 — Handle multiple panes safely ✅ landed
 
 Two leaves can open the same file. Choose one canonical shared repository per `databaseId`/resolved path, or implement explicit revision conflict detection between sessions; never leave two independent stores that silently overwrite each other. Test rename, close of one pane, close of last pane, and plugin unload. If Obsidian sync or external editor changes a document, refuse stale writes and present reload/keep-copy choices.
 
-### Step 6 — Register and create the file view
+### Step 6 — Register and create the file view ✅ landed
 
 Future plugin responsibilities:
 
@@ -112,13 +112,22 @@ Do not retain a global `liveViews` registry merely to recover a Bases leaf. Pref
 - Workspace selection (active database/table/view/leaf state) belongs in Obsidian workspace state if available and should not create document writes.
 - No `.base` file is read or touched.
 
-## Future file map
+## File map (as landed)
 
-- `src/adapters/tablifyFile/**`: read, write, validation handoff, queue, revision tracking, fakeable file port.
-- `src/plugin/TablifyFileView.ts` or equivalent: `FileView` lifecycle, React mount, status/errors.
-- `src/plugin/main.ts`: register extension/view, commands, shared repository/session manager.
-- `src/core/database/**`: document model and operations from R1/R3.
-- Tests: parser/repository unit suites, fake vault/file port, plugin registration/lifecycle DOM tests, layout harness opening from a fixture repository.
+- `src/adapters/tablifyFile/**` — `port.ts` (host-free file port), `revision.ts` (content revision),
+  `session.ts` (one open document: parse/migrate, dispatch, flush, conflict, reload, keep-as-copy),
+  `queue.ts` (one write per burst, mid-write edits never lost), `registry.ts` (one session per path,
+  refcounted, rename-aware, create included), `vaultPort.ts` (the one file here that imports
+  `obsidian`; `Vault` behind `FilePort`), `index.ts` (the folder's surface).
+- `src/core/database/commands.ts` — the provisional id-addressed command seam R2 routes through; R3
+  replaces it with the full operation model.
+- `src/core/database/create.ts` — the valid minimum document `create()` writes.
+- `src/plugin/TablifyFileView.ts` — `FileView` lifecycle, the R2 read-only panel, conflict choices,
+  workspace-state selection. `src/plugin/main.ts` — view type, `.tablify` extension, the create
+  command, the shared registry, teardown on unload.
+- Tests: `tests/unit/{core-commands,tablify-session,tablify-write-queue,tablify-registry,vault-port}.test.ts`,
+  `tests/dom/tablify-file-view.test.ts`, doubles in `tests/fakes/{tablifyFile,vaultFile}.ts`.
+  The grid/React mount arrives in R4; this view shows the document and its state, not a grid.
 
 ## R2 test matrix and exit criteria
 
