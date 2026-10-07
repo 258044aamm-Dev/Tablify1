@@ -19,7 +19,7 @@ export const OVERSCAN_ROWS = 8;
 /** The three densities, in CSS pixels. `docs/02` §Grid rendering: short 32 / medium 40 / tall 64. */
 export const ROW_HEIGHTS = { short: 32, medium: 40, tall: 64 } as const;
 
-/** A density name. `appearance.defaultRowHeight` in the settings, and the per-view option in the `.base`. */
+/** A density name. `appearance.defaultRowHeight` in the settings, and each view's own `density`. */
 export type RowDensity = keyof typeof ROW_HEIGHTS;
 
 /** The pixel height of a density, so callers never index the record themselves. */

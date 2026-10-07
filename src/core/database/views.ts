@@ -14,10 +14,12 @@
  * it. Field references are checked against the table's schema here, without importing anything from
  * the UI: an id that names no field is a warning with the reference kept, never a silent drop.
  *
- * Two things a view deliberately does **not** store: row density and the frozen primary column.
- * Both are presentation, both were presentation-only in the Bases era too (`BasesSource`), and a
- * saved view that quietly froze someone's row height per view would be the plugin preference
- * problem wearing a view's name.
+ * A view stores presentation that belongs to *it*: the row density it was set to and whether its
+ * primary column is pinned (docs/03 §view config lists both; docs/04 §layout gives the freeze rule).
+ * What it never stores is anything global: theme-following, the motion preference and the row height
+ * a *new* view starts from are plugin settings (`src/plugin/settings/schema.ts`), and a view that
+ * quietly held them would be the plugin preference problem wearing a view's name. Which side each
+ * piece of state belongs to is written down once, as data, in `src/plugin/viewState.ts`.
  */
 import type { Expr } from '../query/ast';
 import { decodeQueryDocument, fieldsMentioned } from '../query/ast';
@@ -35,6 +37,12 @@ export interface ViewSort {
 	readonly unknown: readonly UnknownEntry[];
 }
 
+/** The row densities a view may be set to. `docs/02` §Grid rendering; pixels live in the grid. */
+export type ViewDensity = 'short' | 'medium' | 'tall';
+
+/** Every density, for narrowing an untrusted name. */
+export const VIEW_DENSITIES: readonly ViewDensity[] = ['short', 'medium', 'tall'];
+
 /** A saved view in the document. */
 export interface TableView {
 	readonly id: string;
@@ -51,6 +59,10 @@ export interface TableView {
 	readonly columnOrder: readonly string[];
 	readonly collapsedKeys: readonly string[];
 	readonly widths: ReadonlyMap<string, number>;
+	/** The density this view was set to. `null` means the file did not say; the renderer uses the default. */
+	readonly density: ViewDensity | null;
+	/** Whether this view pins its primary column. `null` means the file did not say. */
+	readonly frozenPrimary: boolean | null;
 	readonly unknown: readonly UnknownEntry[];
 }
 
@@ -65,6 +77,8 @@ const VIEW_KEYS: readonly string[] = [
 	'columnOrder',
 	'collapsedKeys',
 	'widths',
+	'density',
+	'frozenPrimary',
 ];
 
 /** The keys one sort entry owns. */
@@ -298,6 +312,38 @@ function readView(
 
 	const widths = readWidths(value['widths'], `${path}.widths`, errors);
 
+	const densityValue = value['density'];
+	let density: ViewDensity | null = null;
+	if (densityValue !== undefined && densityValue !== null) {
+		const chosen =
+			typeof densityValue === 'string'
+				? VIEW_DENSITIES.find((candidate) => candidate === densityValue)
+				: undefined;
+		if (chosen === undefined) {
+			errors.push({
+				code: 'invalid-view-density',
+				message: `A view's density must be short, medium or tall, not ${describeJson(densityValue)}.`,
+				path: `${path}.density`,
+			});
+			return undefined;
+		}
+		density = chosen;
+	}
+
+	const freezeValue = value['frozenPrimary'];
+	let frozenPrimary: boolean | null = null;
+	if (freezeValue !== undefined && freezeValue !== null) {
+		if (typeof freezeValue !== 'boolean') {
+			errors.push({
+				code: 'invalid-view-freeze',
+				message: `A view's frozenPrimary must be true or false, not ${describeJson(freezeValue)}.`,
+				path: `${path}.frozenPrimary`,
+			});
+			return undefined;
+		}
+		frozenPrimary = freezeValue;
+	}
+
 	// Reference checks: every field id this view names must exist in the table. A reference that
 	// does not is kept — the user may restore the field, or a newer build may — and warned about.
 	const reference = (fieldId: string, at: string): void => {
@@ -355,6 +401,8 @@ function readView(
 		columnOrder,
 		collapsedKeys,
 		widths,
+		density,
+		frozenPrimary,
 		unknown: unknownEntries(value, VIEW_KEYS),
 	};
 }
@@ -466,6 +514,8 @@ export function serializeView(view: TableView, fieldOrder: readonly string[]): J
 			['columnOrder', view.columnOrder.length === 0 ? undefined : view.columnOrder],
 			['collapsedKeys', view.collapsedKeys.length === 0 ? undefined : view.collapsedKeys],
 			['widths', widths],
+			['density', view.density ?? undefined],
+			['frozenPrimary', view.frozenPrimary ?? undefined],
 		],
 		view.unknown,
 	);

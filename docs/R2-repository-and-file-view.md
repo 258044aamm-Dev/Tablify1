@@ -1,6 +1,6 @@
 # R2 — Database repository and Obsidian file view
 
-**Mode:** implementation guide. Authorized for implementation 2026-10-07 (see [`08-decisions.md`](08-decisions.md) §Implementation authorization log): steps commit and push one at a time on `refactor/native-tablify`. **Status:** in progress — steps 1–6 are implemented, gated and pushed ✅ (step 7 next); implementation state is always the source at HEAD. **Real-device behaviour stays NOT RUN** until the user runs [`probes/r2-file-view/`](../probes/r2-file-view/README.md) on desktop and phone and the log is pasted into [`manual-test-log.md`](manual-test-log.md) §"R2 — FileView probe kit" (ADR-0010: the floor stays 1.13.0). **Dependencies:** R1 schema frozen (✅ complete); Obsidian API assumptions are checked against the pinned typings ([`10-verification-and-ai-hygiene.md`](10-verification-and-ai-hygiene.md) §Required claims ledger) and, for the app-version question, by the user-run probe kit in [`probes/r2-file-view/`](../probes/r2-file-view/README.md) — never claimed from typings alone (ADR-0010). **Blocking decisions:** ADR-0005 (external edit, never a silent overwrite), ADR-0010 (app-version floor stays at 1.13.0 until the probes report).
+**Mode:** implementation guide. Authorized for implementation 2026-10-07 (see [`08-decisions.md`](08-decisions.md) §Implementation authorization log): steps commit and push one at a time on `refactor/native-tablify`. **Status:** complete — steps 1–7 are implemented, gated and pushed ✅ (each step a commit on `refactor/native-tablify`); implementation state is always the source at HEAD. **Real-device behaviour stays NOT RUN** until the user runs [`probes/r2-file-view/`](../probes/r2-file-view/README.md) on desktop and phone and the log is pasted into [`manual-test-log.md`](manual-test-log.md) §"R2 — FileView probe kit" (ADR-0010: the floor stays 1.13.0). **Dependencies:** R1 schema frozen (✅ complete); Obsidian API assumptions are checked against the pinned typings ([`10-verification-and-ai-hygiene.md`](10-verification-and-ai-hygiene.md) §Required claims ledger) and, for the app-version question, by the user-run probe kit in [`probes/r2-file-view/`](../probes/r2-file-view/README.md) — never claimed from typings alone (ADR-0010). **Blocking decisions:** ADR-0005 (external edit, never a silent overwrite), ADR-0010 (app-version floor stays at 1.13.0 until the probes report).
 
 ## Objective
 
@@ -105,7 +105,35 @@ Future plugin responsibilities:
 
 Do not retain a global `liveViews` registry merely to recover a Bases leaf. Prefer public workspace/view APIs verified in the spike.
 
-### Step 7 — Persist view state in the correct place
+### Step 7 — Persist view state in the correct place ✅ landed
+
+Landed as three things.
+
+1. **`src/plugin/viewState.ts` — the split as data.** Every piece of view state is classified into one
+   of three homes with a sentence a reviewer can hold it to: the `.tablify` document
+   (`DOCUMENT_VIEW_STATE`, exhaustive over `keyof TableView`), plugin settings
+   (`SETTINGS_VIEW_STATE`, exhaustive over `TablifySettings['appearance']`), or the workspace leaf
+   (`WORKSPACE_VIEW_STATE`: the selected table and saved view). Both exhaustive records are typed, so
+   adding a view key or a global appearance setting stops compiling until it is classified.
+2. **The leaf state the file view writes.** `getState()`/`setState()` carry a selection, and
+   selecting a table or a saved view is navigation: it re-renders and dispatches nothing. The panel
+   shows the selected table's saved views as choices so the promise is exercised, not just stated.
+3. **A schema correction this step forced into the open.** R1's reader preserved `density` and
+   `frozenPrimary` as *unknown* keys, although `docs/03` §view config, `docs/R1` step 5 and the bullet
+   above all list a view's density and pinned primary column as view content — and `docs/01`/`docs/04`
+   build the freeze rule on them. They are now first-class: read (`short`/`medium`/`tall`, boolean),
+   validated (`invalid-view-density`, `invalid-view-freeze`), written back, with absent meaning "the
+   file did not say" so nothing is invented on save. The old expectation is replaced in
+   `tests/unit/core-views.test.ts`, and the three-way agreement of the density vocabulary —
+   document, plugin settings, grid pixels — is asserted rather than assumed.
+
+**The negative half**, which is the part of this step that is a promise rather than a feature: the
+native path (the file view, `viewState.ts`, and every file under `src/adapters/tablifyFile/**`) never
+mentions a `.base` file, a Bases view, `registerBasesView`, `processFrontMatter`, a note-backed row
+source or the metadata cache — checked by reading the sources in `tests/unit/view-state.test.ts`,
+comments included, and by asserting that exactly one adapter file imports `obsidian` (the port's own
+implementation). `main.ts` is excluded from that scan on purpose: the legacy Bases path still lives
+there until R6 removes it.
 
 - Named filters, sort/group, column visibility/order/width, density, freeze/pin, and per-table view options belong in the `.tablify` document.
 - Global defaults (theme-following, motion preference, default row height) belong in plugin settings.
@@ -125,16 +153,47 @@ Do not retain a global `liveViews` registry merely to recover a Bases leaf. Pref
 - `src/plugin/TablifyFileView.ts` — `FileView` lifecycle, the R2 read-only panel, conflict choices,
   workspace-state selection. `src/plugin/main.ts` — view type, `.tablify` extension, the create
   command, the shared registry, teardown on unload.
-- Tests: `tests/unit/{core-commands,tablify-session,tablify-write-queue,tablify-registry,vault-port}.test.ts`,
+- `src/plugin/viewState.ts` — where view state lives, as data (step 7).
+- Tests: `tests/unit/{core-commands,tablify-session,tablify-write-queue,tablify-registry,vault-port,view-state}.test.ts`,
   `tests/dom/tablify-file-view.test.ts`, doubles in `tests/fakes/{tablifyFile,vaultFile}.ts`.
   The grid/React mount arrives in R4; this view shows the document and its state, not a grid.
 
 ## R2 test matrix and exit criteria
 
-- Extension registration opens `.tablify` in the intended view in real Obsidian, without enabling Bases.
-- Create → edit multiple tables → close/reopen preserves bytes/values/schema/views.
-- Two panes opening the same file cannot clobber a newer revision; close/unload releases all resources.
-- External edit, rename, delete, malformed file, unsupported future version, and failed write have visible, non-destructive behavior.
-- One logical edit/bulk transaction is reflected in the intended number of file writes and one undo step; measured write latency is recorded.
-- Device tests cover at least the minimum supported desktop and mobile app versions before lowering or retaining `minAppVersion`.
-- No `.base` config, `BasesView`, `registerBasesView`, `processFrontMatter`, or note-row identity is used by the native file view.
+Each line says what is proven **here**, by a test that fails if it stops holding, and what is still
+`NOT RUN` because only a device can answer it. The device half is one run of
+[`probes/r2-file-view/`](../probes/r2-file-view/README.md), whose output goes into
+[`manual-test-log.md`](manual-test-log.md) §"R2 — FileView probe kit".
+
+- **Extension registration opens `.tablify` in the intended view, without Bases.** Registered by
+  `Plugin.registerView` + `Plugin.registerExtensions` (`src/plugin/main.ts`); asserted in
+  `tests/dom/tablify-file-view.test.ts` (the registered type, the claimed extension, and
+  `canAcceptExtension` accepting `tablify` while refusing `md` and `base`). Whether Obsidian routes a
+  double-click to it, keeps the leaf across a restart, and orders the `FileView` callbacks as the
+  typings promise: **NOT RUN** (probe kit checks 1, 2, 7).
+- **Create → edit → close/reopen preserves bytes, values, schema and views.** `tests/unit/tablify-registry.test.ts`
+  (a created database parses with zero warnings; a created path is never overwritten) and the R1
+  round-trip suites for what "preserves" means. An edit reaching the disk and surviving a reopen in
+  the real app: **NOT RUN**.
+- **Two panes cannot clobber a newer revision; close/unload releases everything.**
+  `tests/unit/tablify-registry.test.ts` (one session per path, refcounted: the first close writes
+  nothing, the last one saves and disposes, a rename re-keys the registry, two panes' edits in one
+  burst are one write) and `tests/unit/tablify-write-queue.test.ts` (an edit landing mid-write gets
+  its own pass; a burst that converges on the written bytes does not write twice). Two real leaves
+  on one file, and what the app does with a disabled plugin's pending write: **NOT RUN** (check 5).
+- **External edit, rename, delete, malformed file, future version and failed write are visible and
+  non-destructive.** `tests/unit/tablify-session.test.ts` (ADR-0005 as code: revision compare,
+  `conflict:{expected,found}`, reload never adopts unreadable text, keep-as-copy detaches) and
+  `tests/dom/tablify-file-view.test.ts` (the three read-only failure panels, the conflict choices,
+  the "changed on disk" status, and that none of those paths writes a byte). The same behaviours
+  against a real vault and real Sync: **NOT RUN**.
+- **One logical edit/bulk transaction is the intended number of writes, and one undo step.**
+  `tests/unit/tablify-write-queue.test.ts` counts writes (`port.writes`) and flushes per burst; the
+  **undo** half is R3's history work and is not claimed here. Measured write latency: **NOT RUN**.
+- **Device tests cover the minimum supported versions before the floor moves.** `minAppVersion`
+  stays `1.13.0` (ADR-0010) and the two device rows in `manual-test-log.md` are **NOT RUN**; no
+  desktop evidence may speak for mobile.
+- **No `.base` config, `BasesView`, `registerBasesView`, `processFrontMatter` or note-row identity in
+  the native file view.** `tests/unit/view-state.test.ts` reads every native-path source and refuses
+  all six, comments included; the same file asserts that exactly one adapter imports `obsidian`. The
+  legacy Bases path is untouched by R2 and is removed by R6.

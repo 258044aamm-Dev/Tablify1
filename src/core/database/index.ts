@@ -44,8 +44,8 @@ export type { CreateDocumentOptions } from './create';
 export { createEmptyDocument } from './create';
 export type { CellState, TableRow } from './rows';
 export { readRows, serializeRow } from './rows';
-export type { TableView, ViewSort } from './views';
-export { readViews, serializeView } from './views';
+export type { TableView, ViewDensity, ViewSort } from './views';
+export { readViews, serializeView, VIEW_DENSITIES } from './views';
 export type { DocumentLoad, LoadError, LoadWarning } from './result';
 export type { DatabaseDocument, DatabaseTable, DocumentFieldTypeId } from './schema';
 export {

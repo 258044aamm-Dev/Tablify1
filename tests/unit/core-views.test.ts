@@ -369,22 +369,49 @@ describe('widths', () => {
 	});
 });
 
-describe('what a view does not store', () => {
-	it('keeps density and frozenPrimary as unknown keys, and round-trips them verbatim', () => {
-		const loaded = load(viewJson({ density: 'compact', frozenPrimary: true }));
+describe('view presentation the view itself owns', () => {
+	it('reads density and frozenPrimary as view state, and round-trips them', () => {
+		const loaded = load(viewJson({ density: 'tall', frozenPrimary: true }));
 		const view = loaded.views[0];
 		expect(view).toBeDefined();
 		if (view === undefined) {
 			return;
 		}
-		expect(Object.keys(view)).not.toContain('density');
-		expect(Object.keys(view)).not.toContain('frozenPrimary');
-		expect(view.unknown).toEqual([
-			{ key: 'density', value: 'compact' },
-			{ key: 'frozenPrimary', value: true },
-		]);
-		expect(loaded.text).toContain('"density": "compact"');
+		expect(view.density).toBe('tall');
+		expect(view.frozenPrimary).toBe(true);
+		expect(view.unknown).toEqual([]);
+		expect(loaded.text).toContain('"density": "tall"');
 		expect(loaded.text).toContain('"frozenPrimary": true');
+	});
+
+	it('leaves both keys out when the file never stated them, so nothing is invented', () => {
+		const loaded = load(viewJson({}));
+		const view = loaded.views[0];
+		expect(view?.density).toBeNull();
+		expect(view?.frozenPrimary).toBeNull();
+		expect(loaded.text.includes('"density"')).toBe(false);
+		expect(loaded.text.includes('"frozenPrimary"')).toBe(false);
+	});
+
+	it('refuses a density that is not one of the three, and a freeze that is not a boolean', () => {
+		// `compact` was the Bases-era word for it; the document says short/medium/tall (docs/02 §Grid
+		// rendering), so a file that carries `compact` names a density this build does not have.
+		const badDensity = parseDocument(documentText([viewJson({ density: 'compact' })]));
+		expect(badDensity.ok).toBe(false);
+		if (!badDensity.ok) {
+			expect(badDensity.errors.map((error) => error.code)).toEqual(['invalid-view-density']);
+		}
+		const badFreeze = parseDocument(documentText([viewJson({ frozenPrimary: 'yes' })]));
+		expect(badFreeze.ok).toBe(false);
+		if (!badFreeze.ok) {
+			expect(badFreeze.errors.map((error) => error.code)).toEqual(['invalid-view-freeze']);
+		}
+	});
+
+	it('still keeps a key this build does not know verbatim', () => {
+		const loaded = load(viewJson({ pinnedRows: 3 }));
+		expect(loaded.views[0]?.unknown).toEqual([{ key: 'pinnedRows', value: 3 }]);
+		expect(loaded.text).toContain('"pinnedRows": 3');
 	});
 });
 

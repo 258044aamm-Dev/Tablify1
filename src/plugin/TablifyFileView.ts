@@ -29,6 +29,8 @@ import type { TFile, ViewStateResult, WorkspaceLeaf } from 'obsidian';
 
 import type { DatabaseHandle, RegistryResult, SessionRegistry } from '../adapters/tablifyFile';
 import type { SessionChange, SessionState } from '../adapters/tablifyFile';
+import type { TablifyLeafState } from './viewState';
+import { EMPTY_LEAF_STATE, leafStateOf, readLeafState } from './viewState';
 
 /** The view type id Obsidian associates with `.tablify`. Public contract: never change it after release. */
 export const TABLIFY_FILE_VIEW_TYPE = 'tablify-file';
@@ -37,9 +39,7 @@ export const TABLIFY_FILE_VIEW_TYPE = 'tablify-file';
 export const TABLIFY_FILE_EXTENSION = 'tablify';
 
 /** What the workspace restores for this view: a selection, never document data (step 7). */
-export interface TablifyFileViewState {
-	readonly tableId: string | null;
-}
+export type TablifyFileViewState = TablifyLeafState;
 
 /** The two host services the view needs. The plugin supplies both; tests supply fakes. */
 export interface TablifyFileViewHost {
@@ -47,17 +47,6 @@ export interface TablifyFileViewHost {
 	readonly registry: SessionRegistry;
 	/** Write ADR-0005's recovery copy. Must refuse a path that already exists. */
 	copyDatabase(path: string, text: string): Promise<void>;
-}
-
-/** Read a workspace state object into the selection. Unknown shapes restore as "nothing selected". */
-export function readViewState(state: unknown): TablifyFileViewState {
-	if (typeof state === 'object' && state !== null) {
-		const candidate: { tableId?: unknown } = state;
-		if (typeof candidate.tableId === 'string') {
-			return { tableId: candidate.tableId };
-		}
-	}
-	return { tableId: null };
 }
 
 /** The one-line description of a session state, so the panel and the tests agree on the words. */
@@ -83,7 +72,7 @@ export class TablifyFileView extends FileView {
 	private currentHandle: DatabaseHandle | null = null;
 	private unsubscribe: (() => void) | null = null;
 	private failure: RegistryResult | null = null;
-	private selection: TablifyFileViewState = { tableId: null };
+	private selection: TablifyFileViewState = EMPTY_LEAF_STATE;
 	/** The path this pane was loaded with, so the title is right before `this.file` is assigned. */
 	private loadedPath: string | null = null;
 
@@ -129,14 +118,14 @@ export class TablifyFileView extends FileView {
 		return extension === TABLIFY_FILE_EXTENSION;
 	}
 
-	/** Workspace state: the selection, so a restored leaf reopens on the same table. */
+	/** Workspace state: the selection, so a restored leaf reopens on the same table and view. */
 	getState(): Record<string, unknown> {
-		return { tableId: this.selection.tableId };
+		return leafStateOf(this.selection);
 	}
 
 	async setState(state: unknown, result: ViewStateResult): Promise<void> {
 		void result;
-		this.selection = readViewState(state);
+		this.selection = readLeafState(state);
 		// A restore is a read: it re-renders and writes nothing.
 		this.render();
 	}
@@ -271,6 +260,28 @@ export class TablifyFileView extends FileView {
 		this.renderDocument(panel, handle);
 	}
 
+	/**
+	 * The table this pane is showing: the restored one if the document still has it, otherwise the
+	 * first. A selection that names a table the document no longer has is not an error — the file may
+	 * have been edited elsewhere — so the pane falls back instead of showing nothing.
+	 */
+	private selectedTable(
+		document: ReturnType<DatabaseHandle['session']['getDocument']>,
+	): (typeof document.tables)[number] | null {
+		const found = document.tables.find((table) => table.id === this.selection.tableId);
+		return found ?? document.tables[0] ?? null;
+	}
+
+	/**
+	 * Navigation, and nothing else: selecting a table or a view changes the leaf's state and
+	 * re-renders. There is no `dispatch` on this path by construction, which is what "restoring
+	 * and switching create no document writes" means in code.
+	 */
+	private select(tableId: string, viewId: string | null): void {
+		this.selection = { tableId, viewId };
+		this.render();
+	}
+
 	private renderFailure(
 		panel: ReturnType<HTMLElement['createDiv']>,
 		failure: RegistryResult,
@@ -306,13 +317,35 @@ export class TablifyFileView extends FileView {
 			text: `${String(document.tables.length)} tables · ${String(rowCount)} rows`,
 		});
 
+		const current = this.selectedTable(document);
 		const list = panel.createDiv({ cls: 'tablify-file-tables' });
 		for (const table of document.tables) {
-			const selected = table.id === this.selection.tableId ? ' (selected)' : '';
-			list.createDiv({
+			const selected = table.id === current?.id ? ' (selected)' : '';
+			const entry = list.createEl('button', {
 				cls: 'tablify-file-table',
 				text: `${table.name} — ${String(table.fields.length)} fields, ${String(table.rows.length)} rows${selected}`,
 			});
+			entry.onclick = (): void => {
+				this.select(table.id, null);
+			};
+		}
+
+		if (current !== null) {
+			const views = panel.createDiv({ cls: 'tablify-file-views' });
+			views.createDiv({ cls: 'tablify-file-views-label', text: 'Views' });
+			if (current.views.length === 0) {
+				views.createDiv({ cls: 'tablify-file-view-none', text: 'No saved views yet.' });
+			}
+			for (const view of current.views) {
+				const selected = view.id === this.selection.viewId ? ' (selected)' : '';
+				const entry = views.createEl('button', {
+					cls: 'tablify-file-view',
+					text: `${view.name}${selected}`,
+				});
+				entry.onclick = (): void => {
+					this.select(current.id, view.id);
+				};
+			}
 		}
 
 		const actions = panel.createDiv({ cls: 'tablify-file-actions' });

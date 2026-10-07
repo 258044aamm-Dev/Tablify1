@@ -39,9 +39,21 @@ function table(id: string, name: string, rows: number): Record<string, unknown> 
 			id: `row_${'e'.repeat(25)}${String(index % 10)}`,
 			cells: { [fieldId]: `${name} ${String(index + 1)}` },
 		})),
-		views: [],
+		views: [
+			{
+				id: `viw_${'d'.repeat(25)}${id.slice(-1)}`,
+				name: 'Board',
+				sorts: [{ fieldId, direction: 'asc' }],
+				density: 'tall',
+				frozenPrimary: true,
+			},
+		],
 	};
 }
+
+const FIRST_TABLE = `tbl_${'a'.repeat(25)}1`;
+const SECOND_TABLE = `tbl_${'a'.repeat(25)}2`;
+const FIRST_VIEW = `viw_${'d'.repeat(25)}1`;
 
 function databaseText(name = 'Studio'): string {
 	return JSON.stringify({
@@ -215,9 +227,31 @@ describe('a readable document', () => {
 	it('marks the table the workspace restored, and restoring writes nothing', async () => {
 		const rig = loadPlugin({ [PATH]: databaseText() });
 		const view = await openPane(rig, PATH);
-		await view.setState({ tableId: `tbl_${'a'.repeat(25)}2` }, { history: false });
+		await view.setState({ tableId: SECOND_TABLE, viewId: FIRST_VIEW }, { history: false });
 		expect(text(view)).toContain('Clients — 1 fields, 1 rows (selected)');
-		expect(view.getState()).toEqual({ tableId: `tbl_${'a'.repeat(25)}2` });
+		expect(view.getState()).toEqual({ tableId: SECOND_TABLE, viewId: FIRST_VIEW });
+		expect(rig.vault.writes).toEqual([]);
+	});
+
+	it('switches table by click, as navigation, and writes nothing', async () => {
+		const rig = loadPlugin({ [PATH]: databaseText() });
+		const view = await openPane(rig, PATH);
+		expect(text(view)).toContain('Shoots — 1 fields, 2 rows (selected)');
+		button(view, 'Clients — 1 fields, 1 rows').click();
+		expect(text(view)).toContain('Clients — 1 fields, 1 rows (selected)');
+		expect(view.getState()).toEqual({ tableId: SECOND_TABLE, viewId: null });
+		expect(rig.vault.writes).toEqual([]);
+	});
+
+	it('selects a saved view in workspace state, and selecting it writes nothing', async () => {
+		const rig = loadPlugin({ [PATH]: databaseText() });
+		const view = await openPane(rig, PATH);
+		expect(text(view)).toContain('Views');
+		button(view, 'Board').click();
+		expect(text(view)).toContain('Board (selected)');
+		expect(view.getState()).toEqual({ tableId: FIRST_TABLE, viewId: FIRST_VIEW });
+		// The view's own presentation — the density and the pinned column — is document state, read
+		// only: showing a view is not editing it.
 		expect(rig.vault.writes).toEqual([]);
 	});
 

@@ -7,10 +7,12 @@
  * ever needed, the schema is not doing its job.
  *
  * **What does not live here.** Column widths, column order, the row height a *view* uses, grouping and the
- * per-view filter state live in the `.base` sidecar (`docs/03` §view config), not in `data.json`. The one
+ * per-view filter state live in the `.tablify` document, in that table's view object (`docs/03` §view
+ * config; the split is written down as data in `src/plugin/viewState.ts`), not in `data.json`. The one
  * row-height entry below is named `defaultRowHeight` for exactly that reason: it is the value a **new**
- * view starts from, and the value a view actually uses still belongs to the `.base`. The temptation to put
- * a live view setting in `data.json` is the thing `docs/03` warns against, and it is reported, not taken.
+ * view starts from, and the value a view actually uses is the `density` its own view object stores. The
+ * temptation to put a live view setting in `data.json` is the thing `docs/03` warns against, and it is
+ * reported, not taken.
  *
  * **What may never live here.** A token, a secret, anything that identifies an account, and anything that
  * looks like analytics (`docs/09` §what may be stored). The optional sync token of a later milestone goes to
@@ -298,7 +300,7 @@ export const SETTING_ROWS: readonly SettingRow[] = [
 		path: 'appearance.defaultRowHeight',
 		section: 'appearance',
 		name: 'Row height for new views',
-		desc: 'The row height a view starts with. Each view stores the height it actually uses in its .base file, so changing this never resizes a grid you already set up.',
+		desc: 'The row height a view starts with. Each view stores the height it actually uses in its own database file, so changing this never resizes a grid you already set up.',
 		control: {
 			kind: 'dropdown',
 			options: {
