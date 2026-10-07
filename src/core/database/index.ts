@@ -35,6 +35,8 @@ export type {
 } from './fields';
 export { DURATION_UNITS, optionsOf, readFields, serializeField } from './fields';
 export type { LinkFinding, LinkFindingCode } from './links';
+export type { OptionFinding, OptionFindingCode } from './options';
+export { validateOptions } from './options';
 export { validateLinks } from './links';
 export type { CellState, TableRow } from './rows';
 export { readRows, serializeRow } from './rows';

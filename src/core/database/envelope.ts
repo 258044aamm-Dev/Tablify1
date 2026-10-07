@@ -29,6 +29,7 @@ import {
 import { isIdOfKind } from './ids';
 import { readFields, serializeField } from './fields';
 import { validateLinks } from './links';
+import { validateOptions } from './options';
 import { readRows, serializeRow } from './rows';
 import { readViews, serializeView } from './views';
 import type { DocumentLoad, LoadError, LoadWarning } from './result';
@@ -318,6 +319,7 @@ export function readDocument(value: JsonValue): DocumentLoad {
 	// withheld (ADR-0001 §6; docs/03 §relations: "parse preserves broken reference data for user
 	// repair"). This is the only call site of the scan; nothing else re-implements it.
 	warnings.push(...validateLinks(document));
+	warnings.push(...validateOptions(document));
 
 	return { ok: true, document, warnings };
 }
