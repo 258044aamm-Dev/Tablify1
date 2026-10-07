@@ -2,7 +2,7 @@
 
 **Status:** planning documentation only. These guides describe a target that is **not implemented** in the current `0.1.0` pre-release. They authorize no source-code changes by themselves. The user’s explicit `/Plan only mode` remains in force; application code, tests, build metadata, and release assets must not be changed unless the user separately authorizes implementation.
 
-**Audit baseline:** `main` at `50f041f135abe9e7e9f111cf7c170b32dc98e9e0`, tag `0.1.0`; see [`../REFACTOR-PLAN.md`](../REFACTOR-PLAN.md) for the evidence inventory and overall decision record.
+**Audit baseline:** `main` at `50f041f135abe9e7e9f111cf7c170b32dc98e9e0`, tag `0.1.0`; see [`../REFACTOR-PLAN.md`](REFACTOR-PLAN.md) for the evidence inventory and overall decision record.
 
 ## How to use this guide set
 

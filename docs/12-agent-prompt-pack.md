@@ -4,17 +4,17 @@
 
 ## Authoritative guide set
 
-Start at [`docs/reference/native-tablify/README.md`](reference/native-tablify/README.md), then read the relevant phase guide. The guides are detailed design/checklists, not one-shot instructions to modify every listed file in one turn.
+Start at [`docs/README.md`](README.md), then read the relevant phase guide. The guides are detailed design/checklists, not one-shot instructions to modify every listed file in one turn.
 
 | Phase | Guide | Purpose | Gate for future implementation |
 |---|---|---|---|
-| R0 | [Contract and docs](reference/native-tablify/R0-contract-and-docs.md) — completed documentation pass | Align product docs while distinguishing current 0.1.0 from target. | Link/doc audit, no product contradiction, `git diff --check`. |
-| R1 | [JSON schema and core](reference/native-tablify/R1-json-schema-and-core.md) | Freeze versioned multi-table JSON, stable IDs, values, links, views, parser/version migrations. | Fixtures round-trip; invalid/future data preserved; core purity. |
-| R2 | [Repository and file view](reference/native-tablify/R2-repository-and-file-view.md) | Open/create/save/reopen through a verified custom Obsidian file view. | Real app lifecycle/write proof; repository conflict tests. |
-| R3 | [Identities, operations, undo](reference/native-tablify/R3-identities-operations-and-undo.md) | Replace note-path/single-table state with stable database IDs and referential integrity. | Inverse/property tests; all local identity stable across rename/reorder. |
-| R4 | [Grid and linked records](reference/native-tablify/R4-grid-and-linked-records.md) | Keep grid parity and add linked-record UX. | Existing grid/a11y/mobile suite plus relation tests. |
-| R5 | [Import/export and Airtable](reference/native-tablify/R5-import-export-and-airtable.md) | Rewire CSV/TSV/XLSX and manual sync. | Spreadsheet round-trip and mocked sync/conflict/security suite. |
-| R6 | [Removal, verification, release](reference/native-tablify/R6-removal-verification-and-release.md) | Delete Bases/Tabula code and verify/release the cutover. | No obsolete runtime path; all automated/manual gates and docs accurate. |
+| R0 | [Contract and docs](R0-contract-and-docs.md) — completed documentation pass | Align product docs while distinguishing current 0.1.0 from target. | Link/doc audit, no product contradiction, `git diff --check`. |
+| R1 | [JSON schema and core](R1-json-schema-and-core.md) | Freeze versioned multi-table JSON, stable IDs, values, links, views, parser/version migrations. | Fixtures round-trip; invalid/future data preserved; core purity. |
+| R2 | [Repository and file view](R2-repository-and-file-view.md) | Open/create/save/reopen through a verified custom Obsidian file view. | Real app lifecycle/write proof; repository conflict tests. |
+| R3 | [Identities, operations, undo](R3-identities-operations-and-undo.md) | Replace note-path/single-table state with stable database IDs and referential integrity. | Inverse/property tests; all local identity stable across rename/reorder. |
+| R4 | [Grid and linked records](R4-grid-and-linked-records.md) | Keep grid parity and add linked-record UX. | Existing grid/a11y/mobile suite plus relation tests. |
+| R5 | [Import/export and Airtable](R5-import-export-and-airtable.md) | Rewire CSV/TSV/XLSX and manual sync. | Spreadsheet round-trip and mocked sync/conflict/security suite. |
+| R6 | [Removal, verification, release](R6-removal-verification-and-release.md) | Delete Bases/Tabula code and verify/release the cutover. | No obsolete runtime path; all automated/manual gates and docs accurate. |
 
 ## Session order
 

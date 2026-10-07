@@ -28,5 +28,5 @@
 		"vitest.config.ts",
 		"playwright.config.ts"
 	],
-	"exclude": ["prototype", "node_modules", "dist", "coverage", "main.js"]
+	"exclude": ["docs/legacy", "node_modules", "dist", "coverage", "main.js"]
 }

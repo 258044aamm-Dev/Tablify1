@@ -4,7 +4,7 @@
 
 **Repository audited:** `258044aamm-Dev/Tablify`, `main` at `50f041f135abe9e7e9f111cf7c170b32dc98e9e0` (2026-10-06); tag `0.1.0` exists.
 
-**Detailed phase guides:** [`docs/reference/native-tablify/README.md`](native-tablify/README.md) indexes R0–R6 guides covering schema, file view/storage, core identity, UI parity/links, sync, removal, tests, and release sequencing.
+**Detailed phase guides:** [`docs/README.md`](README.md) indexes R0–R6 guides covering schema, file view/storage, core identity, UI parity/links, sync, removal, tests, and release sequencing.
 
 **Supersedes:** the earlier 2026-10-05 proposal in this file, which audited the older `airtable-tabula` fork and recommended an Obsidian Bases-first product. That recommendation and its architecture are no longer the product decision.
 
@@ -222,7 +222,7 @@ Phases are dependency order, not calendar estimates. The previous plan’s week 
 
 - [ ] Remove `src/adapters/bases/**`, Bases-only view and registration code, note creation/import runners/settings, `.tabula` reader/migration modules, their tests/fixtures/snapshots, and Base/Tabula-only branches in import UI.
 - [ ] Remove `bases`/`tabula-file` source kinds and stale note/frontmatter types. Keep `obsidian` typings and Obsidian APIs needed by the file view, settings, vault paths, and `SecretStorage`.
-- [ ] Delete the throwaway `spike/bases-path/**` after preserving any still-relevant findings in this plan or a historical note. Update `eslint.config.mts`/brand and source gates so they no longer treat Obsidian Bases as a shipped feature; retain the Airtable-base terminology exception.
+- [ ] Delete the throwaway `docs/legacy/spike/bases-path/**` after preserving any still-relevant findings in this plan or a historical note. Update `eslint.config.mts`/brand and source gates so they no longer treat Obsidian Bases as a shipped feature; retain the Airtable-base terminology exception.
 - [ ] Update active README/manifest/product copy and `docs/01–12`, `AGENTS.md`, prompts, and dev notes. Remove obsolete Bases spikes/references from active guidance; preserve historical audit entries rather than rewriting history.
 - [ ] Add a CI/source gate against reintroducing `BasesView`, `registerBasesView`, `BasesPropertyId`, `.base` view-config writes, `processFrontMatter`, and `.tabula` mode in shipped code. Scope the gate carefully: Airtable `baseId` and historical docs are intentional exceptions.
 - [ ] Keep plugin id `tablify`; do not rewrite tag `0.1.0`. Publish a distinct pre-release only after desktop and real-phone verification required by the current release process.

@@ -947,7 +947,7 @@ test.describe('the import, end to end (step 23)', () => {
 	 *     So the assertion is now two things instead of one number: the **counts and the progress line**, which
 	 *     are the contract and are asserted exactly; and an `elapsed` ceiling of **60 s**, which is a regression
 	 *     guard around a measured finding rather than a performance claim. The finding itself is recorded — per
-	 *     note re-render, with the profile — in `docs/manual-test-log.md` and `PROGRESS.md` §open defects, and
+	 *     note re-render, with the profile — in `docs/manual-test-log.md` and `docs/legacy/PROGRESS.md` §open defects, and
 	 *     coalescing those renders is a structural change to the store's notification, which this step's fence
 	 *     forbids and which the user has to decide on.
 	 *   · **18 · the undo restores the previous state in one step.** One call, one entry: every imported row is

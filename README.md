@@ -2,7 +2,7 @@
 
 > **Release status:** the current `0.1.0` GitHub prerelease is a Bases-backed testing build. It is not in the community directory, and real-app/device checks remain `NOT RUN` in `docs/manual-test-log.md`.
 >
-> **Planned direction:** Tablify is being planned as an Obsidian plugin centered on a versioned, multi-table `.tablify` JSON database, with no Bases integration or old-data migration. That refactor is **not implemented in `0.1.0`**. See [`docs/reference/REFACTOR-PLAN.md`](docs/reference/REFACTOR-PLAN.md) and the [R0–R6 guides](docs/reference/native-tablify/README.md).
+> **Planned direction:** Tablify is being planned as an Obsidian plugin centered on a versioned, multi-table `.tablify` JSON database, with no Bases integration or old-data migration. That refactor is **not implemented in `0.1.0`**. See [`docs/REFACTOR-PLAN.md`](docs/REFACTOR-PLAN.md) and the [R0–R6 guides](docs/README.md).
 
 This README’s feature description below is retained as a description of the current `0.1.0` prerelease, not the planned native format.
 

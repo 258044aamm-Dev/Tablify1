@@ -1,6 +1,6 @@
 # R0 — Contract and documentation alignment
 
-**Guide:** `docs/reference/native-tablify/R0-contract-and-docs.md`
+**Guide:** `docs/R0-contract-and-docs.md`
 **Mode:** documentation only. No application code, tests, styles, package/manifest/version files, assets, or vault data.
 
 Read `AGENTS.md`, `docs/08-decisions.md`, the master plan, R0 guide, active docs/prompts, and the historical release files named by the guide.

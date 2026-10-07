@@ -1,6 +1,6 @@
 # R3 — Identities, operations, and undo planning
 
-**Guide:** `docs/reference/native-tablify/R3-identities-operations-and-undo.md`
+**Guide:** `docs/R3-identities-operations-and-undo.md`
 **Current mode:** plan only.
 
 Read the R3 guide, `docs/08-decisions.md`, core operations, query, selection, store and sync-local contracts, plus existing tests. Do not treat file paths as native record identities.

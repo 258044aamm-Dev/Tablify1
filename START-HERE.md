@@ -14,8 +14,8 @@ One versioned JSON `.tablify` file contains multiple tables and saved views. Lin
 
 1. [`AGENTS.md`](AGENTS.md) — repository rules and plan-only fence.
 2. [`docs/08-decisions.md`](docs/08-decisions.md) — confirmed product decisions and open ADRs.
-3. [`docs/reference/REFACTOR-PLAN.md`](docs/reference/REFACTOR-PLAN.md) — audit and master plan.
-4. [`docs/reference/native-tablify/README.md`](docs/reference/native-tablify/README.md) — guide index and phase dependencies.
+3. [`docs/REFACTOR-PLAN.md`](docs/REFACTOR-PLAN.md) — audit and master plan.
+4. [`docs/README.md`](docs/README.md) — guide index and phase dependencies.
 5. `docs/01-spec.md` through `docs/07-test-plan.md` — target product/architecture/model/UI/toolchain/roadmap/test contracts.
 6. The relevant R-phase guide and its `prompts/native-tablify/phase-rN.md` planning prompt.
 7. `docs/10-verification-and-ai-hygiene.md` before making API, release, or test claims.
@@ -30,4 +30,4 @@ One versioned JSON `.tablify` file contains multiple tables and saved views. Lin
 
 ## Next planning prompt
 
-R0 documentation alignment is complete; its checklist is marked in `docs/reference/native-tablify/R0-contract-and-docs.md`. If continuing the plan, read `prompts/00-session-anchor.md` and use `prompts/native-tablify/phase-r1.md` for schema/interface/test planning. That is still plan-only: no source implementation is authorized. Revisit R0 only if the confirmed product scope or active docs change.
+R0 documentation alignment is complete; its checklist is marked in `docs/R0-contract-and-docs.md`. If continuing the plan, read `prompts/00-session-anchor.md` and use `prompts/native-tablify/phase-r1.md` for schema/interface/test planning. That is still plan-only: no source implementation is authorized. Revisit R0 only if the confirmed product scope or active docs change.

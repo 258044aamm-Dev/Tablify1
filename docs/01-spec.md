@@ -1,6 +1,6 @@
 # 01 — Product specification: native `.tablify` target
 
-> **Status:** target specification for the planned refactor; it does not describe the current `0.1.0` build. The current prerelease remains Bases-backed. See [`docs/reference/REFACTOR-PLAN.md`](reference/REFACTOR-PLAN.md) and the [phase-guide index](reference/native-tablify/README.md).
+> **Status:** target specification for the planned refactor; it does not describe the current `0.1.0` build. The current prerelease remains Bases-backed. See [`docs/REFACTOR-PLAN.md`](REFACTOR-PLAN.md) and the [phase-guide index](README.md).
 
 ## One-line definition
 

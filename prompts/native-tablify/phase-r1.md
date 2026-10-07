@@ -1,6 +1,6 @@
 # R1 — JSON schema and pure core planning
 
-**Guide:** `docs/reference/native-tablify/R1-json-schema-and-core.md`
+**Guide:** `docs/R1-json-schema-and-core.md`
 **Current mode:** plan only; no implementation authorization.
 
 Read `AGENTS.md`, `docs/08-decisions.md`, `docs/03-data-model-and-migration.md`, the R1 guide, current core/field/query types, and existing tests. Treat existing code as legacy evidence, not target authority.

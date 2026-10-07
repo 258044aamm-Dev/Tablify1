@@ -3,7 +3,7 @@
 *.mdx
 
 # Read-only reference material: never formatted, never edited.
-prototype/**
+docs/legacy/**
 
 # Build artefacts, caches and lockfiles.
 main.js

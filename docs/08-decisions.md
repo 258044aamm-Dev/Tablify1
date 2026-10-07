@@ -1,6 +1,6 @@
 # 08 — Decision record for the native `.tablify` refactor
 
-This file is the durable product/engineering decision ledger. “Confirmed” records a user decision. “Proposed” is a safe default to evaluate, not a user-approved product choice. “Open” must be resolved in an ADR before the phase listed. The detailed sequence is in [`docs/reference/native-tablify/`](reference/native-tablify/README.md).
+This file is the durable product/engineering decision ledger. “Confirmed” records a user decision. “Proposed” is a safe default to evaluate, not a user-approved product choice. “Open” must be resolved in an ADR before the phase listed. The detailed sequence is in [`docs/`](README.md).
 
 ## Product decisions
 

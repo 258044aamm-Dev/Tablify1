@@ -5,7 +5,7 @@
 ## Start a session
 
 1. Read [`00-session-anchor.md`](00-session-anchor.md).
-2. Read the matching phase guide in `docs/reference/native-tablify/`.
+2. Read the matching phase guide in `docs/`.
 3. Paste one prompt from `prompts/native-tablify/phase-rN.md`.
 4. Review the proposed files and acceptance checks. In plan-only mode, allow only the documentation fence named in the prompt.
 5. Inspect the resulting diff, links, and `git diff --check`; do not claim code gates passed if no code was changed/run.
@@ -30,7 +30,7 @@
 - `reuse-release-check.md` — release evidence checklist.
 - `reuse-verify.md` — audit claims against evidence.
 
-Old `step-01`–`step-28` prompts described the earlier Bases-first build. They are archived under [`docs/reference/archive/bases-first-prompts-2026-10/`](../docs/reference/archive/bases-first-prompts-2026-10/README.md) and must not be used for the native refactor.
+Old `step-01`–`step-28` prompts described the earlier Bases-first build. They are archived under [`docs/legacy/archive/bases-first-prompts-2026-10/`](../docs/legacy/archive/bases-first-prompts-2026-10/README.md) and must not be used for the native refactor.
 
 ## Shared rules
 

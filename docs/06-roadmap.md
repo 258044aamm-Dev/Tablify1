@@ -2,7 +2,7 @@
 
 > **Status:** planned work only. The current `0.1.0` prerelease still uses Bases and Markdown-note rows. This roadmap does not claim `.tablify` support exists.
 
-The implementation is deliberately phased. Each phase is a reviewable, testable boundary; no calendar estimate is claimed before the R2 file-write proof and R1 schema decisions are closed. Detailed step sequences, scope fences, tests, and exit criteria live in [`docs/reference/native-tablify/`](reference/native-tablify/README.md).
+The implementation is deliberately phased. Each phase is a reviewable, testable boundary; no calendar estimate is claimed before the R2 file-write proof and R1 schema decisions are closed. Detailed step sequences, scope fences, tests, and exit criteria live in [`docs/`](README.md).
 
 ## Baseline to preserve
 

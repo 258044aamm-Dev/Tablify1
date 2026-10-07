@@ -1,6 +1,6 @@
 # 02 — Target architecture for native `.tablify`
 
-> **Status:** future architecture for the planned refactor, not the current `0.1.0` implementation. The current plugin still uses Obsidian Bases. See the [master plan](reference/REFACTOR-PLAN.md) and [phase guides](reference/native-tablify/README.md).
+> **Status:** future architecture for the planned refactor, not the current `0.1.0` implementation. The current plugin still uses Obsidian Bases. See the [master plan](REFACTOR-PLAN.md) and [phase guides](README.md).
 
 ## Architectural goals
 

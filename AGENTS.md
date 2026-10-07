@@ -1,14 +1,15 @@
 # AGENTS.md — repository rules and refactor boundary
 
-Instructions for any agent or human working in this repository. The current `0.1.0` source is still Bases-backed; the native `.tablify` architecture below is the target for separately authorized implementation. In the user’s current `/Plan only mode`, change documentation only when explicitly requested; do not edit application code, tests, styles, package/manifest/version files, release assets, or vault data.
+Instructions for any agent or human working in this repository. The current `0.1.0` source is still Bases-backed; the native `.tablify` architecture below is the target for separately authorized implementation. The repository is **plan-only** by default: change documentation only when explicitly requested; do not edit application code, tests, styles, package/manifest/version files, release assets, or vault data unless the user has authorized that specific work. Authorisation is per task, never implied by a previous task.
 
 ## Source-of-truth order
 
 1. The user’s latest explicit instruction and confirmed product scope.
-2. `docs/08-decisions.md` for confirmed decisions and phase-blocking open ADRs.
-3. `docs/01-spec.md`, `docs/02-architecture.md`, `docs/03-data-model-and-migration.md`, and `docs/reference/native-tablify/**` for the future target (all clearly status-labelled).
-4. Current source, `package.json`, manifest, and current release history for what is actually implemented.
-5. Historical prompts/progress/logs only as history; they do not override the native refactor direction.
+2. [`docs/08-decisions.md`](docs/08-decisions.md) for confirmed decisions and phase-blocking open ADRs.
+3. [`docs/01-spec.md`](docs/01-spec.md), [`docs/02-architecture.md`](docs/02-architecture.md), [`docs/03-data-model-and-migration.md`](docs/03-data-model-and-migration.md), and the [R0–R6 phase guides](docs/README.md) for the future target (all clearly status-labelled).
+4. [`docs/REFACTOR-PLAN.md`](docs/REFACTOR-PLAN.md) for the audit that produced the target and the phase work plan.
+5. Current source, `package.json`, manifest, and current release history for what is actually implemented.
+6. [`docs/legacy/**`](docs/legacy/README.md) as **history only**. It is the frozen record of the Bases-backed product (its specs, step log, prototype, spike, design plans, and the archived prompt set). It never overrides the native direction, is never edited, and nothing in it may be implemented from or cited as a current requirement.
 
 If current code and target docs differ, state whether a claim refers to `0.1.0` or the planned refactor. Never describe a planned feature as implemented.
 
@@ -48,6 +49,14 @@ plugin FileView → database repository/session → validated DatabaseState
 
 Stable database/table/field/row/view IDs are data identity. File path is only a current host location. All `.tablify` writes go through a serialized database repository and operation/store path; core never uses Obsidian APIs. Exact write API and atomicity must be verified before implementation.
 
+## Frozen material
+
+`docs/legacy/**`, `prototype/**` (now under it), `tools/**` and the archived prompts are reference material for humans, not part of any module graph:
+
+- Never edit a file under `docs/legacy/**`; it is the historical record. If it is wrong, correct the live docs, not the record.
+- Never implement a behaviour because `docs/legacy/**` describes it. The `0.1.0` storage model (note-backed rows, `.base` sidecars, `.tabula` files) is deliberately retired.
+- Nothing under `src/**` may import from frozen material, and the lint boundary that enforces this must not be weakened.
+
 ## Legacy code policy during transition
 
 - Existing `BasesSource`, `BasesView`, note/frontmatter storage, and `.tabula` parser remain only because they are part of the current 0.1.0 build. Do not add new features to them under the native plan.
@@ -72,7 +81,7 @@ Before using an Obsidian API, cite the pinned symbol in `node_modules/obsidian/o
 ## Documentation and decision rules
 
 - Future product contracts must say “planned/not implemented” until code ships.
-- Preserve historical `CHANGELOG.md`, `PROGRESS.md`, `0.1.0` tag/release, and manual-test outcomes. Correct false present-tense claims without rewriting history.
+- Preserve historical `CHANGELOG.md` and the frozen record under `docs/legacy/**` (including `PROGRESS.md` and the `0.1.0` tag/release history). Correct false present-tense claims without rewriting history.
 - Resolve open design questions in an ADR before the dependent phase. Recommendations in a phase guide are not user approval.
 - Do not alter `manifest.json`, `package.json`, `versions.json`, `bun.lock`, `main.js`, or release tags as a side effect of a documentation task.
 

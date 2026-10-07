@@ -1,6 +1,6 @@
 # R2 — Repository and Obsidian file-view planning
 
-**Guide:** `docs/reference/native-tablify/R2-repository-and-file-view.md`
+**Guide:** `docs/R2-repository-and-file-view.md`
 **Current mode:** plan only; do not modify source or run install/build commands.
 
 Read `AGENTS.md`, `docs/02-architecture.md`, `docs/05-toolchain-and-ci.md`, `docs/08-decisions.md`, the R2 guide, `package.json`, and the pinned Obsidian declaration. Use official Obsidian docs only for corroboration; local pinned typings are required evidence.

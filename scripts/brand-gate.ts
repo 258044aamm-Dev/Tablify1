@@ -19,7 +19,11 @@ const fail = (line: string): void => void process.stderr.write(`${line}\n`);
 /** The brand tokens under guard. Word boundaries keep `airtable-tabula` (a repo name) matchable. */
 const TOKEN_PATTERN = /\b(anthropic|claude|airtable)\b/gi;
 
-/** Never scanned: reference material, internal specs, caches and build artefacts. */
+/**
+ * Never scanned: caches, build artefacts, and prose that is not shipped text. `docs/` is skipped
+ * wholesale and now holds `docs/legacy/**` — the frozen record of the Bases-backed product, whose
+ * documents are the archive's own business rather than text this plugin ships.
+ */
 const SKIP_DIRS = new Set([
 	'.git',
 	'node_modules',
@@ -75,11 +79,8 @@ const INTERNAL_FILES: { path: string; reason: string }[] = [
 	{ path: 'prompts/', reason: 'internal build prompts: quote the brand rules verbatim' },
 	{ path: 'AGENTS.md', reason: 'internal rules for the coding agent: list the banned brands' },
 	{ path: 'START-HERE.md', reason: 'internal onboarding briefs' },
-	{ path: 'PROGRESS.md', reason: 'internal step log' },
-	{ path: 'DESIGN-REVIEW.md', reason: 'internal design record' },
-	{ path: 'PLAN-ui-ux-pass.md', reason: 'internal design plan' },
-	{ path: 'PLAN-style-audit-notes', reason: 'internal style queue' },
-	{ path: 'PROCEED-ASSUMPTION-2026-10-05.md', reason: 'internal assumption record' },
+	// The Bases-era records (PROGRESS.md, DESIGN-REVIEW.md, PLAN-ui-ux-pass.md, PLAN-style-audit-notes,
+	// PROCEED-ASSUMPTION-2026-10-05.md) moved to `docs/legacy/**` and are skipped by SKIP_DIRS above.
 	{ path: 'scripts/brand-gate.ts', reason: 'this file defines the rules' },
 	{ path: 'scripts/manifest-check.ts', reason: 'the manifest validator defines the same tokens' },
 ];
@@ -104,6 +105,43 @@ const ALLOWED_LINES: { path: string; pattern: RegExp; reason: string }[] = [
 		path: 'README.md',
 		pattern: /api\.airtable\.com|link a view to Airtable/,
 		reason: 'the network-use disclosure docs/09 requires, verbatim in substance: it names the host and the link',
+	},
+	/*
+	 * The four README lines and the two issue templates below name the retained provider integration. The gate
+	 * exists to stop this project *borrowing* a brand — marks, logos, typefaces, anything implying somebody else
+	 * makes this — not to stop it naming the one service a person connects it to. `docs/09` requires the network
+	 * disclosure to say what the plugin contacts, and the templates have to name the feature they are for and the
+	 * token they warn about. Each line is permitted by name, so any *new* mention in these files still fails.
+	 */
+	{
+		path: 'README.md',
+		pattern: /\*\*Airtable:\*\* optional manual pull\/push/,
+		reason: 'the capability list names the retained sync feature, as the integration rather than as branding',
+	},
+	{
+		path: 'README.md',
+		pattern: /Network access is for explicit Airtable sync operations only/,
+		reason: 'the network-use disclosure docs/09 requires: it says what the plugin contacts and when',
+	},
+	{
+		path: 'README.md',
+		pattern: /manual Airtable pull\/push with conflict review/,
+		reason: 'the planned-scope paragraph names the retained feature, so the roadmap is not misleading',
+	},
+	{
+		path: 'README.md',
+		pattern: /not affiliated with, endorsed by, or sponsored by Obsidian or Airtable/,
+		reason: 'attribution and non-affiliation statement, declared rather than implied',
+	},
+	{
+		path: '.github/ISSUE_TEMPLATE/bug_report.md',
+		pattern: /Never post an Airtable token or unredacted vault data/,
+		reason: 'the issue template warns people not to paste a token; the word is the warning',
+	},
+	{
+		path: '.github/ISSUE_TEMPLATE/sync_problem.md',
+		pattern: /A manual Airtable pull, push, or conflict review/,
+		reason: 'the issue template description names the feature it exists for',
 	},
 	{
 		path: 'CHANGELOG.md',

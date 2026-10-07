@@ -39,7 +39,7 @@ Delete `.tabula` model/parser/migration modules and wizard/command/setting paths
 
 ### Step 4 — Clean development artifacts and gates
 
-- Delete the throwaway `spike/bases-path/**` after preserving relevant audit facts in this plan or a clearly historical note.
+- Delete the throwaway `docs/legacy/spike/bases-path/**` after preserving relevant audit facts in this plan or a clearly historical note.
 - Remove obsolete `Bases` brand allowlist entries and adjust Base-specific lint/build/brand scripts with tests. Do not ban Airtable’s `baseId` or historical text.
 - Update source/test import-boundary rules for `tablifyFile` and the database repository; assert that core remains pure and sync stays provider-agnostic.
 - Run targeted grep over shipped TypeScript, styles, active prompts/docs, manifest description, issue templates, and release copy. Classify each remaining `Bases`, `.base`, `.tabula`, or frontmatter hit: historical statement, remote Airtable term, intentional negative test, or stale product dependency.

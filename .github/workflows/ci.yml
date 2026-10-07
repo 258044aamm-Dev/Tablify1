@@ -71,7 +71,7 @@ jobs:
             # first run of this workflow to reach a conclusion, because every earlier one was cancelled by the
             # next push while this step was still going (`cancel-in-progress` above, which cancels rather than
             # queues). A duration problem it never was; the timeout below is the one thing that run still left
-            # owed. See `PROGRESS.md` §step 27, finding 5.
+            # owed. See `docs/legacy/PROGRESS.md` §step 27, finding 5.
             - name: Layout suite (twenty-three assertions × five viewports)
               run: bun run test:layout
               # Twenty minutes is a hang detector, not a budget — five times the slowest measured run of this

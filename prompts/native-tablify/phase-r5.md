@@ -1,6 +1,6 @@
 # R5 — Spreadsheet interchange and Airtable planning
 
-**Guide:** `docs/reference/native-tablify/R5-import-export-and-airtable.md`
+**Guide:** `docs/R5-import-export-and-airtable.md`
 **Current mode:** plan only.
 
 Read the R5 guide, `docs/03-data-model-and-migration.md`, `docs/08-decisions.md`, current import/export paths, sync client/diff/conflict logic, `SecretStorage` boundary, and tests.

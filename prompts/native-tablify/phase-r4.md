@@ -1,6 +1,6 @@
 # R4 — Grid parity and linked-record planning
 
-**Guide:** `docs/reference/native-tablify/R4-grid-and-linked-records.md`
+**Guide:** `docs/R4-grid-and-linked-records.md`
 **Current mode:** plan only.
 
 Read `docs/01-spec.md`, `docs/04-design-system-and-layout.md`, `docs/07-test-plan.md`, `docs/08-decisions.md`, the R4 guide, current grid contracts, and layout/interaction tests.

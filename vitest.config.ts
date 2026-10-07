@@ -28,14 +28,14 @@ export default defineConfig({
 				},
 			},
 		],
-		exclude: ['**/node_modules/**', 'prototype/**', 'dist/**', 'coverage/**'],
+		exclude: ['**/node_modules/**', 'docs/legacy/**', 'dist/**', 'coverage/**'],
 		coverage: {
 			provider: 'v8',
 			// Product code only. The prototype is frozen reference material, the harness is a browser
 			// driver, the tests are not shipped, and `src/plugin/main.ts` is lifecycle glue that only a
 			// real Obsidian can run — measuring any of them would move the number without informing it.
 			include: ['src/**/*.ts', 'src/**/*.tsx'],
-			exclude: ['src/plugin/main.ts', 'prototype/**', 'harness/**', 'tests/**'],
+			exclude: ['src/plugin/main.ts', 'docs/legacy/**', 'harness/**', 'tests/**'],
 			reporter: ['text', 'html'],
 			thresholds: {
 				/*

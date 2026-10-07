@@ -54,12 +54,12 @@ type Case = {
 const CASES: readonly Case[] = [
 	// ── the doc's "Core interaction model" table, row by row ────────────────────────────────────────────────
 	{
-		doc: 'Arrow keys',
+		doc: 'Arrow keys / Shift+arrows',
 		event: key('ArrowDown'),
 		expect: { id: 'move', edge: 'down', extend: false },
 	},
 	{
-		doc: 'Arrow keys',
+		doc: 'Arrow keys / Shift+arrows',
 		event: key('ArrowLeft', { shiftKey: true }),
 		expect: { id: 'move', edge: 'left', extend: true },
 	},
@@ -78,7 +78,10 @@ const CASES: readonly Case[] = [
 		event: key('Home', { ctrlKey: true }),
 		expect: { id: 'navigate-edges', edge: 'tableStart', extend: false, steps: 1 },
 	},
-	{ doc: 'Enter', event: key('Enter'), expect: { id: 'edit' } },
+	{ doc: 'Enter / F2', event: key('Enter'), expect: { id: 'edit' } },
+	// The doc's row is `Enter / F2`; the second key is the spreadsheet convention and the handler answers both
+	// with the same intent (`handler.ts` §editing), so the row is covered by two cases rather than one.
+	{ doc: 'Enter / F2', event: key('F2'), expect: { id: 'edit' } },
 	{
 		doc: 'Tab / Shift+Tab',
 		event: key('Tab'),
@@ -90,39 +93,44 @@ const CASES: readonly Case[] = [
 		expect: { id: 'commit-tab', direction: 'backward' },
 	},
 	{
-		doc: 'Any printable key on an unfocused cell',
+		doc: 'Printable key',
 		event: key('q'),
 		expect: { id: 'type-to-replace', text: 'q' },
 	},
 	{
-		doc: 'Space on a checkbox cell',
+		doc: 'Space on checkbox',
 		event: key(' '),
 		context: CHECKBOX,
 		expect: { id: 'toggle-checkbox' },
 	},
 	{
-		doc: 'Cmd/Ctrl+C / X / V',
+		doc: 'Cmd/Ctrl+C, X, V',
 		event: key('c', { ctrlKey: true }),
 		expect: { id: 'clipboard', verb: 'copy' },
 	},
 	{
-		doc: 'Cmd/Ctrl+C / X / V',
+		doc: 'Cmd/Ctrl+C, X, V',
 		event: key('x', { metaKey: true }),
 		expect: { id: 'clipboard', verb: 'cut' },
 	},
 	{
-		doc: 'Cmd/Ctrl+C / X / V',
+		doc: 'Cmd/Ctrl+C, X, V',
 		event: key('v', { ctrlKey: true }),
 		expect: { id: 'clipboard', verb: 'paste' },
 	},
 	{
-		doc: 'Cmd/Ctrl+Z / Shift+Cmd/Ctrl+Z',
+		doc: 'Cmd/Ctrl+Z / Shift+Cmd/Ctrl+Z / Ctrl+Y',
 		event: key('z', { ctrlKey: true }),
 		expect: { id: 'undo-redo', verb: 'undo' },
 	},
 	{
-		doc: 'Cmd/Ctrl+Z / Shift+Cmd/Ctrl+Z',
+		doc: 'Cmd/Ctrl+Z / Shift+Cmd/Ctrl+Z / Ctrl+Y',
 		event: key('z', { metaKey: true, shiftKey: true }),
+		expect: { id: 'undo-redo', verb: 'redo' },
+	},
+	{
+		doc: 'Cmd/Ctrl+Z / Shift+Cmd/Ctrl+Z / Ctrl+Y',
+		event: key('y', { ctrlKey: true }),
 		expect: { id: 'undo-redo', verb: 'redo' },
 	},
 	{ doc: 'Cmd/Ctrl+A', event: key('a', { metaKey: true }), expect: { id: 'select-all' } },
@@ -130,26 +138,26 @@ const CASES: readonly Case[] = [
 	{ doc: 'Delete / Backspace', event: key('Delete'), expect: { id: 'clear' } },
 	{ doc: 'Delete / Backspace', event: key('Backspace'), expect: { id: 'clear' } },
 
-	// ── the two rows below the table that this step owes ─────────────────────────────────────────────────────
-	// "Fill down/right from a selection" is a *bulk operation* in `docs/01` §capabilities and a key row in the
-	// approved prototype (`prototype/js/dialogs.js`, the keyboard help surface: "Ctrl + D or Alt + D — Fill down").
+	// ── the fill row: `Alt+D / Alt+R` in the doc's table, four bindings in the handler ──────────────────────
+	// The doc names the two Alt chords; the handler also answers `Ctrl+D` and `Ctrl+R` — the same
+	// spreadsheet convention, kept because hands that know Excel reach for them (`handler.ts` §chords).
 	{
-		doc: 'Fill down',
+		doc: 'Alt+D / Alt+R',
 		event: key('d', { altKey: true }),
 		expect: { id: 'fill', direction: 'down' },
 	},
 	{
-		doc: 'Fill down',
+		doc: 'Alt+D / Alt+R',
 		event: key('d', { ctrlKey: true }),
 		expect: { id: 'fill', direction: 'down' },
 	},
 	{
-		doc: 'Fill right',
+		doc: 'Alt+D / Alt+R',
 		event: key('r', { altKey: true }),
 		expect: { id: 'fill', direction: 'right' },
 	},
 	{
-		doc: 'Fill right',
+		doc: 'Alt+D / Alt+R',
 		event: key('r', { ctrlKey: true }),
 		expect: { id: 'fill', direction: 'right' },
 	},
@@ -164,11 +172,9 @@ const CASES: readonly Case[] = [
 /** The doc rows no `keydown` can serve. Each one is a gesture, and the pointer work is step 20's. */
 const GESTURE_ROWS: readonly string[] = [
 	'Click / tap',
-	'Shift+click / drag',
+	'Shift-click / drag',
 	'Right-click / long-press',
-	'Drag column edge',
-	'Drag row-number handle',
-	'Type-ahead in a select cell',
+	'Drag column edge / row handle',
 ];
 
 /** The doc's table, read from the file so a row edited there stops being covered here. */
@@ -212,8 +218,8 @@ describe('the doc table, row by row', () => {
 		const known = new Set([
 			...gestures.map(normalise),
 			...GESTURE_ROWS.map(normalise),
-			'Fill down',
-			'Fill right',
+			// Not a row of the doc's table: the prototype's "Surfaces" group owns Escape and the help key, and
+			// the case list below is where that second surface is executed.
 			'Escape',
 		]);
 		expect([...covered].filter((row) => !known.has(row))).toEqual([]);

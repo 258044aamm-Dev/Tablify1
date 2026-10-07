@@ -79,8 +79,9 @@ const PROBES: Probe[] = [
 	},
 	{
 		path: 'src/grid/menus/__boundary-probe-prototype.ts',
-		code: "import { layoutChrome } from '../../../prototype/js/grid.js';\nexport const chrome = layoutChrome;\n",
-		expectMessage: 'prototype/** and tools/** are outside the module graph',
+		code: "import { layoutChrome } from '../../../docs/legacy/prototype/js/grid.js';\nexport const chrome = layoutChrome;\n",
+		expectMessage:
+			'docs/legacy/** (the frozen prototype and the historical records) and tools/** are outside the module graph',
 		because: 'the bridge exemption does not also exempt the frozen prototype',
 	},
 	{
@@ -97,8 +98,9 @@ const PROBES: Probe[] = [
 	},
 	{
 		path: 'tests/unit/__boundary-probe-prototype.ts',
-		code: "import { FIELD_TYPES } from '../../prototype/js/data.js';\nexport const types = FIELD_TYPES;\n",
-		expectMessage: 'prototype/** and tools/** are outside the module graph',
+		code: "import { FIELD_TYPES } from '../../docs/legacy/prototype/js/data.js';\nexport const types = FIELD_TYPES;\n",
+		expectMessage:
+			'docs/legacy/** (the frozen prototype and the historical records) and tools/** are outside the module graph',
 		because: 'the prototype is not a dependency of the test suite either',
 	},
 ];

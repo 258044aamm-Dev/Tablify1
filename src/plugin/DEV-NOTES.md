@@ -1,6 +1,6 @@
 # Developer notes — current 0.1.0 and planned native view
 
-> **Do not confuse current and target behavior.** The checked-in `0.1.0` plugin is Bases-backed. It does not open or write a `.tablify` database file. The native file view is a future refactor documented in [`docs/reference/REFACTOR-PLAN.md`](../../docs/reference/REFACTOR-PLAN.md) and [`docs/reference/native-tablify/`](../../docs/reference/native-tablify/README.md).
+> **Do not confuse current and target behavior.** The checked-in `0.1.0` plugin is Bases-backed. It does not open or write a `.tablify` database file. The native file view is a future refactor documented in [`docs/REFACTOR-PLAN.md`](../../docs/REFACTOR-PLAN.md) and [`docs/`](../../docs/README.md).
 
 ## Current 0.1.0 scratch-vault procedure (historical/current implementation only)
 

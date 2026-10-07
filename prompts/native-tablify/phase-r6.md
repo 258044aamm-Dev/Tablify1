@@ -1,6 +1,6 @@
 # R6 — Legacy removal, verification, and release planning
 
-**Guide:** `docs/reference/native-tablify/R6-removal-verification-and-release.md`
+**Guide:** `docs/R6-removal-verification-and-release.md`
 **Current mode:** plan only; no cleanup or release action is authorized.
 
 Read the R6 guide, `docs/05-toolchain-and-ci.md`, `docs/07-test-plan.md`, `docs/09-publishing.md`, `docs/10-verification-and-ai-hygiene.md`, current manifests/workflows, and `docs/manual-test-log.md`.
