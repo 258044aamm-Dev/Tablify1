@@ -54,3 +54,5 @@ export {
 export type { CanonicalCell, CellDecode, CellEncode, InvalidCell } from './values';
 export { decodeCell, encodeCell, invalidCell, isInvalidCell } from './values';
 export { parseDocument, readDocument, serializeDocument } from './envelope';
+export type { DocumentMigration, MigratedDocument } from './migrate';
+export { DOCUMENT_MIGRATIONS, migrateDocument, parseAndMigrate } from './migrate';
