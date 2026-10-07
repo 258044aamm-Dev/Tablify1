@@ -212,10 +212,10 @@ function compareEntries(
 	}
 	// The tiebreak: the row's own path, ascending, regardless of the sort's direction. Two rows that compare
 	// equal therefore always come out in the same order, which is what makes the grid deterministic.
-	if (left.row.filePath < right.row.filePath) {
+	if (left.row.rowId < right.row.rowId) {
 		return -1;
 	}
-	if (left.row.filePath > right.row.filePath) {
+	if (left.row.rowId > right.row.rowId) {
 		return 1;
 	}
 	return left.index - right.index;

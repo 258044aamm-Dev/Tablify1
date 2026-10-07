@@ -55,6 +55,7 @@ import type {
 import type { CellValue, PropertyId } from '../../core/types';
 import type { ResolvedField } from '../../core/schema/propertySchema';
 import type { Expr } from '../../core/query/ast';
+import type { RowView } from '../../core/query/evaluate';
 import { createOverlay } from '../../adapters/optimistic';
 import type { Overlay } from '../../adapters/optimistic';
 import type { ApplyResult, RowSource } from '../../adapters/RowSource';
@@ -194,11 +195,14 @@ export function createGridStore(options: GridStoreOptions): GridStore {
 	/* ── state ─────────────────────────────────────────────────────────────── */
 
 	function orderOf(): RangeOrder {
-		return { rows: result.rows.map((row) => row.filePath), fields: result.columnOrder };
+		// `RowView.rowId` is the query layer's name for a row's identity (R3 step 2). This store's own
+		// rows still carry a note path as that identity — the swap to document ids is R4 step 2 — so the
+		// boundary reads it out under the query layer's name and nothing else changes.
+		return { rows: result.rows.map((row) => row.rowId), fields: result.columnOrder };
 	}
 
 	function buildSnapshot(): GridSnapshot {
-		const rows = result.rows.map((row) => row.filePath);
+		const rows = result.rows.map((row) => row.rowId);
 		return {
 			revision,
 			rows,
@@ -293,7 +297,12 @@ export function createGridStore(options: GridStoreOptions): GridStore {
 	 */
 	function rebuildView(): void {
 		view = table.view;
-		result = buildView({ fields, rows: table.rows, view, queryAst });
+		result = buildView({ fields, rows: table.rows.map(rowViewOf), view, queryAst });
+	}
+
+	/** The store's legacy row, seen by the query layer: its note path is the row's opaque identity. */
+	function rowViewOf(row: RowState): RowView {
+		return { rowId: row.filePath, cells: row.cells };
 	}
 
 	function rowAt(filePath: RowId): RowState | undefined {

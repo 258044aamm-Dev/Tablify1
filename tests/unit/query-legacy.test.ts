@@ -87,7 +87,7 @@ const ctx: QueryContext = { fields };
 /** Six rows whose values between them exercise every branch of every legacy operator. */
 const rows: readonly RowView[] = [
 	{
-		filePath: 'Rows/a.md',
+		rowId: 'Rows/a.md',
 		cells: {
 			'note.status': 'Done',
 			'note.tags': ['urgent', 'design'],
@@ -100,7 +100,7 @@ const rows: readonly RowView[] = [
 		},
 	},
 	{
-		filePath: 'Rows/b.md',
+		rowId: 'Rows/b.md',
 		cells: {
 			'note.status': 'Todo',
 			'note.tags': ['design'],
@@ -112,7 +112,7 @@ const rows: readonly RowView[] = [
 		},
 	},
 	{
-		filePath: 'Rows/c.md',
+		rowId: 'Rows/c.md',
 		cells: {
 			'note.status': 'Blocked',
 			'note.tags': ['ops'],
@@ -123,7 +123,7 @@ const rows: readonly RowView[] = [
 		},
 	},
 	{
-		filePath: 'Rows/d.md',
+		rowId: 'Rows/d.md',
 		cells: {
 			'note.status': 'Done',
 			'note.tags': ['urgent'],
@@ -136,7 +136,7 @@ const rows: readonly RowView[] = [
 		},
 	},
 	{
-		filePath: 'Rows/e.md',
+		rowId: 'Rows/e.md',
 		cells: {
 			'note.tags': [],
 			'note.name': 'unscheduled idea',
@@ -145,7 +145,7 @@ const rows: readonly RowView[] = [
 		},
 	},
 	{
-		filePath: 'Rows/f.md',
+		rowId: 'Rows/f.md',
 		cells: {
 			'note.status': 'Todo',
 			'note.tags': ['urgent', 'ops'],
@@ -274,7 +274,7 @@ describe('the legacy query syntax still selects the same rows', () => {
 			expect(parsed.errors).toEqual([]);
 			const matched = rows
 				.filter((row) => evaluate(parsed.ast, row, ctx))
-				.map((row) => row.filePath);
+				.map((row) => row.rowId);
 			expect(matched).toEqual([...legacy.matches]);
 		});
 	}

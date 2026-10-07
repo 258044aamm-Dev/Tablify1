@@ -12,8 +12,10 @@
  *      drop, because a newer build may understand it.
  *   3. **References are checked, never repaired.** A field id that names no column is kept and
  *      warned about; a field listed twice in one arrangement is kept and warned about.
- *   4. **Density and the frozen primary column are not stored in views**, and a file that carries
- *      them keeps them as unknown keys that round-trip verbatim.
+ *   4. **A view stores the presentation it owns and nothing global.** Density and the pinned primary
+ *      column are view state (R2 step 7: `docs/03` §view config lists both), validated on read and
+ *      written back; theme, motion and the default row height for *new* views are plugin settings and
+ *      never appear here. An unknown key still round-trips verbatim.
  *
  * The last test pins the module to the shipped `rows-views` fixture, so the fixture and the reader
  * are proven against each other rather than each against a copy.

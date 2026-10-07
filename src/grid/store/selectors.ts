@@ -336,7 +336,7 @@ function buildLaneItems(snapshot: GridSnapshot): readonly LaneItem[] {
 		// A collapsed group contributes its header and nothing else, which is why the pipeline leaves its
 		// rows out of `result.rows` too. The two must agree or the lane would draw rows the query hid.
 		for (const row of group.rows) {
-			pushRow(row.filePath);
+			pushRow(row.rowId);
 		}
 	}
 	return items;

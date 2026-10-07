@@ -78,8 +78,8 @@ const fields: readonly ResolvedField[] = [
 
 const ctx: QueryContext = { fields };
 
-function row(filePath: string, cells: Record<string, RowView['cells'][string]>): RowView {
-	return { filePath, cells };
+function row(rowId: string, cells: Record<string, RowView['cells'][string]>): RowView {
+	return { rowId, cells };
 }
 
 /** Four rows, deliberately including a tie on every sorted column and a row with no values at all. */
@@ -114,7 +114,7 @@ const rows: readonly RowView[] = [
 ];
 
 const paths = (result: { readonly rows: readonly RowView[] }): readonly string[] =>
-	result.rows.map((entry) => entry.filePath);
+	result.rows.map((entry) => entry.rowId);
 
 const EMPTY_VIEW: ViewConfig = {};
 
@@ -410,7 +410,7 @@ describe('the pipeline is pure', () => {
 	});
 
 	it('answers for a row with no cells at all', () => {
-		const empty: readonly RowView[] = [{ filePath: 'Rows/empty.md', cells: {} }];
+		const empty: readonly RowView[] = [{ rowId: 'Rows/empty.md', cells: {} }];
 		const filtered = buildView({
 			fields,
 			rows: empty,
@@ -435,7 +435,7 @@ describe('the 5,000-row budget', () => {
 		const generated: RowView[] = [];
 		for (let index = 0; index < count; index += 1) {
 			generated.push({
-				filePath: `Rows/row-${String(index).padStart(5, '0')}.md`,
+				rowId: `Rows/row-${String(index).padStart(5, '0')}.md`,
 				cells: {
 					'note.Name': `Row ${String(index)}`,
 					'note.Status': statuses[index % statuses.length] ?? 'Todo',

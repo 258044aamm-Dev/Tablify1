@@ -26,13 +26,18 @@ import type { Expr, QueryContext } from './ast';
 /**
  * A row as the grid sees it: an identity and canonical values.
  *
- * `filePath` is both the identity and the sort tiebreak (see `buildView`), because a note *is* a row. The
- * values are already canonical — producing them is the adapter's job (step 12), and the query layer never
+ * `rowId` is the identity, and the evaluator treats it as **opaque**: it is never parsed, never
+ * sorted by meaning, and never compared to a name. The legacy Bases adapter fills it with a note
+ * path because a note is a row there; the `.tablify` repository fills it with a `row_…` id (R3 step
+ * 2 — the query layer was renamed for exactly this). Either way the layer above only asks one
+ * question of it: "is this row the one the caller named?"
+ *
+ * The values are already canonical — producing them is the adapter's job — and the query layer never
  * parses a stored value, so filtering cannot disagree with what a cell shows.
  */
 export interface RowView {
-	/** Vault-relative path of the note: `Projects/Widening.md`. Unique within a view. */
-	readonly filePath: string;
+	/** The row's identity, unique within the view. Opaque: paths and ids are both spelled this way. */
+	readonly rowId: string;
 	/** Canonical values by column id. A missing id and an empty cell are the same thing to a filter. */
 	readonly cells: Readonly<Record<PropertyId, CellValue>>;
 }

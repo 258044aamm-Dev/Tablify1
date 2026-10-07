@@ -53,12 +53,12 @@ Rule: `src/adapters/`, `src/core/fieldTypes/`, `src/core/`, `src/grid/`, `src/pl
 | `src/core/ops/inverse.ts` | filePath ×2 |
 | `src/core/ops/types.ts` | filePath ×6, PropertyId ×13 |
 | `src/core/query/ast.ts` | PropertyId ×8 |
-| `src/core/query/evaluate.ts` | filePath ×2, PropertyId ×6 |
+| `src/core/query/evaluate.ts` | PropertyId ×6 |
 | `src/core/schema/propertySchema.ts` | PropertyId ×3, YamlValue ×2, toYaml ×2 |
 | `src/core/selection/range.ts` | filePath ×25, PropertyId ×4 |
 | `src/core/types.ts` | PropertyId ×1, YamlValue ×2, toYaml ×2 |
 | `src/core/view/patch.ts` | PropertyId ×6 |
-| `src/core/view/pipeline.ts` | filePath ×4, PropertyId ×20 |
+| `src/core/view/pipeline.ts` | PropertyId ×20 |
 | `src/grid/FrozenColumn.tsx` | filePath ×5 |
 | `src/grid/GridView.tsx` | filePath ×33, PropertyId ×6 |
 | `src/grid/clipboard/matrix.ts` | filePath ×2 |
@@ -82,8 +82,8 @@ Rule: `src/adapters/`, `src/core/fieldTypes/`, `src/core/`, `src/grid/`, `src/pl
 | `src/grid/rows/Row.tsx` | filePath ×12 |
 | `src/grid/selection/dragSelect.ts` | filePath ×3 |
 | `src/grid/store/commands.ts` | filePath ×27, PropertyId ×4, toYaml ×1 |
-| `src/grid/store/selectors.ts` | filePath ×36, PropertyId ×7, propertyId ×2 |
-| `src/grid/store/store.ts` | filePath ×77, PropertyId ×12, propertyId ×23, RowSource ×4 |
+| `src/grid/store/selectors.ts` | filePath ×35, PropertyId ×7, propertyId ×2 |
+| `src/grid/store/store.ts` | filePath ×76, PropertyId ×12, propertyId ×23, RowSource ×4 |
 | `src/grid/store/types.ts` | filePath ×2, PropertyId ×3, propertyId ×1, RowSource ×3 |
 | `src/plugin/TablifyView.ts` | filePath ×9, propertyId ×9, RowSource ×1, processFrontMatter ×4, metadataCache ×4, getFileCache ×1 |
 | `src/plugin/export/runExport.ts` | filePath ×2, PropertyId ×2 |
@@ -108,7 +108,7 @@ Rule: `src/sync/`
 | `src/sync/pullPush.ts` | filePath ×2, PropertyId ×3, RowSource ×1 |
 | `src/sync/values.ts` | toYaml ×3 |
 
-### `historical` — 35 file(s)
+### `historical` — 32 file(s)
 
 Rule: `tests/`
 
@@ -142,10 +142,7 @@ Rule: `tests/`
 | `tests/unit/field-roundtrip.test.ts` | toYaml ×4 |
 | `tests/unit/ops-fixtures.ts` | filePath ×19, PropertyId ×2 |
 | `tests/unit/ops.test.ts` | filePath ×40 |
-| `tests/unit/pipeline.test.ts` | filePath ×5 |
 | `tests/unit/property-schema.test.ts` | toYaml ×1 |
-| `tests/unit/query-legacy.test.ts` | filePath ×7 |
-| `tests/unit/query-table.test.ts` | filePath ×4 |
 | `tests/unit/selection.test.ts` | filePath ×24 |
 | `tests/unit/tabula-migrate.test.ts` | processFrontMatter ×2 |
 | `tests/unit/write-queue.test.ts` | filePath ×4, propertyId ×4, RowSource ×1, processFrontMatter ×10 |
@@ -160,12 +157,12 @@ Rule: `tests/unit/view-state.test.ts`
 
 ## Totals
 
-107 files carry 1339 marker occurrences.
+104 files carry 1315 marker occurrences.
 
-- `replace`: 67 file(s), 816 occurrence(s)
+- `replace`: 67 file(s), 808 occurrence(s)
 - `host-path`: 1 file(s), 11 occurrence(s)
 - `remote-record-id`: 3 file(s), 10 occurrence(s)
-- `historical`: 35 file(s), 498 occurrence(s)
+- `historical`: 32 file(s), 482 occurrence(s)
 - `guard`: 1 file(s), 4 occurrence(s)
 - `native`: 0 file(s), 0 occurrence(s)
 
