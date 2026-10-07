@@ -116,15 +116,17 @@ describe('numbers and their units', () => {
 		expect(valueOf('percent', 25)).toBe(25);
 	});
 
-	it('reads duration as whole seconds', () => {
+	it('reads duration as seconds, whole or fractional', () => {
+		// The guide's value table says *finite number*, and the legacy `duration` parser keeps
+		// fractional seconds as written; refusing 1.5 here would be stricter than the contract.
 		expect(valueOf('duration', 90)).toBe(90);
-		expect(invalidOf('duration', 1.5).reason).toContain('whole');
+		expect(valueOf('duration', 1.5)).toBe(1.5);
 		expect(invalidOf('duration', -1).reason).toContain('non-negative');
 	});
 
-	it('reads rating as whole non-negative points', () => {
+	it('reads rating as non-negative points, half stars included', () => {
 		expect(valueOf('rating', 5)).toBe(5);
-		expect(invalidOf('rating', 2.5).reason).toContain('whole');
+		expect(valueOf('rating', 2.5)).toBe(2.5);
 		expect(invalidOf('rating', -1).reason).toContain('non-negative');
 	});
 

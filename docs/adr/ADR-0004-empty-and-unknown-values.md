@@ -40,7 +40,9 @@ One canonical in-memory model, one written form, one escape hatch:
    | link | absent / `null` / `[]` | any non-empty ordered id list |
 
 3. **Units are canonical and unambiguous.** `percent` stores percent points (`25` is 25%);
-   `duration` stores whole seconds; `date` is `YYYY-MM-DD` with no time zone ever applied (no local
+   `duration` stores seconds, whole or fractional (the legacy parser kept `1.5`-style values and
+   the guide's value table says *finite number*, so the codec must not be stricter); `date` is
+   `YYYY-MM-DD` with no time zone ever applied (no local
    `Date` construction anywhere on this path); `datetime` is an ISO 8601 instant with explicit
    offset or `Z`. Numbers must be finite: JSON cannot carry `NaN`/`Infinity` and the serializer
    rejects them rather than writing a token that will not parse back.
@@ -51,8 +53,9 @@ One canonical in-memory model, one written form, one escape hatch:
    warning naming field and row, and the serializer writes the raw JSON back unchanged. The
    document never silently loses or invents a value, and a future editor can repair it in place.
    Display layers decide how to show an invalid value; they never "convert" it.
-5. **`createdTime` and `lastModifiedTime` are row metadata, not cells.** They are derived from the
-   backing file's timestamps at display time (R2 owns where those come from). If a document's
+5. **`createdTime` and `lastModifiedTime` are row metadata, not cells.** Each row carries its own
+   `createdAt`/`updatedAt` instants (step 5), so two rows never share a timestamp and the database
+   file's own mtime is never reused as a row's. If a document's
    `cells` contains an entry for one of these field ids, it is preserved as an invalid-value
    passthrough with a warning — never parsed as authoritative, never dropped.
 6. **Attachments are ordered vault-relative paths, never bytes.** A path that does not resolve is a

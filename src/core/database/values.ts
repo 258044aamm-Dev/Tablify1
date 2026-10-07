@@ -18,7 +18,9 @@
  * the key would be exactly the class of loss this module exists to prevent.
  *
  * Two units are fixed once, here: `percent` stores percent points (`25` is 25%), and `duration`
- * stores a whole number of seconds. `date` values are `YYYY-MM-DD` and never touch a timezone;
+ * stores seconds — whole or fractional (`1.5` is one and a half seconds; the legacy parser already
+ * kept `4.5`-style values and the guide's value table says *finite number*). `date` values are
+ * `YYYY-MM-DD` and never touch a timezone;
  * `datetime` values must carry their own offset (`Z` or `±HH:MM`), because an instant without a
  * zone parsed on the machine of whoever happens to read it is a different instant.
  */
@@ -79,12 +81,18 @@ function decodeNumber(raw: JsonValue): CellDecode {
 	return invalid(raw, 'not a finite number');
 }
 
-/** A whole, non-negative number — `duration` (seconds) and `rating` share this shape. */
-function decodeWholeCount(raw: JsonValue, unit: string): CellDecode {
-	if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 0) {
+/**
+ * A non-negative finite number — `duration` (seconds) and `rating` (points) share this shape.
+ *
+ * Fractional values are legal for both: a half-star is a real rating (the legacy `rating` type
+ * keeps it as written), and `0.5` seconds is a real duration. The bound below zero is the only
+ * shape rule; how a rating relates to the field's `max` is the field validator's business.
+ */
+function decodeNonNegative(raw: JsonValue, unit: string): CellDecode {
+	if (typeof raw === 'number' && Number.isFinite(raw) && raw >= 0) {
 		return value(raw);
 	}
-	return invalid(raw, `not a whole, non-negative number of ${unit}`);
+	return invalid(raw, `not a non-negative number of ${unit}`);
 }
 
 /** Why a string cannot serve as a vault-relative attachment path, or `undefined` when it can. */
@@ -169,9 +177,9 @@ export function decodeCell(type: DocumentFieldTypeId, raw: JsonValue | undefined
 		case 'percent':
 			return decodeNumber(raw);
 		case 'duration':
-			return decodeWholeCount(raw, 'seconds');
+			return decodeNonNegative(raw, 'seconds');
 		case 'rating':
-			return decodeWholeCount(raw, 'rating points');
+			return decodeNonNegative(raw, 'rating points');
 		case 'checkbox':
 			return typeof raw === 'boolean' ? value(raw) : invalid(raw, 'not true or false');
 		case 'date': {
