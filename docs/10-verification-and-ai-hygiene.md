@@ -29,8 +29,8 @@ Audit baseline: `258044aamm-Dev/Tablify` `main` at `50f041f135abe9e7e9f111cf7c17
 | Airtable sync uses Bases path/view and note-path IDs. | VERIFIED | `src/plugin/sync/host.ts`, `local.ts`, `src/sync/LinkStore.ts`, `pullPush.ts`. | Re-key to database/table/row/field identities after schema stabilizes. |
 | Current plugin id/version/minimum are `tablify`/`0.1.0`/`1.13.0`. | VERIFIED | `manifest.json`, `package.json`, tag/release. | Preserve id and tag; choose distinct version for future release. |
 | `.tablify` JSON multi-table, links v1, and no old migration are the target. | USER-CONFIRMED | User scope in the conversation, recorded in `docs/08-decisions.md`. | Do not reopen without asking. |
-| Custom file-view APIs can open `.tablify` on the intended oldest desktop/mobile app. | OPEN | Official view and extension references exist; exact lifecycle and actual supported-app behavior still need R2 verification. | R2 API spike blocks implementation claims. |
-| Obsidian write APIs provide the needed atomic/revision behavior. | OPEN | Not yet proven by a native-file test. | Do not claim crash durability; test/write strategy must be evidence-based. |
+| Custom file-view APIs can open `.tablify` on the intended oldest desktop/mobile app. | OPEN | Typed surface read 2026-10-07 from pinned `obsidian@1.13.1`: `Plugin.registerView` / `Plugin.registerExtensions` @since 0.9.7; `FileView` with `onLoadFile`, `onUnloadFile`, `onRename`, `setState` (@since 0.9.7), `canAcceptExtension` (@since 0.9.7). App-version behaviour needs the user-run kit [`probes/r2-file-view/`](../probes/r2-file-view/README.md) on desktop and phone. | R2 API spike blocks implementation claims; typings are not the app (ADR-0010). |
+| Obsidian write APIs provide the needed atomic/revision behavior. | OPEN | Signatures read 2026-10-07 from pinned `obsidian@1.13.1`: `Vault.read/create/modify/process/append/rename/delete` and events `modify`/`rename`/`delete`; `Vault.process` is the read-modify-write call (one round trip, no read/write gap). Whether a write notifies and what survives a crash is a real-vault question — kit step 2. | Do not claim crash durability; test/write strategy must be evidence-based. |
 | Link cardinality, inverse fields, relation delete rules, and external-edit UX are settled. | OPEN | Implementation-level ADRs remain in `docs/08-decisions.md`. | Do not guess in R1/R2/R3/R4. |
 
 ## 3. Official API references
@@ -59,9 +59,9 @@ Before a refactored release, update this table with observed evidence:
 
 | Claim | Required proof | Result |
 |---|---|---|
-| `.tablify` extension opens the native view | Real scratch vault on minimum supported Obsidian version, Bases disabled | NOT RUN |
+| `.tablify` extension opens the native view | Real scratch vault on minimum supported Obsidian version, Bases disabled; kit [`probes/r2-file-view/`](../probes/r2-file-view/README.md) | NOT RUN |
 | Create/save/reopen preserves multi-table state | Repository round-trip test plus real app smoke | NOT RUN |
-| External edits do not get silently overwritten | Fake-port tests plus real Obsidian Sync/external-edit session | NOT RUN |
+| External edits do not get silently overwritten | Fake-port tests plus real Obsidian Sync/external-edit session; probe kit verifies that a vault write notifies at all | NOT RUN |
 | Linked records preserve identity through rename/delete/undo | Core property tests + UI/repository test | NOT RUN |
 | CSV/TSV/XLSX interchange is accurate | Unit fixtures plus real spreadsheet app smoke | NOT RUN |
 | Airtable conflict behavior remains manual and safe | Mock transport suite + scratch-base smoke | NOT RUN |

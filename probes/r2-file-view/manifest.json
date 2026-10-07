@@ -1,0 +1,9 @@
+{
+	"id": "tablify-r2-probe",
+	"name": "Tablify R2 probe (throwaway)",
+	"version": "0.0.1",
+	"minAppVersion": "1.13.0",
+	"description": "Throwaway evidence kit: which FileView APIs exist and work on this app version. This is not the Tablify plugin.",
+	"author": "Tablify",
+	"isDesktopOnly": false
+}

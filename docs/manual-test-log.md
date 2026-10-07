@@ -64,6 +64,31 @@ The `0.1.0` feature and release history remain in `CHANGELOG.md`/`PROGRESS.md`. 
 
 ---
 
+## R2 — FileView probe kit (checkpoint, not a release)
+
+**Status: NOT RUN.** The kit is [`probes/r2-file-view/`](../probes/r2-file-view/README.md). It answers
+ADR-0010's question (which FileView APIs exist and work at the floor version — on desktop **and** on
+the phone, two rows or none) and half of ADR-0005 (whether a vault write notifies). Paste the kit's
+`R2-probe-log.md` here with the app version. Do not mark a row from `obsidian.d.ts` alone: the
+typings state `@since`, the app states whether it works.
+
+| Device | OS | Obsidian (apiVersion) | Result | Notes |
+|---|---|---|---|---|
+| Desktop (record model/OS) | | | NOT RUN | |
+| Physical phone (record model/OS) | | | NOT RUN | Desktop evidence never speaks for mobile (ADR-0010). |
+
+| Probe check | Result | Notes |
+|---|---|---|
+| `registerView` + `registerExtensions` route `.tablify` to the probe view (opens as a view, not text) | NOT RUN | |
+| Lifecycle: `onLoadFile` / `onUnloadFile` fire on open/close; `onRename` fires on rename | NOT RUN | |
+| The view can read the file through the vault API and parse the document | NOT RUN | |
+| A write through `vault.modify` produces a `modify` event | NOT RUN | Signature verified in the typings; notification not. |
+| Second leaf on the same file opens without interference | NOT RUN | Seam for R2 step 5 (multi-pane). |
+| Disable/close leaves no detached leaf and no error | NOT RUN | |
+| `getState` / `setState` round-trip the view state | NOT RUN | Seam for R2 step 7 (workspace state). |
+
+---
+
 ## First native `.tablify` release — template, not yet run
 
 **Status: NOT RUN.** Do not fill this section until a refactored build exists and is installed from its own release. Record exact build SHA, Obsidian version, device, operating system, and the name of the tested file fixture.

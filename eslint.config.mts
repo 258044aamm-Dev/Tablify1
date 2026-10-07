@@ -63,6 +63,10 @@ export default defineConfig(
 		// Prototype-era tooling (the reference prototype's own contrast gate). Superseded by
 		// scripts/** gates; never part of the plugin build.
 		'tools/**',
+		// Throwaway API-probe kits (R2 onwards): plain CommonJS that a human drops into a vault's
+		// plugins folder, outside the TS program and the module graph by design. It is evidence
+		// material, not shipped code — see probes/r2-file-view/README.md.
+		'probes/**',
 	]),
 	{
 		languageOptions: {
