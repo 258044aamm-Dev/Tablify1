@@ -70,7 +70,16 @@
     {
       "id": "tbl_clients000000000000000000h",
       "name": "Clients",
-      "fields": [],
+      "fields": [
+        {
+          "id": "fld_shoots0000000000000000000i",
+          "name": "Shoots",
+          "type": "link",
+          "targetTableId": "tbl_shoots0000000000000000000b",
+          "allowMultiple": true,
+          "generated": true
+        }
+      ],
       "rows": [],
       "views": []
     }

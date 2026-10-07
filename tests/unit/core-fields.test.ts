@@ -213,6 +213,15 @@ describe('settings are validated per type', () => {
 				allowMultiple: true,
 				inverseFieldId: fieldId(1),
 			},
+			// The inverse itself, so the declaration names a field this document really has (step
+			// 6's invariant): generated on the target side, and it points back into this table.
+			{
+				id: fieldId(1),
+				name: 'Shoots',
+				type: 'link',
+				targetTableId: TABLE_ID,
+				generated: true,
+			},
 		]);
 		expect(field.settings).toEqual({
 			targetTableId: TABLE_ID,

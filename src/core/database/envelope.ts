@@ -28,6 +28,7 @@ import {
 } from './json';
 import { isIdOfKind } from './ids';
 import { readFields, serializeField } from './fields';
+import { validateLinks } from './links';
 import { readRows, serializeRow } from './rows';
 import { readViews, serializeView } from './views';
 import type { DocumentLoad, LoadError, LoadWarning } from './result';
@@ -311,6 +312,13 @@ export function readDocument(value: JsonValue): DocumentLoad {
 		tables,
 		unknown: unknownEntries(value, DOCUMENT_KEYS),
 	};
+
+	// Step 6: the link graph is validated over the finished model, and the findings are attached
+	// as warnings — a document that still describes itself honestly is opened for repair, never
+	// withheld (ADR-0001 §6; docs/03 §relations: "parse preserves broken reference data for user
+	// repair"). This is the only call site of the scan; nothing else re-implements it.
+	warnings.push(...validateLinks(document));
+
 	return { ok: true, document, warnings };
 }
 

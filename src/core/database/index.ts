@@ -34,6 +34,8 @@ export type {
 	UnsupportedField,
 } from './fields';
 export { DURATION_UNITS, optionsOf, readFields, serializeField } from './fields';
+export type { LinkFinding, LinkFindingCode } from './links';
+export { validateLinks } from './links';
 export type { CellState, TableRow } from './rows';
 export { readRows, serializeRow } from './rows';
 export type { TableView, ViewSort } from './views';

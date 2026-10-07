@@ -54,4 +54,4 @@ deletion questions are settled in [ADR-0002](ADR-0002-row-and-table-deletion.md)
   inverse column is an export artifact, not a source of truth).
 - The validator is the single source of `unresolved-link` findings, so its message shape is part of
   the contract that tests assert.
-- `inverseFieldId` pointing at a missing field, or at a non-link field, is a document error.
+- `inverseFieldId` pointing at a missing field, or at a non-link field, is a warning-level finding, not a refusal: `validateLinks` reports it, the parser attaches it, and the declaration is kept (amended 2026-10-07 at R1 step 6, resolving this line against §6 in §6's favour — a document that still describes itself honestly is opened for repair, never withheld; matching `docs/03` §relations, "parse preserves broken reference data for user repair").
