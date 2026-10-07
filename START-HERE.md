@@ -12,7 +12,7 @@ One versioned JSON `.tablify` file contains multiple tables and saved views. Lin
 
 ## Read in this order
 
-1. [`AGENTS.md`](AGENTS.md) — repository rules and plan-only fence.
+1. [`AGENTS.md`](AGENTS.md) — repository rules and the plan-only fence (with the 2026-10-07 R1–R5 authorization).
 2. [`docs/08-decisions.md`](docs/08-decisions.md) — confirmed product decisions and open ADRs.
 3. [`docs/REFACTOR-PLAN.md`](docs/REFACTOR-PLAN.md) — audit and master plan.
 4. [`docs/README.md`](docs/README.md) — guide index and phase dependencies.
@@ -24,10 +24,10 @@ One versioned JSON `.tablify` file contains multiple tables and saved views. Lin
 
 - One phase and one small step at a time. The guide gives the full dependency map; do not implement a whole phase in one change.
 - Plan first; list exact files, interfaces, tests, assumptions, and stop conditions; wait for approval.
-- In the current mode, only requested documentation may change. No `src/**`, tests, styles, package/manifest, versions, release assets, or vault data.
+- In plan-only mode, only requested documentation may change. No `src/**`, tests, styles, package/manifest, versions, release assets, or vault data. **Exception:** the standing authorization of 2026-10-07 covers R1–R5 implementation on `refactor/native-tablify`, one step at a time, pushed after each step ([`docs/08-decisions.md`](docs/08-decisions.md) §Implementation authorization log); R6 is not covered.
 - If a guide labels a decision “proposed” or “open,” do not silently treat it as settled. Record an ADR or ask the user.
 - After documentation changes, check links and `git diff --check`. Do not say source tests passed unless they were run.
 
 ## Next planning prompt
 
-R0 documentation alignment is complete; its checklist is marked in `docs/R0-contract-and-docs.md`. If continuing the plan, read `prompts/00-session-anchor.md` and use `prompts/native-tablify/phase-r1.md` for schema/interface/test planning. That is still plan-only: no source implementation is authorized. Revisit R0 only if the confirmed product scope or active docs change.
+R0 documentation alignment is complete; its checklist is marked in `docs/R0-contract-and-docs.md`. Since 2026-10-07, R1–R5 are authorized for implementation on `refactor/native-tablify` (one step at a time, pushed after each step — `docs/08-decisions.md` §Implementation authorization log); `prompts/native-tablify/phase-rN.md` remains the step contract for each phase, and R6 stays plan-only. Revisit R0 only if the confirmed product scope or active docs change.

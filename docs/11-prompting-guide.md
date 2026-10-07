@@ -1,6 +1,6 @@
 # 11 — Prompting guide for the native refactor
 
-This guide turns the R0–R6 documents into small, verifiable work prompts. **Current mode is plan-only:** document planning is authorized; application implementation is not. The phase guides describe future implementation tasks but do not grant permission to execute them.
+This guide turns the R0–R6 documents into small, verifiable work prompts. **Mode:** since 2026-10-07, phases R1–R5 are authorized for implementation on `refactor/native-tablify` (one step at a time, pushed after each step — [`08-decisions.md`](08-decisions.md) §Implementation authorization log); the phase guides are the contract for their step. R6 stays plan-only. Outside an authorized phase, documentation work still requires an explicit request.
 
 ## 1. Context hierarchy
 

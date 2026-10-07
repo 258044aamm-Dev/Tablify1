@@ -1,6 +1,6 @@
 # R1 — Native JSON schema and pure core
 
-**Mode:** design and future implementation guide. No source code is authorized by this document update. **Dependencies:** R0 docs and blocking ADRs closed.
+**Mode:** implementation guide. Authorized for implementation 2026-10-07 (see [`08-decisions.md`](08-decisions.md) §Implementation authorization log): steps commit and push one at a time on `refactor/native-tablify`. **Status:** in progress — implementation state is always the source at HEAD. **Dependencies:** R0 docs closed; the blocking decisions are resolved in [`docs/adr/`](adr/README.md) (0001 links, 0003 row order, 0004 values).
 
 ## Objective
 
@@ -135,7 +135,7 @@ Required validation includes JSON syntax, format tag, version support, duplicate
 
 At minimum, create fixtures for: smallest empty database; multiple tables; multiple views; each current field type; every empty-value edge; linked rows in same and different tables; duplicate IDs; unknown field type; unknown v1 key; future version; malformed/truncated JSON; dangling table/row/option; attachment paths with spaces, Unicode, and missing targets; large database fixture generated reproducibly.
 
-## Expected future code boundaries (not created in this documentation task)
+## Code boundaries for this phase
 
 - `src/core/database/**`: JSON types, schema validation, identity, migrations, relation rules.
 - `src/core/fieldTypes/**`: field-specific parse/format/query/edit behavior, with JSON-native serialization.

@@ -1,7 +1,7 @@
 # R1 — JSON schema and pure core planning
 
 **Guide:** `docs/R1-json-schema-and-core.md`
-**Current mode:** plan only; no implementation authorization.
+**Mode:** authorized for implementation (2026-10-07), on `refactor/native-tablify`, one step at a time with a push after each step. The planning task below was completed; it stays as the phase's plan of record. See `docs/08-decisions.md` §Implementation authorization log.
 
 Read `AGENTS.md`, `docs/08-decisions.md`, `docs/03-data-model-and-migration.md`, the R1 guide, current core/field/query types, and existing tests. Treat existing code as legacy evidence, not target authority.
 
@@ -17,7 +17,7 @@ Produce a proposed schema/interface/test plan—do not edit files. Cover:
 6. Test fixture matrix and the exact core-only dependency boundary.
 7. Open ADRs and smallest decision needed before each schema item can be frozen.
 
-Do not implement a parser, schema, IDs, or tests until the user separately authorizes code work and resolves any blocking ADRs.
+The user has now separately authorized code work, and the blocking decisions are recorded in `docs/adr/` (0001, 0003, 0004 for this phase). Implement one step at a time; never skip a step's tests or its gate run.
 
 ## Acceptance for the plan
 

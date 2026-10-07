@@ -1,7 +1,7 @@
 # R5 — Spreadsheet interchange and Airtable planning
 
 **Guide:** `docs/R5-import-export-and-airtable.md`
-**Current mode:** plan only.
+**Mode:** authorized for implementation (2026-10-07), on `refactor/native-tablify`, one step at a time with a push after each step; starts after R4's exit gate. The planning task below is the phase's plan of record.
 
 Read the R5 guide, `docs/03-data-model-and-migration.md`, `docs/08-decisions.md`, current import/export paths, sync client/diff/conflict logic, `SecretStorage` boundary, and tests.
 
@@ -17,4 +17,4 @@ Return separate plans for spreadsheet interchange and Airtable:
 6. Test matrix using fixtures/mocked transport; no live Airtable traffic in CI.
 7. Exact files/interfaces to change later and unresolved decisions.
 
-No implementation, dependency, schema write, user credential, or Airtable call in this plan-only task.
+No new dependency, no user credential in the repository, and no live Airtable call from tests; the real-vault smoke run is user-run and its `manual-test-log` rows flip only on the user's report.

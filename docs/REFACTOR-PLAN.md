@@ -1,6 +1,6 @@
 # Tablify native `.tablify` refactor plan
 
-**Status:** user-confirmed product direction; planning only. No source implementation is part of this document update.
+**Status:** user-confirmed product direction. *Amendment 2026-10-07:* this audit is a historical record of the pre-implementation state; R1–R5 are now implemented under the user's standing authorization (`docs/08-decisions.md` §Implementation authorization log). Current implementation state is always the source at HEAD, not this document.
 
 **Repository audited:** `258044aamm-Dev/Tablify`, `main` at `50f041f135abe9e7e9f111cf7c170b32dc98e9e0` (2026-10-06); tag `0.1.0` exists.
 

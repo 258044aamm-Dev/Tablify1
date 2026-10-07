@@ -1,7 +1,7 @@
 # R3 — Identities, operations, and undo planning
 
 **Guide:** `docs/R3-identities-operations-and-undo.md`
-**Current mode:** plan only.
+**Mode:** authorized for implementation (2026-10-07), on `refactor/native-tablify`, one step at a time with a push after each step; starts after R2's exit gate. The planning task below is the phase's plan of record.
 
 Read the R3 guide, `docs/08-decisions.md`, core operations, query, selection, store and sync-local contracts, plus existing tests. Do not treat file paths as native record identities.
 

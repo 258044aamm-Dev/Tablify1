@@ -1,6 +1,6 @@
 # 12 — Native `.tablify` agent guide index
 
-> **Plan-only warning:** these files describe the approved documentation plan and future phase boundaries. They do not authorize source implementation. The current user instruction is `/Plan only mode`.
+> **Mode warning:** these files describe the approved documentation plan and phase boundaries. Since 2026-10-07 the user has authorized implementation of R1–R5 (`refactor/native-tablify`, one step at a time, pushed after each step); R6 remains plan-only, and nothing outside an authorized phase may be treated as authorized by these files.
 
 ## Authoritative guide set
 
@@ -28,7 +28,7 @@ Start at [`docs/README.md`](README.md), then read the relevant phase guide. The 
 
 - Current code and future plan must be described separately.
 - Keep confirmed scope: `.tablify` only, multi-table, links v1, formulas/lookups/rollups deferred, attachment path refs, grid parity, CSV/TSV/XLSX interchange, manual Airtable sync, no Bases/Tabula migration.
-- No source code, tests, styles, manifest/package, version, release assets, or vault data in plan-only mode.
+- No source code, tests, styles, manifest/package, version, release assets, or vault data in plan-only mode (current exception: R1–R5 under the 2026-10-07 authorization).
 - No unsupported API claims; inspect local pinned Obsidian declarations and run a real app proof later.
 - No new dependencies, silent data loss, stale overwrite, or weakened tests.
 - Never commit or tag unless explicitly asked.

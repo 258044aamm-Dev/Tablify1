@@ -1,6 +1,6 @@
 # AGENTS.md — repository rules and refactor boundary
 
-Instructions for any agent or human working in this repository. The current `0.1.0` source is still Bases-backed; the native `.tablify` architecture below is the target for separately authorized implementation. The repository is **plan-only** by default: change documentation only when explicitly requested; do not edit application code, tests, styles, package/manifest/version files, release assets, or vault data unless the user has authorized that specific work. Authorisation is per task, never implied by a previous task.
+Instructions for any agent or human working in this repository. The current `0.1.0` source is still Bases-backed; the native `.tablify` architecture below is the target, implemented phase by phase under named authorizations. The repository is **plan-only by default**: change documentation only when explicitly requested; do not edit application code, tests, styles, package/manifest/version files, release assets, or vault data unless the user has authorized that specific work. Authorisation is per task, never implied by a previous task. **Standing authorization (2026-10-07): implement phases R1–R5, one step at a time, pushing to `refactor/native-tablify` after every step.** R6, release metadata, version tags, release assets and new runtime dependencies stay under the default fence. See [`docs/08-decisions.md`](docs/08-decisions.md) §Implementation authorization log.
 
 ## Source-of-truth order
 

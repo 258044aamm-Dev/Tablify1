@@ -1,6 +1,6 @@
 # 05 — Toolchain, CI, and implementation gates
 
-> **Status:** this records the current repository toolchain and the gates future `.tablify` implementation must preserve. It does not authorize package/source changes in plan-only mode.
+> **Status:** this records the current repository toolchain and the gates future `.tablify` implementation must preserve. It does not by itself authorize package/source changes; R1–R5 implement against these gates under the standing authorization recorded in [`08-decisions.md`](08-decisions.md) §Implementation authorization log.
 
 ## Current toolchain (source of truth: `package.json`, `bun.lock`, CI)
 

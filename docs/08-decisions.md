@@ -66,9 +66,41 @@ This file is the durable product/engineering decision ledger. “Confirmed” re
 | Import replace field/schema behavior? | Preview every destructive change; require confirmation. | R5 |
 | Document-size/write threshold? | Measure parse/serialize/write on target-sized fixtures before setting limits. | R2/R5 |
 
+### ADR index (opened 2026-10-07)
+
+Every open decision above has a record in [`docs/adr/`](adr/README.md) before its phase starts, per
+the protocol below. The ones marked *Open* stay undecided on purpose: the record names the evidence
+that will close them, and nothing may assume the answer in the meantime.
+
+| ADR | Resolves | Phases | Status |
+|---|---|---|---|
+| [0001](adr/ADR-0001-link-cardinality.md) | Link cardinality, inverse representation, ordering, broken links | R1, R4 | Accepted |
+| [0002](adr/ADR-0002-row-and-table-deletion.md) | Row/table deletion with inbound links | R3 (validator: R1) | Accepted |
+| [0003](adr/ADR-0003-manual-row-order.md) | Manual row order vs sort/group | R1, R4 | Accepted |
+| [0004](adr/ADR-0004-empty-and-unknown-values.md) | `null` vs absent vs empty string/list, unknown values | R1 | Accepted |
+| [0005](adr/ADR-0005-external-edit-conflict.md) | External edit while dirty | R2 (revision: R1) | Accepted |
+| [0006](adr/ADR-0006-retired-bases-keys.md) | Retired Bases/Airtable keys; no old-link migration | R5 | Accepted |
+| [0007](adr/ADR-0007-import-replace.md) | Import replace semantics; import-absent fields | R5 | Accepted |
+| [0008](adr/ADR-0008-airtable-cross-table-links.md) | Cross-table Airtable links | R5 | Accepted |
+| [0009](adr/ADR-0009-performance-limits.md) | Document-size/write thresholds | R2, R5 | Open — deferred to measurement |
+| [0010](adr/ADR-0010-app-version-floor.md) | App-version floor | R2, R6 | Open — deferred to the R2 probes |
+
+## Implementation authorization log
+
+- **2026-10-07 — R1–R5 authorized.** The user instructed: implement R1 through R5, one step at a
+  time, **pushing to the remote repository after every step** (branch `refactor/native-tablify` of
+  `258044aamm-Dev/Tablify`). Scope of this authorization: source, tests and fixtures under `src/`
+  and `tests/`, plus the documentation these phases produce. **Not** in scope: R6, release
+  metadata, version tags, release assets, manifest changes, new runtime dependencies, and any
+  change to confirmed product scope. Those remain under the default fence below.
+- **Evidence rules during implementation:** every reply labels claims VERIFIED/ASSUMED/OPEN/NOT RUN
+  (`docs/10` §labels); a gate is "run" only when this repository ran it; real-device gates (R2
+  FileView probes, R5 Airtable smoke) are user-run and stay `NOT RUN` in `docs/manual-test-log.md`
+  until the user reports their result.
+
 ## Decision protocol
 
 - Add an ADR before implementing any open decision; include source (`user`, `verified`, `proposed`), rejected alternatives, and tests that prove the behavior.
 - A recommendation in the phase guides is not user approval.
 - Do not change confirmed scope (Bases removal, no migration, `.tablify` only, linked records v1, deferred formulas, spreadsheet interchange, manual Airtable sync) without asking the user.
-- Do not use “plan only” authorization to alter source code, tests, CSS, manifest/package metadata, version tags, release assets, or vault data.
+- Do not treat documentation-only authorization as authorization for source work. Source work runs only under a named authorization from the user — the standing one (2026-10-07) covers R1–R5 only; R6 and release metadata still require their own.

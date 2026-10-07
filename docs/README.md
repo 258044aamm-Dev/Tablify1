@@ -1,6 +1,6 @@
 # Native `.tablify` refactor — guide index
 
-**Status:** planning documentation only. These guides describe a target that is **not implemented** in the current `0.1.0` pre-release. They authorize no source-code changes by themselves. The user’s explicit `/Plan only mode` remains in force; application code, tests, build metadata, and release assets must not be changed unless the user separately authorizes implementation.
+**Status:** planning documentation for a target that is **not implemented in the `0.1.0` release**. Since 2026-10-07 the user has authorized implementation of phases R1–R5 on branch `refactor/native-tablify` (one step at a time, pushed after each step — see [`08-decisions.md`](08-decisions.md) §Implementation authorization log); per-phase status lines in each guide say what exists. R6, release metadata, version tags and release assets remain under the default plan-only fence. What is implemented, at any commit, is what the source and `docs/manual-test-log.md` say — not what a guide describes.
 
 **Audit baseline:** `main` at `50f041f135abe9e7e9f111cf7c170b32dc98e9e0`, tag `0.1.0`; see [`../REFACTOR-PLAN.md`](REFACTOR-PLAN.md) for the evidence inventory and overall decision record.
 

@@ -19,7 +19,7 @@ Treat the following as confirmed:
 7. Preserve current grid feature parity; retain CSV/TSV/XLSX import/export.
 8. Include manual Airtable pull/push, per-field conflict review, and current safety behavior in the first stable release.
 9. No migration from old Bases or `.tabula` data is a product requirement. Never write an unapproved importer.
-10. `/Plan only mode` means documentation changes are allowed as requested; source, tests, settings implementation, package/manifest, and release changes are not.
+10. `/Plan only mode` means documentation changes are allowed as requested; source, tests, settings implementation, package/manifest, and release changes are not. *(Amended 2026-10-07: R1–R5 are implemented under the user's standing authorization, recorded in `08-decisions.md` §Implementation authorization log; everything else here still holds.)*
 
 **Terminology guard:** “Bases” in this work means Obsidian’s built-in Bases API/`.base` view system. The remote Airtable API still uses “base” and `baseId`; keep that nomenclature in the Airtable adapter only.
 
