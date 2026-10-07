@@ -9,6 +9,14 @@
 export type { FilePort, FilePortEvent } from './port';
 export type { CloseResult, QueueScheduler, WriteQueue, WriteQueueOptions } from './queue';
 export { createWriteQueue } from './queue';
+export type {
+	DatabaseHandle,
+	RegistryFailure,
+	RegistryResult,
+	SessionRegistry,
+	SessionRegistryOptions,
+} from './registry';
+export { createSessionRegistry } from './registry';
 export { MissingFileError } from './port';
 export { detectRevision } from './revision';
 export type {

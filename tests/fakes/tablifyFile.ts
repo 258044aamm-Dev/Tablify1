@@ -17,6 +17,8 @@ export interface FakeVaultPort extends FilePort {
 	readonly writes: readonly string[];
 	/** How many `write()` calls have been *entered*, gated or not — the in-flight evidence. */
 	readonly writesStarted: number;
+	/** Every path `read()` was asked for, in order — the "did this open re-read?" evidence. */
+	readonly reads: readonly string[];
 	/** When true, the next `write()` rejects with a plain error (the "write failed" path). */
 	failNextWrite: boolean;
 	/** Hold the next `write()` open; the returned function lets it finish. */
@@ -34,6 +36,7 @@ export interface FakeVaultPort extends FilePort {
 export function createFakePort(initial: Readonly<Record<string, string>> = {}): FakeVaultPort {
 	const files = new Map<string, string>(Object.entries(initial));
 	const writes: string[] = [];
+	const reads: string[] = [];
 	const listeners = new Set<(event: FilePortEvent) => void>();
 	let gate: { readonly promise: Promise<void>; readonly release: () => void } | null = null;
 	let writesStarted = 0;
@@ -47,6 +50,7 @@ export function createFakePort(initial: Readonly<Record<string, string>> = {}): 
 	const port: FakeVaultPort = {
 		files,
 		writes,
+		reads,
 		get writesStarted(): number {
 			return writesStarted;
 		},
@@ -63,6 +67,7 @@ export function createFakePort(initial: Readonly<Record<string, string>> = {}): 
 			};
 		},
 		async read(path: string): Promise<string> {
+			reads.push(path);
 			const text = files.get(path);
 			if (text === undefined) {
 				throw new MissingFileError(path);

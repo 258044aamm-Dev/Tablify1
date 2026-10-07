@@ -40,6 +40,8 @@ export { validateOptions } from './options';
 export { validateLinks } from './links';
 export type { CommandRefusalCode, CommandResult, DocumentCommand } from './commands';
 export { applyCommand } from './commands';
+export type { CreateDocumentOptions } from './create';
+export { createEmptyDocument } from './create';
 export type { CellState, TableRow } from './rows';
 export { readRows, serializeRow } from './rows';
 export type { TableView, ViewSort } from './views';
