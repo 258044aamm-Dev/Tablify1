@@ -90,7 +90,7 @@ A field definition should contain only serializable schema: `id`, `name`, `type`
 - Preserve current field rendering/clipboard semantics through the core descriptor registry, but replace `toYaml` with JSON encode/decode or a narrower codec only where a type truly needs one.
 - Unknown field type: parser returns a structured unsupported-field result; do not drop its data or rewrite it as text.
 
-### Step 5 — Define rows, timestamps, order, and saved views
+### Step 5 — Define rows, timestamps, order, and saved views ✅ landed
 
 - Rows have stable `id`, a `cells` map keyed by `fieldId`, and explicit metadata only if needed (for example `createdAt` and `updatedAt`).
 - Choose an explicit record-order representation. Do not rely on an array’s incidental re-sort after filtering. The ADR must define how manual reorder interacts with sorted/grouped views.
