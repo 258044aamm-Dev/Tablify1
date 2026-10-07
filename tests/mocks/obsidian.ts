@@ -127,6 +127,45 @@ export function elementStub(tag = 'div'): ElementStub {
 }
 
 /** The shape a registration must have for the double to accept it. */
+/**
+ * `TAbstractFile` / `TFile` (obsidian.d.ts, `TFile` @since 0.10.0) — enough for `instanceof` to mean
+ * something and for `path`, `name`, `basename` and `extension` to be real. A test builds files with
+ * these and hands them to the vault double; nothing here touches a disk.
+ */
+export class TAbstractFile {
+	path = '';
+	name = '';
+
+	constructor(path = '') {
+		this.path = path;
+		this.setName();
+	}
+
+	/** Recompute `name` from `path`; done again after a test assigns a path directly. */
+	setName(): void {
+		const parts = this.path.split('/');
+		this.name = parts[parts.length - 1] ?? this.path;
+	}
+}
+
+export class TFile extends TAbstractFile {
+	basename = '';
+	extension = '';
+
+	constructor(path = '') {
+		super(path);
+		this.setExtension();
+	}
+
+	/** Recompute `basename`/`extension` from `name`; the real class keeps them in step with `path`. */
+	setExtension(): void {
+		this.setName();
+		const dot = this.name.lastIndexOf('.');
+		this.extension = dot === -1 ? '' : this.name.slice(dot + 1);
+		this.basename = dot === -1 ? this.name : this.name.slice(0, dot);
+	}
+}
+
 export type ViewFactory = (
 	controller: unknown,
 	containerEl: ElementStub,
@@ -194,6 +233,70 @@ export class BasesView {
 
 	onDataUpdated(): void {
 		// The view renders here; the double records nothing because tests assert on the container.
+	}
+}
+
+/**
+ * `ItemView` / `FileView` (obsidian.d.ts :3130, `FileView extends ItemView` @0.9.7) — the runtime
+ * double for the R2 file view.
+ *
+ * It follows the house rule that the double is a **recorder**, not a host: `containerEl` is an
+ * element stub, and the three methods Obsidian calls on a real file view (`onLoadFile`,
+ * `onUnloadFile`, `onRename`) are the hooks a test drives directly — they are public in the pinned
+ * typings, which is why the double does not invent a `loadFile` of its own. jsdom tests that need
+ * real elements assign an augmented element to `containerEl` (the pattern
+ * `tests/dom/export-dialog.test.tsx` uses).
+ */
+export class ItemView {
+	leaf: unknown;
+	containerEl: ElementStub;
+	file: TFile | null = null;
+	/** Set by the double's `setState`, exactly as the workspace would keep it. */
+	viewState: unknown = null;
+
+	constructor(leaf: unknown) {
+		this.leaf = leaf;
+		this.containerEl = elementStub('div');
+	}
+
+	getViewType(): string {
+		return 'item';
+	}
+
+	getDisplayText(): string {
+		return this.file?.basename ?? '';
+	}
+
+	getIcon(): string {
+		return 'file';
+	}
+
+	setState(state: unknown): void {
+		this.viewState = state;
+	}
+
+	getState(): Record<string, unknown> {
+		return { file: this.file?.path ?? '' };
+	}
+}
+
+export class FileView extends ItemView {
+	allowNoFile = false;
+
+	canAcceptExtension(extension: string): boolean {
+		return extension === this.file?.extension;
+	}
+
+	async onLoadFile(file: TFile): Promise<void> {
+		void file;
+	}
+
+	async onUnloadFile(file: TFile): Promise<void> {
+		void file;
+	}
+
+	async onRename(file: TFile): Promise<void> {
+		void file;
 	}
 }
 
@@ -393,6 +496,15 @@ export class Plugin {
 	app: unknown = {
 		vault: {
 			getMarkdownFiles: (): unknown[] => [],
+			// The R2 file port needs the reads, the creations, the notifying write and the four vault
+			// events. The default vault is empty, which is the honest default for a double: `process`
+			// and `read` reject, and nothing is ever there until a test says so.
+			on: (): { readonly name: string } => ({ name: 'vault-event-ref' }),
+			offref: (): void => undefined,
+			getAbstractFileByPath: (): null => null,
+			read: (): Promise<string> => Promise.reject(new Error('no such file')),
+			create: (path: string): Promise<TFile> => Promise.resolve(new TFile(path)),
+			process: (): Promise<string> => Promise.reject(new Error('no such file')),
 			adapter: {
 				list: (): Promise<{ files: string[]; folders: string[] }> =>
 					Promise.resolve({ files: [], folders: [] }),
@@ -475,6 +587,20 @@ export class Plugin {
 		return true;
 	}
 
+	/** Every `registerView(type, factory)` call, in order. `Plugin.registerView` is @since 0.9.7. */
+	readonly registeredFileViewTypes: { type: string; factory: (leaf: unknown) => unknown }[] = [];
+
+	registerView(type: string, factory: (leaf: unknown) => unknown): void {
+		this.registeredFileViewTypes.push({ type, factory });
+	}
+
+	/** Every `registerExtensions(extensions, viewType)` call, in order (@since 0.9.7). */
+	readonly registeredExtensions: { extensions: string[]; viewType: string }[] = [];
+
+	registerExtensions(extensions: string[], viewType: string): void {
+		this.registeredExtensions.push({ extensions: [...extensions], viewType });
+	}
+
 	/**
 	 * Obsidian detaches everything a plugin registered when it unloads. The double does the same, so a
 	 * test can assert that nothing survives `onunload()` — otherwise that assertion would be vacuous.
@@ -489,6 +615,8 @@ export class Plugin {
 		this.statusBarItems.length = 0;
 		this.settingTabs.length = 0;
 		this.registeredViews.length = 0;
+		this.registeredFileViewTypes.length = 0;
+		this.registeredExtensions.length = 0;
 	}
 }
 

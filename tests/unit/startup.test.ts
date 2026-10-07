@@ -75,6 +75,13 @@ function fakeApp(files: readonly string[]): FakeAppPorts {
 	const app = {
 		vault: {
 			getMarkdownFiles: (): unknown[] => [],
+			// The R2 file port subscribes to the vault on load and resolves paths through it.
+			on: (): { readonly name: string } => ({ name: 'vault-event-ref' }),
+			offref: (): void => undefined,
+			getAbstractFileByPath: (): null => null,
+			read: (): Promise<string> => Promise.reject(new Error('no such file')),
+			create: (): Promise<never> => Promise.reject(new Error('read-only double')),
+			process: (): Promise<string> => Promise.reject(new Error('no such file')),
 			adapter: {
 				list: (path: string): Promise<{ files: string[]; folders: string[] }> => {
 					state.lists += 1;

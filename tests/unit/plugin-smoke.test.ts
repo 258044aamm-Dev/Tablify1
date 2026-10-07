@@ -29,13 +29,14 @@ describe('plugin entry point', () => {
 		expect(openedModals).toEqual([]);
 	});
 
-	it('registers exactly three commands, with stable ids', () => {
+	it('registers exactly four commands, with stable ids', () => {
 		const plugin = loadPlugin();
 		expect(plugin.commands.map((command) => command.id)).toEqual([
 			'show-version',
 			'open-keyboard-help',
 			// Step 26: the only way into the sync feature that does not need a link file. The panel itself is
 			// `tests/unit/startup.test.ts`'s subject; here it is only the registration that is asserted.
+			'create-database',
 			'open-sync-panel',
 		]);
 	});
@@ -56,7 +57,7 @@ describe('plugin entry point', () => {
 
 	it('releases everything on unload and does not throw', () => {
 		const plugin = loadPlugin();
-		expect(plugin.commands).toHaveLength(3);
+		expect(plugin.commands).toHaveLength(4);
 		expect(() => {
 			Reflect.apply(TablifyPlugin.prototype.onunload, plugin, []);
 		}).not.toThrow();

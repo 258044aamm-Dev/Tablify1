@@ -1,5 +1,8 @@
-import { Notice, Plugin } from 'obsidian';
+import { Notice, Plugin, TFile } from 'obsidian';
 
+import { createSessionRegistry } from '../adapters/tablifyFile/registry';
+import { createVaultPort } from '../adapters/tablifyFile/vaultPort';
+import { TABLIFY_FILE_EXTENSION, TABLIFY_FILE_VIEW_TYPE, TablifyFileView } from './TablifyFileView';
 import { TablifyView } from './TablifyView';
 import { KeyboardHelpModal } from './help/KeyboardHelpModal';
 import { TablifySettingTab } from './settings/TablifySettingTab';
@@ -178,6 +181,74 @@ export default class TablifyPlugin extends Plugin {
 		statusBarItem.addClass('tablify-statusbar');
 
 		// ---------------------------------------------------------------------------------------------
+		// The native `.tablify` file view (R2 step 6)
+		// ---------------------------------------------------------------------------------------------
+
+		/**
+		 * The one file port and the one registry for this plugin's lifetime: one session per open path,
+		 * however many panes show it. Both live in this `onload` scope (the shape the house double can
+		 * drive), and the registry is torn down through `this.register`, so a disabled plugin leaves no
+		 * vault listener, no open session and no pending write behind — to the extent the host lets an
+		 * unload finish, which is exactly what the R2 probe kit measures on a real device.
+		 */
+		const vaultPort = createVaultPort(this.app.vault);
+		const registry = createSessionRegistry(vaultPort);
+		this.register(() => {
+			void registry.disposeAll();
+		});
+
+		/**
+		 * `Plugin.registerView(viewType: string, viewCreator: ViewCreator): void` — obsidian.d.ts :4974,
+		 * @since 0.9.7 — plus `Plugin.registerExtensions(extensions: string[], viewType: string): void` —
+		 * obsidian.d.ts :4985, @since 0.9.7. Together they are the whole routing contract: a `.tablify`
+		 * file opens in this view, without Bases being enabled anywhere.
+		 */
+		this.registerView(TABLIFY_FILE_VIEW_TYPE, (leaf) => {
+			return new TablifyFileView(leaf, {
+				registry,
+				copyDatabase: async (path, text) => {
+					await vaultPort.create(path, text);
+				},
+			});
+		});
+		this.registerExtensions([TABLIFY_FILE_EXTENSION], TABLIFY_FILE_VIEW_TYPE);
+
+		/** `Untitled`, `Untitled 2`, … — the first free name, so create never overwrites a file. */
+		const uniqueDatabasePath = async (): Promise<string> => {
+			let index = 1;
+			for (;;) {
+				const suffix = index === 1 ? '' : ` ${String(index)}`;
+				const candidate = `Untitled${suffix}.${TABLIFY_FILE_EXTENSION}`;
+				if (!(await vaultPort.exists(candidate))) {
+					return candidate;
+				}
+				index += 1;
+			}
+		};
+
+		this.addCommand({
+			id: 'create-database',
+			name: 'Create new database',
+			callback: () => {
+				void (async () => {
+					const path = await uniqueDatabasePath();
+					const name = path.slice(0, path.length - TABLIFY_FILE_EXTENSION.length - 1);
+					const created = await registry.create(path, name);
+					if (!created.ok) {
+						new Notice('Tablify: the database could not be created.');
+						return;
+					}
+					const file = this.app.vault.getAbstractFileByPath(path);
+					if (!(file instanceof TFile)) {
+						new Notice('Tablify: the database was created but could not be opened.');
+						return;
+					}
+					await this.app.workspace.getLeaf('tab').openFile(file);
+				})();
+			},
+		});
+
+		// ---------------------------------------------------------------------------------------------
 		// Sync: loaded on demand, never on this path (step 26, deliverable 4)
 		// ---------------------------------------------------------------------------------------------
 
@@ -311,9 +382,10 @@ export default class TablifyPlugin extends Plugin {
 	onunload(): void {
 		// Component.onunload(): virtual void — obsidian.d.ts, @since 0.9.7. Everything registered above
 		// is owned by this Plugin instance and Obsidian detaches it on unload: commands, the setting tab,
-		// the status bar item and the Bases view type. There is no `unregisterBasesView` in
-		// obsidian.d.ts @ 1.13.1, so there is nothing to undo by hand — and nothing else to release,
-		// because this plugin starts no timers and adds no window listeners.
+		// the status bar item, the file view type and the extension. There is no `unregisterBasesView` in
+		// obsidian.d.ts @ 1.13.1, so there is nothing to undo by hand. The R2 registry unsubscribes and
+		// flushes through the teardown registered in `onload`; whether the host lets that promise finish
+		// before the plugin is gone is a real-device question, not an assumption (probe kit R2).
 		super.onunload();
 	}
 }
