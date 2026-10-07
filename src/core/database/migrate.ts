@@ -109,12 +109,26 @@ export function migrateDocument(
  *
  * This is `parseDocument` plus the version walk — the same refusal shape, the same collected
  * errors, and never a throw for bad input. A file this build cannot read is refused exactly as the
- * parser refuses it, before any migration is considered.
+ * parser refuses it, before any migration is considered. A file that already speaks this build's
+ * version comes back exactly as `parseDocument` returned it, **load findings included**: the
+ * document-wide link and option scans are part of what a load means, and a host that took the
+ * migration path must not silently lose them.
  */
 export function parseAndMigrate(text: string): DocumentLoad {
 	const loaded = parseDocument(text);
 	if (!loaded.ok) {
 		return loaded;
 	}
-	return migrateDocument(loaded.document);
+	if (loaded.document.version >= DOCUMENT_VERSION) {
+		return loaded;
+	}
+	const migrated = migrateDocument(loaded.document);
+	if (!migrated.ok) {
+		return migrated;
+	}
+	return {
+		ok: true,
+		document: migrated.document,
+		warnings: [...loaded.warnings, ...migrated.warnings],
+	};
 }

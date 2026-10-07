@@ -115,6 +115,40 @@ describe('parseAndMigrate is parseDocument plus the version walk', () => {
 		expect(serializeDocument(first.document)).toBe(serializeDocument(second.document));
 	});
 
+	it('carries the load findings across — a warning must not be lost by taking this path', () => {
+		// An unsupported field type is a load warning this build already produces; whatever the
+		// findings are, the migration path must return the same ones as the plain parse.
+		const text = JSON.stringify({
+			format: FORMAT_TAG,
+			version: 1,
+			databaseId: DATABASE_ID,
+			name: 'Test',
+			tables: [
+				{
+					id: TABLE_ID,
+					name: 'Tasks',
+					fields: [
+						{ id: F_TITLE, name: 'Title', type: 'text' },
+						{ id: 'fld_' + 'b'.repeat(26), name: 'Formula', type: 'formula' },
+					],
+					rows: [],
+					views: [],
+				},
+			],
+		});
+		const parsed = parseDocument(text);
+		const migrated = parseAndMigrate(text);
+		expect(parsed.ok).toBe(true);
+		expect(migrated.ok).toBe(true);
+		if (!parsed.ok || !migrated.ok) {
+			return;
+		}
+		expect(migrated.warnings.map((warning) => `${warning.code}@${warning.path}`)).toEqual(
+			parsed.warnings.map((warning) => `${warning.code}@${warning.path}`),
+		);
+		expect(parsed.warnings.map((warning) => warning.code)).toEqual(['unsupported-field-type']);
+	});
+
 	it('never throws, whatever the text is', () => {
 		const hostile: readonly string[] = [
 			'',
