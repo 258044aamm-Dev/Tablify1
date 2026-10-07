@@ -21,6 +21,8 @@
  */
 import { describe, expect, it } from 'vitest';
 
+import { buildLargeDocumentText } from '../helpers/large-document';
+
 import {
 	FORMAT_TAG,
 	migrateDocument,
@@ -147,6 +149,22 @@ describe('parseAndMigrate is parseDocument plus the version walk', () => {
 			parsed.warnings.map((warning) => `${warning.code}@${warning.path}`),
 		);
 		expect(parsed.warnings.map((warning) => warning.code)).toEqual(['unsupported-field-type']);
+	});
+
+	it('is deterministic over 100 generated documents — same text, same outcome', () => {
+		for (let seed = 0; seed < 100; seed += 1) {
+			const text = buildLargeDocumentText({ shoots: 6, clients: 3, seed });
+			const first = parseAndMigrate(text);
+			const second = parseAndMigrate(text);
+			expect(first.ok, `seed ${String(seed)}`).toBe(true);
+			if (!first.ok || !second.ok) {
+				continue;
+			}
+			expect(serializeDocument(second.document), `seed ${String(seed)}`).toBe(
+				serializeDocument(first.document),
+			);
+			expect(second.warnings, `seed ${String(seed)}`).toEqual(first.warnings);
+		}
 	});
 
 	it('never throws, whatever the text is', () => {
