@@ -22,7 +22,22 @@ Before writing code, generate a read-only search inventory and classify each mat
 
 ## Step-by-step conversion plan
 
-### Step 1 — Define the state ownership boundary
+### Step 1 — Define the state ownership boundary ✅ landed
+
+The boundary is fixed in [ADR-0012](adr/ADR-0012-state-ownership-and-history.md): the open document is
+the only authoritative state, the active table is a derived projection (never a second store, never
+diffed back), and the history is one database-scoped stack that survives a table switch.
+
+The audit deliverable landed with it, and it is a gate rather than a paragraph:
+`bun scripts/r3-inventory.ts` scans `src/**` and `tests/**` for the ten identity markers
+(`filePath`, `PropertyId`, `propertyId`, `YamlValue`, `toYaml`, `RowSource`, `processFrontMatter`,
+`metadataCache`, `getFileCache`), classifies every match by an explicit rule table, and **fails** when
+a file with matches has no class. The committed report is
+[`docs/audit/R3-identity-inventory.md`](audit/R3-identity-inventory.md): 107 files, 1339 occurrences,
+`replace` 816 / `historical` 498 / `host-path` 11 / `remote-record-id` 10 / `guard` 4, and **zero**
+inside the R2 native path. `tests/unit/r3-inventory.test.ts` holds the report to the tree byte for
+byte, asserts every class is used and the native path stays clean, so the numbers in this paragraph
+cannot drift from the code while the rest of R3 is implemented.
 
 Choose one canonical in-memory database state and one active-table projection. Avoid two writable copies. A useful conceptual split is:
 
