@@ -84,6 +84,7 @@ that will close them, and nothing may assume the answer in the meantime.
 | [0008](adr/ADR-0008-airtable-cross-table-links.md) | Cross-table Airtable links | R5 | Accepted |
 | [0009](adr/ADR-0009-performance-limits.md) | Document-size/write thresholds | R2, R5 | Open — deferred to measurement |
 | [0010](adr/ADR-0010-app-version-floor.md) | App-version floor | R2, R6 | Open — deferred to the R2 probes |
+| [0011](adr/ADR-0011-document-schema-identifiers.md) | v1 key set, ids, uniqueness scopes | R1 | Accepted |
 
 ## Implementation authorization log
 

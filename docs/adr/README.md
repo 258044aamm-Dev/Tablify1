@@ -20,6 +20,7 @@ alternatives, and the tests that prove the behaviour. This directory holds those
 | [0008](ADR-0008-airtable-cross-table-links.md) | Airtable cross-table links sync only with a complete record map | R5 | Accepted |
 | [0009](ADR-0009-performance-limits.md) | No hard document-size or write thresholds until measured | R2, R5 | Open — deferred to measurement |
 | [0010](ADR-0010-app-version-floor.md) | App-version floor stays until FileView APIs are verified on the oldest supported desktop and phone | R2, R6 | Open — deferred to the R2 probes |
+| [0011](ADR-0011-document-schema-identifiers.md) | The version-1 schema: key set, identifiers and uniqueness rules | R1 | Accepted |
 
 ## How to read a status
 

@@ -15,6 +15,16 @@ export {
 	toJsonValue,
 	unknownEntries,
 } from './json';
+export type { IdKind, IdSource } from './ids';
+export {
+	createIdFactory,
+	findDuplicates,
+	ID_BODY_LENGTH,
+	ID_KINDS,
+	ID_PREFIXES,
+	idKindOf,
+	isIdOfKind,
+} from './ids';
 export type { DocumentLoad, LoadError, LoadWarning } from './result';
 export type { DatabaseDocument, DatabaseTable } from './schema';
 export { DOCUMENT_VERSION, FORMAT_TAG, SUPPORTED_DOCUMENT_VERSIONS } from './schema';

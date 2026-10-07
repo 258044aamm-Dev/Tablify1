@@ -25,6 +25,7 @@ import {
 	toCanonicalObject,
 	unknownEntries,
 } from './json';
+import { isIdOfKind } from './ids';
 import type { DocumentLoad, LoadError } from './result';
 import type { DatabaseDocument, DatabaseTable } from './schema';
 import { FORMAT_TAG, SUPPORTED_DOCUMENT_VERSIONS } from './schema';
@@ -100,6 +101,13 @@ function readTable(
 		errors.push({
 			code: 'invalid-table-id',
 			message: 'The table id must be a non-empty string.',
+			path: `${path}.id`,
+		});
+		failed = true;
+	} else if (!isIdOfKind('table', id.value)) {
+		errors.push({
+			code: 'malformed-table-id',
+			message: `The table id must be shaped like tbl_ followed by lowercase letters and digits, and "${id.value}" is not.`,
 			path: `${path}.id`,
 		});
 		failed = true;
@@ -214,6 +222,12 @@ export function readDocument(value: JsonValue): DocumentLoad {
 			message: 'The databaseId must be a non-empty string.',
 			path: '$.databaseId',
 		});
+	} else if (!isIdOfKind('database', databaseId.value)) {
+		errors.push({
+			code: 'malformed-database-id',
+			message: `The databaseId must be shaped like db_ followed by lowercase letters and digits, and "${databaseId.value}" is not.`,
+			path: '$.databaseId',
+		});
 	}
 
 	const name = stringField(value, 'name');
@@ -252,6 +266,9 @@ export function readDocument(value: JsonValue): DocumentLoad {
 			path: '$.tables',
 		});
 	} else {
+		// Duplicate ids are a document-level property: the table that repeats is reported at its
+		// second occurrence, naming both positions, so the fix is obvious from the message alone.
+		const firstIndexById = new Map<string, number>();
 		tablesValue.forEach((item, index) => {
 			const path = `$.tables[${index}]`;
 			if (!isJsonObject(item)) {
@@ -261,6 +278,19 @@ export function readDocument(value: JsonValue): DocumentLoad {
 					path,
 				});
 				return;
+			}
+			const itemId = item['id'];
+			if (typeof itemId === 'string' && itemId !== '') {
+				const firstIndex = firstIndexById.get(itemId);
+				if (firstIndex === undefined) {
+					firstIndexById.set(itemId, index);
+				} else {
+					errors.push({
+						code: 'duplicate-table-id',
+						message: `The table id "${itemId}" is used by both tables[${firstIndex}] and tables[${index}].`,
+						path,
+					});
+				}
 			}
 			const table = readTable(item, path, errors);
 			if (table !== undefined) {

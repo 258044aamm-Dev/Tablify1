@@ -218,6 +218,26 @@ describe('refusals', () => {
 		expect(errorsOf(envelopeText({ tables: [[]] }))[0]?.path).toBe('$.tables[0]');
 	});
 
+	it('refuses ids that are not shaped like their kind (R1 step 2)', () => {
+		expect(codesOf(envelopeText({ databaseId: 'Notes' }))).toEqual(['malformed-database-id']);
+		expect(codesOf(envelopeText({ databaseId: 'tbl_abc' }))).toEqual(['malformed-database-id']);
+		expect(codesOf(envelopeText({ tables: [{ id: 'Tasks', name: 'T' }] }))).toEqual([
+			'malformed-table-id',
+		]);
+		expect(codesOf(envelopeText({ tables: [{ id: 'fld_abc', name: 'T' }] }))).toEqual([
+			'malformed-table-id',
+		]);
+		const errors = errorsOf(envelopeText({ databaseId: 'Notes' }));
+		expect(errors[0]?.message).toContain('db_');
+	});
+
+	it('refuses a document whose table id repeats, naming both positions', () => {
+		const errors = errorsOf(textOf('duplicate-table-id'));
+		expect(errors.map((error) => error.code)).toEqual(['duplicate-table-id']);
+		expect(errors[0]?.path).toBe('$.tables[1]');
+		expect(errors[0]?.message).toContain('tables[0] and tables[1]');
+	});
+
 	it('refuses tables without usable id and name, with one error per missing piece', () => {
 		expect(codesOf(envelopeText({ tables: [{}] }))).toEqual([
 			'missing-table-id',
@@ -260,6 +280,7 @@ describe('the generated round trip', () => {
 		};
 	}
 
+	/** Names and values may be anything a string can hold — including characters no id may carry. */
 	function character(roll: () => number): string {
 		const pool = 'abcdefghijklmnopqrstuvwxyz0123456789_- äöü漢字🙂';
 		const index = Math.floor(roll() * pool.length);
@@ -270,6 +291,17 @@ describe('the generated round trip', () => {
 		let out = '';
 		for (let index = 0; index < length; index += 1) {
 			out += character(roll);
+		}
+		return out;
+	}
+
+	/** Id bodies, on the other hand, are restricted: `isIdOfKind` is the rule they must satisfy. */
+	const ID_POOL = 'abcdefghijklmnopqrstuvwxyz0123456789';
+
+	function idWord(roll: () => number, length: number): string {
+		let out = '';
+		for (let index = 0; index < length; index += 1) {
+			out += ID_POOL.charAt(Math.floor(roll() * ID_POOL.length));
 		}
 		return out;
 	}
@@ -314,7 +346,7 @@ describe('the generated round trip', () => {
 				unknown.push({ key: `extra${unknownIndex}`, value: jsonValue(roll, 2) });
 			}
 			tables.push({
-				id: `tbl_${word(roll, 10)}`,
+				id: `tbl_${idWord(roll, 10)}`,
 				name: word(roll, 6),
 				unknown,
 			});
@@ -327,7 +359,7 @@ describe('the generated round trip', () => {
 		return {
 			format: FORMAT_TAG,
 			version: 1,
-			databaseId: `db_${word(roll, 10)}_${index}`,
+			databaseId: `db_${idWord(roll, 10)}${index}`,
 			name: word(roll, 8),
 			tables,
 			unknown: rootUnknown,
