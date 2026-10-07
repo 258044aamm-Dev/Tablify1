@@ -38,6 +38,8 @@ export type { LinkFinding, LinkFindingCode } from './links';
 export type { OptionFinding, OptionFindingCode } from './options';
 export { validateOptions } from './options';
 export { validateLinks } from './links';
+export type { CommandRefusalCode, CommandResult, DocumentCommand } from './commands';
+export { applyCommand } from './commands';
 export type { CellState, TableRow } from './rows';
 export { readRows, serializeRow } from './rows';
 export type { TableView, ViewSort } from './views';
