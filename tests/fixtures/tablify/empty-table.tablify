@@ -1,0 +1,15 @@
+{
+  "format": "tablify",
+  "version": 1,
+  "databaseId": "db_studio00000000000000000000",
+  "name": "Empty",
+  "tables": [
+    {
+      "id": "tbl_nothingyet0000000000000000",
+      "name": "Nothing yet",
+      "fields": [],
+      "rows": [],
+      "views": []
+    }
+  ]
+}

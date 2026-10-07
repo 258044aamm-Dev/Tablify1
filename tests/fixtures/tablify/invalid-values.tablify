@@ -1,0 +1,103 @@
+{
+  "format": "tablify",
+  "version": 1,
+  "databaseId": "db_studio00000000000000000000",
+  "name": "Invalid values",
+  "tables": [
+    {
+      "id": "tbl_badvalues00000000000000000",
+      "name": "Bad values",
+      "fields": [
+        {
+          "id": "fld_badtext0000000000000000000",
+          "name": "Text",
+          "type": "text"
+        },
+        {
+          "id": "fld_badnumber00000000000000000",
+          "name": "Number",
+          "type": "number"
+        },
+        {
+          "id": "fld_baddate0000000000000000000",
+          "name": "Day",
+          "type": "date"
+        },
+        {
+          "id": "fld_badcheckbox000000000000000",
+          "name": "Flag",
+          "type": "checkbox"
+        },
+        {
+          "id": "fld_badselect00000000000000000",
+          "name": "Status",
+          "type": "singleSelect",
+          "options": [
+            {
+              "id": "opt_planned0000000000000000000",
+              "name": "Planned"
+            }
+          ]
+        },
+        {
+          "id": "fld_badmultiselect000000000000",
+          "name": "Tags",
+          "type": "multiSelect",
+          "options": [
+            {
+              "id": "opt_planned0000000000000000000",
+              "name": "Planned"
+            }
+          ]
+        },
+        {
+          "id": "fld_badlink0000000000000000000",
+          "name": "Other",
+          "type": "link",
+          "targetTableId": "tbl_badtarget00000000000000000",
+          "allowMultiple": true
+        },
+        {
+          "id": "fld_badcreatedtime000000000000",
+          "name": "Created",
+          "type": "createdTime"
+        }
+      ],
+      "rows": [
+        {
+          "id": "row_badrow00000000000000000000",
+          "cells": {
+            "fld_badtext0000000000000000000": 42,
+            "fld_badnumber00000000000000000": "5",
+            "fld_baddate0000000000000000000": "2026-02-30",
+            "fld_badcheckbox000000000000000": "yes",
+            "fld_badselect00000000000000000": 7,
+            "fld_badmultiselect000000000000": [
+              "opt00000000000000000000000",
+              9
+            ],
+            "fld_badlink0000000000000000000": [
+              "row00000000000000000000000",
+              7
+            ],
+            "fld_badcreatedtime000000000000": "2026-01-01T00:00:00Z"
+          }
+        }
+      ],
+      "views": []
+    },
+    {
+      "id": "tbl_badtarget00000000000000000",
+      "name": "Target",
+      "fields": [
+        {
+          "id": "fld_badname0000000000000000000",
+          "name": "Name",
+          "type": "text"
+        }
+      ],
+      "rows": [],
+      "views": []
+    }
+  ]
+}

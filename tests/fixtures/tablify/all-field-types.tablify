@@ -1,0 +1,200 @@
+{
+  "format": "tablify",
+  "version": 1,
+  "databaseId": "db_studio00000000000000000000",
+  "name": "Studio",
+  "tables": [
+    {
+      "id": "tbl_shoots00000000000000000000",
+      "name": "Shoots",
+      "fields": [
+        {
+          "id": "fld_text0000000000000000000000",
+          "name": "Title",
+          "type": "text"
+        },
+        {
+          "id": "fld_longtext000000000000000000",
+          "name": "Notes",
+          "type": "longText"
+        },
+        {
+          "id": "fld_number00000000000000000000",
+          "name": "Count",
+          "type": "number"
+        },
+        {
+          "id": "fld_currency000000000000000000",
+          "name": "Fee",
+          "type": "currency",
+          "symbol": "€",
+          "precision": 2
+        },
+        {
+          "id": "fld_percent0000000000000000000",
+          "name": "Progress",
+          "type": "percent",
+          "precision": 0
+        },
+        {
+          "id": "fld_rating00000000000000000000",
+          "name": "Grade",
+          "type": "rating",
+          "max": 5
+        },
+        {
+          "id": "fld_duration000000000000000000",
+          "name": "Length",
+          "type": "duration",
+          "unit": "minutes"
+        },
+        {
+          "id": "fld_checkbox000000000000000000",
+          "name": "Delivered",
+          "type": "checkbox"
+        },
+        {
+          "id": "fld_date0000000000000000000000",
+          "name": "Shoot date",
+          "type": "date"
+        },
+        {
+          "id": "fld_datetime000000000000000000",
+          "name": "Call time",
+          "type": "datetime"
+        },
+        {
+          "id": "fld_select00000000000000000000",
+          "name": "Status",
+          "type": "singleSelect",
+          "options": [
+            {
+              "id": "opt_planned0000000000000000000",
+              "name": "Planned",
+              "color": "blue"
+            },
+            {
+              "id": "opt_done0000000000000000000000",
+              "name": "Done",
+              "color": "green"
+            }
+          ]
+        },
+        {
+          "id": "fld_multiselect000000000000000",
+          "name": "Tags",
+          "type": "multiSelect",
+          "options": [
+            {
+              "id": "opt_planned0000000000000000000",
+              "name": "Planned"
+            },
+            {
+              "id": "opt_done0000000000000000000000",
+              "name": "Done"
+            }
+          ]
+        },
+        {
+          "id": "fld_url00000000000000000000000",
+          "name": "Brief",
+          "type": "url"
+        },
+        {
+          "id": "fld_email000000000000000000000",
+          "name": "Contact",
+          "type": "email"
+        },
+        {
+          "id": "fld_phone000000000000000000000",
+          "name": "Phone",
+          "type": "phone"
+        },
+        {
+          "id": "fld_attachment0000000000000000",
+          "name": "Cover",
+          "type": "attachment"
+        },
+        {
+          "id": "fld_shootclient000000000000000",
+          "name": "Client",
+          "type": "link",
+          "targetTableId": "tbl_clients0000000000000000000",
+          "allowMultiple": false,
+          "inverseFieldId": "fld_clientshoots00000000000000"
+        },
+        {
+          "id": "fld_createdtime000000000000000",
+          "name": "Created",
+          "type": "createdTime"
+        },
+        {
+          "id": "fld_modifiedtime00000000000000",
+          "name": "Modified",
+          "type": "lastModifiedTime"
+        }
+      ],
+      "rows": [
+        {
+          "id": "row_shootone000000000000000000",
+          "createdAt": "2026-01-02T09:00:00Z",
+          "updatedAt": "2026-01-03T10:30:00+01:00",
+          "cells": {
+            "fld_text0000000000000000000000": "Rooftop, dawn",
+            "fld_longtext000000000000000000": "Line one\nLine two",
+            "fld_number00000000000000000000": 3.5,
+            "fld_currency000000000000000000": 1234.5,
+            "fld_percent0000000000000000000": 25,
+            "fld_rating00000000000000000000": 4.5,
+            "fld_duration000000000000000000": 1.5,
+            "fld_checkbox000000000000000000": true,
+            "fld_date0000000000000000000000": "2026-01-31",
+            "fld_datetime000000000000000000": "2026-01-31T18:30:00+01:00",
+            "fld_select00000000000000000000": "opt_done0000000000000000000000",
+            "fld_multiselect000000000000000": [
+              "opt_planned0000000000000000000",
+              "opt_done0000000000000000000000"
+            ],
+            "fld_url00000000000000000000000": "https://example.com/briefs/rooftop",
+            "fld_email000000000000000000000": "ada@example.com",
+            "fld_phone000000000000000000000": "+31 20 123 4567",
+            "fld_attachment0000000000000000": [
+              "Scans/receipt 2026-01.pdf",
+              "Fotos/日本.jpeg"
+            ],
+            "fld_shootclient000000000000000": "row_clientone00000000000000000"
+          }
+        }
+      ],
+      "views": []
+    },
+    {
+      "id": "tbl_clients0000000000000000000",
+      "name": "Clients",
+      "fields": [
+        {
+          "id": "fld_clientname0000000000000000",
+          "name": "Name",
+          "type": "text"
+        },
+        {
+          "id": "fld_clientshoots00000000000000",
+          "name": "Shoots",
+          "type": "link",
+          "targetTableId": "tbl_shoots00000000000000000000",
+          "allowMultiple": true,
+          "generated": true
+        }
+      ],
+      "rows": [
+        {
+          "id": "row_clientone00000000000000000",
+          "cells": {
+            "fld_clientname0000000000000000": "Ada"
+          }
+        }
+      ],
+      "views": []
+    }
+  ]
+}

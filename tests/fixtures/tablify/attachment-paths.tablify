@@ -1,0 +1,47 @@
+{
+  "format": "tablify",
+  "version": 1,
+  "databaseId": "db_studio00000000000000000000",
+  "name": "Attachments",
+  "tables": [
+    {
+      "id": "tbl_attachments000000000000000",
+      "name": "Files",
+      "fields": [
+        {
+          "id": "fld_atts0000000000000000000000",
+          "name": "Files",
+          "type": "attachment"
+        }
+      ],
+      "rows": [
+        {
+          "id": "row_spaces00000000000000000000",
+          "cells": {
+            "fld_atts0000000000000000000000": [
+              "Cover art/übersicht 🙂.png"
+            ]
+          }
+        },
+        {
+          "id": "row_nested00000000000000000000",
+          "cells": {
+            "fld_atts0000000000000000000000": [
+              "Deep/nested/dir/file with  spaces.pdf",
+              "Fotos/日本 – 京都.jpeg"
+            ]
+          }
+        },
+        {
+          "id": "row_missing0000000000000000000",
+          "cells": {
+            "fld_atts0000000000000000000000": [
+              "Missing/never-existed.png"
+            ]
+          }
+        }
+      ],
+      "views": []
+    }
+  ]
+}

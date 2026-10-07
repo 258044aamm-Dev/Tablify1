@@ -1,0 +1,96 @@
+{
+  "format": "tablify",
+  "version": 1,
+  "databaseId": "db_studio00000000000000000000",
+  "name": "Dangling",
+  "tables": [
+    {
+      "id": "tbl_dangling000000000000000000",
+      "name": "Shoots",
+      "fields": [
+        {
+          "id": "fld_dangclient0000000000000000",
+          "name": "Client",
+          "type": "link",
+          "targetTableId": "tbl_dangclient0000000000000000",
+          "allowMultiple": false
+        },
+        {
+          "id": "fld_dangcrew000000000000000000",
+          "name": "Crew",
+          "type": "link",
+          "targetTableId": "tbl_missingtable00000000000000",
+          "allowMultiple": true
+        },
+        {
+          "id": "fld_dangstatus0000000000000000",
+          "name": "Status",
+          "type": "singleSelect",
+          "options": [
+            {
+              "id": "opt_planned0000000000000000000",
+              "name": "Planned"
+            }
+          ]
+        },
+        {
+          "id": "fld_dangtags000000000000000000",
+          "name": "Tags",
+          "type": "multiSelect",
+          "options": [
+            {
+              "id": "opt_planned0000000000000000000",
+              "name": "Planned"
+            }
+          ]
+        }
+      ],
+      "rows": [
+        {
+          "id": "row_dangrow0000000000000000000",
+          "cells": {
+            "fld_dangclient0000000000000000": "row_ghost000000000000000000000",
+            "fld_dangcrew000000000000000000": [
+              "row_ghost000000000000000000000",
+              "row_alsogone000000000000000000"
+            ],
+            "fld_dangstatus0000000000000000": "opt_ghost000000000000000000000",
+            "fld_dangtags000000000000000000": [
+              "opt_planned0000000000000000000",
+              "opt_ghost000000000000000000000"
+            ]
+          }
+        }
+      ],
+      "views": [
+        {
+          "id": "viw_dangview000000000000000000",
+          "name": "Broken view",
+          "columnOrder": [
+            "fld_dangclient0000000000000000",
+            "fld_dangname000000000000000000"
+          ],
+          "sorts": [
+            {
+              "fieldId": "fld_dangname000000000000000000",
+              "direction": "asc"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tbl_dangclient0000000000000000",
+      "name": "Clients",
+      "fields": [
+        {
+          "id": "fld_dangname000000000000000000",
+          "name": "Name",
+          "type": "text"
+        }
+      ],
+      "rows": [],
+      "views": []
+    }
+  ]
+}

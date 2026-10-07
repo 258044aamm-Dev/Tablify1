@@ -1,0 +1,37 @@
+{
+  "format": "tablify",
+  "version": 1,
+  "databaseId": "db_studio00000000000000000000",
+  "name": "Unknown type",
+  "tables": [
+    {
+      "id": "tbl_unk00000000000000000000000",
+      "name": "Mixed",
+      "fields": [
+        {
+          "id": "fld_unkname0000000000000000000",
+          "name": "Name",
+          "type": "text"
+        },
+        {
+          "id": "fld_future00000000000000000000",
+          "name": "Formula",
+          "type": "formula",
+          "expression": "CONCAT({Name}, \"!\")"
+        }
+      ],
+      "rows": [
+        {
+          "id": "row_unkrow00000000000000000000",
+          "cells": {
+            "fld_unkname0000000000000000000": "Ada",
+            "fld_future00000000000000000000": {
+              "computed": true
+            }
+          }
+        }
+      ],
+      "views": []
+    }
+  ]
+}

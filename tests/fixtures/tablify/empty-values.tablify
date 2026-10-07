@@ -1,0 +1,130 @@
+{
+  "format": "tablify",
+  "version": 1,
+  "databaseId": "db_studio00000000000000000000",
+  "name": "Empty values",
+  "tables": [
+    {
+      "id": "tbl_edges000000000000000000000",
+      "name": "Edges",
+      "fields": [
+        {
+          "id": "fld_edgetext000000000000000000",
+          "name": "Text",
+          "type": "text"
+        },
+        {
+          "id": "fld_edgenumber0000000000000000",
+          "name": "Number",
+          "type": "number"
+        },
+        {
+          "id": "fld_edgecheckbox00000000000000",
+          "name": "Flag",
+          "type": "checkbox"
+        },
+        {
+          "id": "fld_edgedate000000000000000000",
+          "name": "Day",
+          "type": "date"
+        },
+        {
+          "id": "fld_edgeselect0000000000000000",
+          "name": "Status",
+          "type": "singleSelect",
+          "options": [
+            {
+              "id": "opt_planned0000000000000000000",
+              "name": "Planned"
+            }
+          ]
+        },
+        {
+          "id": "fld_edgemultiselect00000000000",
+          "name": "Tags",
+          "type": "multiSelect",
+          "options": [
+            {
+              "id": "opt_planned0000000000000000000",
+              "name": "Planned"
+            }
+          ]
+        },
+        {
+          "id": "fld_edgeattachment000000000000",
+          "name": "Files",
+          "type": "attachment"
+        },
+        {
+          "id": "fld_edgelink000000000000000000",
+          "name": "Other",
+          "type": "link",
+          "targetTableId": "tbl_others00000000000000000000",
+          "allowMultiple": true
+        }
+      ],
+      "rows": [
+        {
+          "id": "row_absent00000000000000000000"
+        },
+        {
+          "id": "row_voidcells00000000000000000",
+          "cells": {}
+        },
+        {
+          "id": "row_nulls000000000000000000000",
+          "cells": {
+            "fld_edgetext000000000000000000": null,
+            "fld_edgenumber0000000000000000": null,
+            "fld_edgecheckbox00000000000000": null,
+            "fld_edgedate000000000000000000": null,
+            "fld_edgeselect0000000000000000": null,
+            "fld_edgemultiselect00000000000": null,
+            "fld_edgeattachment000000000000": null,
+            "fld_edgelink000000000000000000": null
+          }
+        },
+        {
+          "id": "row_emptystring000000000000000",
+          "cells": {
+            "fld_edgetext000000000000000000": ""
+          }
+        },
+        {
+          "id": "row_false000000000000000000000",
+          "cells": {
+            "fld_edgecheckbox00000000000000": false
+          }
+        },
+        {
+          "id": "row_zero0000000000000000000000",
+          "cells": {
+            "fld_edgenumber0000000000000000": 0
+          }
+        },
+        {
+          "id": "row_emptylists0000000000000000",
+          "cells": {
+            "fld_edgemultiselect00000000000": [],
+            "fld_edgeattachment000000000000": [],
+            "fld_edgelink000000000000000000": []
+          }
+        }
+      ],
+      "views": []
+    },
+    {
+      "id": "tbl_others00000000000000000000",
+      "name": "Others",
+      "fields": [
+        {
+          "id": "fld_edgeclientname000000000000",
+          "name": "Name",
+          "type": "text"
+        }
+      ],
+      "rows": [],
+      "views": []
+    }
+  ]
+}
