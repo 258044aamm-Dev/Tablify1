@@ -154,6 +154,32 @@ describe('nothing in flight is lost', () => {
 		expect(session.getState()).toBe('clean');
 	});
 
+	it('settles clean when the mid-write edits serialize to what was written', async () => {
+		const { port, session, clock, queue } = await rig();
+		const release = port.deferNextWrite();
+		setCell(session, R_ONE, 'Changed');
+		const first = queue.request();
+		clock.advance(400);
+		await settleMicrotasks();
+		expect(port.writesStarted).toBe(1);
+
+		setCell(session, R_ONE, 'Edited');
+		setCell(session, R_ONE, 'Changed');
+		const second = queue.request();
+		release();
+		const [firstResult, secondResult] = await Promise.all([first, second]);
+
+		expect(firstResult.ok && secondResult.ok).toBe(true);
+		if (firstResult.ok && secondResult.ok) {
+			// The pass found the document already on disk: same revision, nothing left to write.
+			expect(firstResult.wrote).toBe(true);
+			expect(secondResult.wrote).toBe(false);
+			expect(secondResult.revision).toBe(firstResult.revision);
+		}
+		expect(session.getState()).toBe('clean');
+		expect(port.writes).toEqual([PATH]);
+	});
+
 	it('a failed write keeps the work pending for a retry', async () => {
 		const { port, session, clock, queue } = await rig();
 		port.failNextWrite = true;

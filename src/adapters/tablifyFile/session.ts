@@ -238,8 +238,12 @@ class Session implements DatabaseSession {
 		}
 		this.revision = revision;
 		this.lastWriteRevision = revision;
-		// Commands that landed while the bytes were in flight are still unsaved: stay dirty for them.
-		this.state = this.documentVersion === versionAtWrite ? 'clean' : 'dirty';
+		// Commands that landed while the bytes were in flight are still unsaved — unless the document
+		// they produced serializes to exactly what was written, which is the same thing as saved.
+		const converged =
+			this.documentVersion === versionAtWrite ||
+			detectRevision(serializeDocument(this.document)) === revision;
+		this.state = converged ? 'clean' : 'dirty';
 		this.emit({ kind: 'saved', revision });
 		if (this.state === 'dirty') {
 			this.emit({ kind: 'document', state: this.state });
