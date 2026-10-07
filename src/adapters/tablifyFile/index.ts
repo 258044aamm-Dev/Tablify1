@@ -7,6 +7,8 @@
  * R2 step 4's write queue and step 5's pane registry plug into this boundary too.
  */
 export type { FilePort, FilePortEvent } from './port';
+export type { CloseResult, QueueScheduler, WriteQueue, WriteQueueOptions } from './queue';
+export { createWriteQueue } from './queue';
 export { MissingFileError } from './port';
 export { detectRevision } from './revision';
 export type {

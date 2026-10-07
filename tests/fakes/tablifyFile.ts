@@ -15,8 +15,12 @@ export interface FakeVaultPort extends FilePort {
 	readonly files: Map<string, string>;
 	/** Every path `write()` replaced, in order — the write-count evidence. */
 	readonly writes: readonly string[];
+	/** How many `write()` calls have been *entered*, gated or not — the in-flight evidence. */
+	readonly writesStarted: number;
 	/** When true, the next `write()` rejects with a plain error (the "write failed" path). */
 	failNextWrite: boolean;
+	/** Hold the next `write()` open; the returned function lets it finish. */
+	deferNextWrite(): () => void;
 	/** Someone else edits the file: text replaced, `changed` emitted, no write recorded. */
 	simulateExternalChange(path: string, text: string): void;
 	/** Someone else renames the file: `renamed` emitted, write log untouched. */
@@ -31,6 +35,8 @@ export function createFakePort(initial: Readonly<Record<string, string>> = {}): 
 	const files = new Map<string, string>(Object.entries(initial));
 	const writes: string[] = [];
 	const listeners = new Set<(event: FilePortEvent) => void>();
+	let gate: { readonly promise: Promise<void>; readonly release: () => void } | null = null;
+	let writesStarted = 0;
 
 	const emit = (event: FilePortEvent): void => {
 		for (const listener of listeners) {
@@ -41,7 +47,21 @@ export function createFakePort(initial: Readonly<Record<string, string>> = {}): 
 	const port: FakeVaultPort = {
 		files,
 		writes,
+		get writesStarted(): number {
+			return writesStarted;
+		},
 		failNextWrite: false,
+		deferNextWrite(): () => void {
+			let release: () => void = () => {};
+			const promise = new Promise<void>((settle) => {
+				release = settle;
+			});
+			gate = { promise, release };
+			return () => {
+				gate = null;
+				release();
+			};
+		},
 		async read(path: string): Promise<string> {
 			const text = files.get(path);
 			if (text === undefined) {
@@ -60,9 +80,14 @@ export function createFakePort(initial: Readonly<Record<string, string>> = {}): 
 			emit({ kind: 'created', path });
 		},
 		async write(path: string, text: string): Promise<void> {
+			writesStarted += 1;
 			if (port.failNextWrite) {
 				port.failNextWrite = false;
 				throw new Error('The disk said no.');
+			}
+			const held = gate;
+			if (held !== null) {
+				await held.promise;
 			}
 			if (!files.has(path)) {
 				throw new MissingFileError(path);

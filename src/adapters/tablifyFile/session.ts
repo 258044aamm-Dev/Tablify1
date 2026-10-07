@@ -111,6 +111,8 @@ class Session implements DatabaseSession {
 	private conflicted: { expected: string; found: string; diskText: string } | null = null;
 	private writing = false;
 	private lastWriteRevision: string | null = null;
+	/** Bumped by every applied command; a write compares it to know if edits outran the bytes. */
+	private documentVersion = 0;
 	private inFlight: Promise<FlushResult> | null = null;
 	private disposed = false;
 
@@ -176,6 +178,7 @@ class Session implements DatabaseSession {
 			return { ok: false, code: result.code, message: result.message };
 		}
 		this.document = result.document;
+		this.documentVersion += 1;
 		this.state = 'dirty';
 		this.emit({ kind: 'document', state: this.state });
 		return { ok: true, inverse: result.inverse, state: this.state };
@@ -224,6 +227,7 @@ class Session implements DatabaseSession {
 		}
 		const text = serializeDocument(this.document);
 		const revision = detectRevision(text);
+		const versionAtWrite = this.documentVersion;
 		this.writing = true;
 		try {
 			await this.port.write(this.path, text);
@@ -234,8 +238,12 @@ class Session implements DatabaseSession {
 		}
 		this.revision = revision;
 		this.lastWriteRevision = revision;
-		this.state = 'clean';
+		// Commands that landed while the bytes were in flight are still unsaved: stay dirty for them.
+		this.state = this.documentVersion === versionAtWrite ? 'clean' : 'dirty';
 		this.emit({ kind: 'saved', revision });
+		if (this.state === 'dirty') {
+			this.emit({ kind: 'document', state: this.state });
+		}
 		return { ok: true, wrote: true, revision };
 	}
 
