@@ -64,13 +64,15 @@
           "model": "x"
         }
       ],
-      "rows": []
+      "rows": [],
+      "views": []
     },
     {
       "id": "tbl_clients000000000000000000h",
       "name": "Clients",
       "fields": [],
-      "rows": []
+      "rows": [],
+      "views": []
     }
   ]
 }

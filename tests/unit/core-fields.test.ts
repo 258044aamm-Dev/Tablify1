@@ -37,6 +37,8 @@ function documentText(
 		id: TABLE_ID,
 		name: 'Tasks',
 		fields,
+		rows: [],
+		views: [],
 		...tableExtra,
 	};
 	return JSON.stringify({
@@ -396,7 +398,11 @@ describe('field identity and shape', () => {
 		if (result.ok) {
 			return;
 		}
-		expect(result.errors.map((error) => error.code)).toEqual(['missing-fields']);
+		expect(result.errors.map((error) => error.code)).toEqual([
+			'missing-fields',
+			'missing-rows',
+			'missing-views',
+		]);
 		expect(result.errors[0]?.path).toBe('$.tables[0].fields');
 	});
 });
@@ -429,7 +435,9 @@ describe('writing fields back', () => {
 			version: 1,
 			databaseId: DATABASE_ID,
 			name: 'Test',
-			tables: [{ id: TABLE_ID, name: 'Tasks', fields: [field], unknown: [] }],
+			tables: [
+				{ id: TABLE_ID, name: 'Tasks', fields: [field], rows: [], views: [], unknown: [] },
+			],
 			unknown: [],
 		});
 		const again = parseDocument(once);

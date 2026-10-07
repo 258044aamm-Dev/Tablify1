@@ -28,6 +28,8 @@ import {
 } from './json';
 import { isIdOfKind } from './ids';
 import { readFields, serializeField } from './fields';
+import { readRows, serializeRow } from './rows';
+import { readViews, serializeView } from './views';
 import type { DocumentLoad, LoadError, LoadWarning } from './result';
 import type { DatabaseDocument, DatabaseTable } from './schema';
 import { FORMAT_TAG, SUPPORTED_DOCUMENT_VERSIONS } from './schema';
@@ -35,8 +37,8 @@ import { FORMAT_TAG, SUPPORTED_DOCUMENT_VERSIONS } from './schema';
 /** The keys the envelope owns. Everything else at the root is preserved as unknown. */
 const DOCUMENT_KEYS: readonly string[] = ['format', 'version', 'databaseId', 'name', 'tables'];
 
-/** The keys a table owns at this step. `rows`/`views` join this list in step 5. */
-const TABLE_KEYS: readonly string[] = ['id', 'name', 'fields'];
+/** The keys a table owns. Everything else on a table is preserved as unknown. */
+const TABLE_KEYS: readonly string[] = ['id', 'name', 'fields', 'rows', 'views'];
 
 /** What a string field of an object turned out to be. `absent` and `wrong` need different errors. */
 type StringField =
@@ -122,10 +124,14 @@ function readTable(
 		return undefined;
 	}
 	const fields = readFields(value['fields'], `${path}.fields`, errors, warnings);
+	const rows = readRows(value['rows'], `${path}.rows`, fields, errors, warnings);
+	const views = readViews(value['views'], `${path}.views`, fields, errors, warnings);
 	return {
 		id: id.value,
 		name: name.value,
 		fields,
+		rows,
+		views,
 		unknown: unknownEntries(value, TABLE_KEYS),
 	};
 }
@@ -335,16 +341,24 @@ export function parseDocument(text: string): DocumentLoad {
  * whose diff is readable is a file whose changes can be reviewed.
  */
 export function serializeDocument(document: DatabaseDocument): string {
-	const tables: JsonValue = document.tables.map((table): JsonValue =>
-		toCanonicalObject(
+	const tables: JsonValue = document.tables.map((table): JsonValue => {
+		const fieldIds: string[] = [];
+		for (const field of table.fields) {
+			if (field.id !== null) {
+				fieldIds.push(field.id);
+			}
+		}
+		return toCanonicalObject(
 			[
 				['id', table.id],
 				['name', table.name],
 				['fields', table.fields.map((field) => serializeField(field))],
+				['rows', table.rows.map((row) => serializeRow(row, table.fields))],
+				['views', table.views.map((view) => serializeView(view, fieldIds))],
 			],
 			table.unknown,
-		),
-	);
+		);
+	});
 	return stringifyJson(
 		toCanonicalObject(
 			[

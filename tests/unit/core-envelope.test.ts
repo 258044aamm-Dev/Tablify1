@@ -95,16 +95,15 @@ describe('the committed fixtures', () => {
 		expect(document.unknown).toEqual([{ key: 'sidebar', value: { collapsed: false } }]);
 	});
 
-	it('keeps table unknown keys — `rows` is still unknown, `fields` is claimed as of step 4', () => {
+	it('keeps table unknown keys — only `color` is left unknown after step 5', () => {
 		const document = documentOf('unknown-v1-key');
 		const tasks = document.tables[0];
-		expect(tasks?.unknown).toEqual([
-			{ key: 'color', value: 'blue' },
-			{ key: 'rows', value: [] },
-		]);
+		expect(tasks?.unknown).toEqual([{ key: 'color', value: 'blue' }]);
 		expect(tasks?.fields).toEqual([]);
+		expect(tasks?.rows).toEqual([]);
+		expect(tasks?.views).toEqual([]);
 		const projects = document.tables[1];
-		expect(projects?.unknown).toEqual([{ key: 'rows', value: [] }]);
+		expect(projects?.unknown).toEqual([]);
 	});
 });
 
@@ -129,7 +128,7 @@ describe('round trip', () => {
 		// cannot be mistaken for the table's.
 		const tableStart = text.lastIndexOf('{', text.indexOf('"Tasks"'));
 		const table = text.slice(tableStart, text.indexOf('"tbl_01h8x3kq7vbody0pve4z9m2r4v"'));
-		const indexes = ['"id"', '"name"', '"fields"', '"color"', '"rows"'].map((key) =>
+		const indexes = ['"id"', '"name"', '"fields"', '"rows"', '"views"', '"color"'].map((key) =>
 			table.indexOf(key),
 		);
 		expect(indexes.every((index) => index > -1)).toBe(true);
@@ -152,6 +151,39 @@ describe('round trip', () => {
 			}
 			expect(serializeDocument(second.document)).toBe(once);
 		}
+	});
+});
+
+describe('the rows-views fixture (step 5)', () => {
+	it('loads two tables, three ordered rows and two views, with no warnings', () => {
+		const result = parseDocument(textOf('rows-views'));
+		expect(result.ok).toBe(true);
+		if (!result.ok) {
+			return;
+		}
+		expect(result.warnings).toEqual([]);
+		const shoots = result.document.tables[0];
+		expect(shoots?.rows.map((row) => row.id)).toHaveLength(3);
+		expect(shoots?.views.map((view) => view.name)).toEqual(['All', 'Unscheduled']);
+		const [all, recent] = shoots?.views ?? [];
+		expect(all?.sorts).toEqual([
+			{ fieldId: 'fld_shootdate0000000000000000h', direction: 'asc', unknown: [] },
+		]);
+		expect(recent?.filterExpr?.kind).toBe('empty');
+		expect(recent?.groupBy).toBe('fld_status0000000000000000000d');
+	});
+
+	it('round-trips the fixture: links, timestamps, widths and the filter document survive', () => {
+		const once = serializeDocument(documentOf('rows-views'));
+		const again = parseDocument(once);
+		expect(again.ok).toBe(true);
+		if (!again.ok) {
+			return;
+		}
+		expect(serializeDocument(again.document)).toBe(once);
+		expect(once).toContain('"createdAt": "2026-01-02T09:00:00Z"');
+		expect(once).toContain('"kind": "empty"');
+		expect(once).toContain('übersicht 🙂.png');
 	});
 });
 
@@ -435,6 +467,8 @@ describe('the generated round trip', () => {
 				id: `tbl_${idWord(roll, 10)}`,
 				name: word(roll, 6),
 				fields: generatedFields(roll, tableIndex),
+				rows: [],
+				views: [],
 				unknown,
 			});
 		}

@@ -17,9 +17,11 @@ document shape, because R1's validator and serializer encode it.
 
 ## Decision
 
-1. **One explicit order per table, stored in the document** (`rowIds` sequence). Serialization order
-   of `rows` follows it. Rows never carry an order number in a cell, and no module ever sorts by
-   file path.
+1. **One explicit order per table: the `rows` array's document order.** There is no separate
+   `rowIds` list beside it (an early draft of this ADR had one) — two spellings of one sequence is a
+   drift bug waiting for a writer, and JSON arrays already carry order. That array is reordered only
+   by an explicit reorder operation (R3). Rows never carry an order number in a cell, and no module
+   ever sorts by file path.
 2. **A view's sort/group is presentation only.** Evaluating a view produces a display sequence in
    memory; it never mutates `rowIds`, and no code path writes a view evaluation back to the
    document.
@@ -45,9 +47,8 @@ document shape, because R1's validator and serializer encode it.
 
 ## Consequences
 
-- The R1 validator rejects a `rowIds` list with duplicates, with ids that have no row object, and
-  (as a warning) row objects that the list does not name — the matrix "corrupt data is never
-  silently emptied" means each case has a named finding, not a silent fixup.
+- The R1 validator rejects a repeated row id in the table's `rows` array — the matrix "corrupt data
+  is never silently emptied" means each case has a named finding, not a silent fixup.
 - Counts in fixtures and tests never depend on `Object.keys` order.
 - R4's grid shows the explicit order whenever no sort/group is active, and drag handles are hidden
   (with the reason) while one is.

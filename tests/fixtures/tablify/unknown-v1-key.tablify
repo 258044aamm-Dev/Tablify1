@@ -12,13 +12,15 @@
       "name": "Tasks",
       "color": "blue",
       "fields": [],
-      "rows": []
+      "rows": [],
+      "views": []
     },
     {
       "id": "tbl_01h8x3kq7vbody0pve4z9m2r4v",
       "name": "Projects",
       "fields": [],
-      "rows": []
+      "rows": [],
+      "views": []
     }
   ]
 }

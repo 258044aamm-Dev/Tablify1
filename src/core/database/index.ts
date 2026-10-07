@@ -34,6 +34,10 @@ export type {
 	UnsupportedField,
 } from './fields';
 export { DURATION_UNITS, optionsOf, readFields, serializeField } from './fields';
+export type { CellState, TableRow } from './rows';
+export { readRows, serializeRow } from './rows';
+export type { TableView, ViewSort } from './views';
+export { readViews, serializeView } from './views';
 export type { DocumentLoad, LoadError, LoadWarning } from './result';
 export type { DatabaseDocument, DatabaseTable, DocumentFieldTypeId } from './schema';
 export {

@@ -1,0 +1,178 @@
+{
+  "format": "tablify",
+  "version": 1,
+  "databaseId": "db_studio0000000000000000000a",
+  "name": "Studio",
+  "tables": [
+    {
+      "id": "tbl_shoots0000000000000000000b",
+      "name": "Shoots",
+      "fields": [
+        {
+          "id": "fld_title00000000000000000000c",
+          "name": "Title",
+          "type": "text"
+        },
+        {
+          "id": "fld_status0000000000000000000d",
+          "name": "Status",
+          "type": "singleSelect",
+          "options": [
+            {
+              "id": "opt_planned000000000000000000p",
+              "name": "Planned",
+              "color": "blue"
+            },
+            {
+              "id": "opt_done000000000000000000000q",
+              "name": "Done",
+              "color": "green"
+            }
+          ]
+        },
+        {
+          "id": "fld_client0000000000000000000e",
+          "name": "Client",
+          "type": "link",
+          "targetTableId": "tbl_clients000000000000000000f",
+          "allowMultiple": false,
+          "inverseFieldId": "fld_inverse000000000000000000o"
+        },
+        {
+          "id": "fld_shootdate0000000000000000h",
+          "name": "Shoot date",
+          "type": "date"
+        },
+        {
+          "id": "fld_grade00000000000000000000i",
+          "name": "Grade",
+          "type": "rating",
+          "max": 5
+        },
+        {
+          "id": "fld_rate000000000000000000000j",
+          "name": "Rate",
+          "type": "currency",
+          "symbol": "€",
+          "precision": 2
+        },
+        {
+          "id": "fld_notes00000000000000000000k",
+          "name": "Notes",
+          "type": "longText"
+        },
+        {
+          "id": "fld_cover00000000000000000000l",
+          "name": "Cover",
+          "type": "attachment"
+        }
+      ],
+      "rows": [
+        {
+          "id": "row_shot100000000000000000000t",
+          "createdAt": "2026-01-02T09:00:00Z",
+          "updatedAt": "2026-03-04T12:30:00+01:00",
+          "cells": {
+            "fld_title00000000000000000000c": "Rooftop, dawn",
+            "fld_status0000000000000000000d": "opt_planned000000000000000000p",
+            "fld_client0000000000000000000e": "row_cl10000000000000000000000w",
+            "fld_shootdate0000000000000000h": "2026-02-14",
+            "fld_grade00000000000000000000i": 0,
+            "fld_rate000000000000000000000j": 0,
+            "fld_cover00000000000000000000l": [
+              "Cover art/übersicht 🙂.png"
+            ]
+          }
+        },
+        {
+          "id": "row_shot200000000000000000000u",
+          "cells": {
+            "fld_title00000000000000000000c": "",
+            "fld_status0000000000000000000d": "opt_done000000000000000000000q",
+            "fld_shootdate0000000000000000h": "2026-02-15",
+            "fld_notes00000000000000000000k": "Second unit at 06:00.\nBring warm layers."
+          }
+        },
+        {
+          "id": "row_shot300000000000000000000v",
+          "cells": {
+            "fld_title00000000000000000000c": "Studio session",
+            "fld_client0000000000000000000e": "row_cl20000000000000000000000x",
+            "fld_grade00000000000000000000i": 4.5
+          }
+        }
+      ],
+      "views": [
+        {
+          "id": "viw_all0000000000000000000000m",
+          "name": "All",
+          "sorts": [
+            {
+              "fieldId": "fld_shootdate0000000000000000h",
+              "direction": "asc"
+            }
+          ],
+          "columnOrder": [
+            "fld_title00000000000000000000c",
+            "fld_status0000000000000000000d",
+            "fld_client0000000000000000000e"
+          ],
+          "widths": {
+            "fld_title00000000000000000000c": 220,
+            "fld_status0000000000000000000d": 120
+          },
+          "collapsedKeys": []
+        },
+        {
+          "id": "viw_recent0000000000000000000n",
+          "name": "Unscheduled",
+          "filter": {
+            "version": 1,
+            "expr": {
+              "kind": "empty",
+              "fieldId": "fld_shootdate0000000000000000h"
+            }
+          },
+          "hiddenFieldIds": [
+            "fld_notes00000000000000000000k"
+          ],
+          "groupBy": "fld_status0000000000000000000d"
+        }
+      ]
+    },
+    {
+      "id": "tbl_clients000000000000000000f",
+      "name": "Clients",
+      "fields": [
+        {
+          "id": "fld_clientname000000000000000g",
+          "name": "Name",
+          "type": "text"
+        },
+        {
+          "id": "fld_inverse000000000000000000o",
+          "name": "Shoots",
+          "type": "link",
+          "targetTableId": "tbl_shoots0000000000000000000b",
+          "allowMultiple": true,
+          "generated": true
+        }
+      ],
+      "rows": [
+        {
+          "id": "row_cl10000000000000000000000w",
+          "cells": {
+            "fld_clientname000000000000000g": "Ada"
+          }
+        },
+        {
+          "id": "row_cl20000000000000000000000x",
+          "cells": {
+            "fld_clientname000000000000000g": "Bob"
+          }
+        }
+      ],
+      "views": []
+    }
+  ]
+}

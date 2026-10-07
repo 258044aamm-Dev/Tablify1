@@ -21,6 +21,8 @@
  */
 import type { UnknownEntry } from './json';
 import type { TableField } from './fields';
+import type { TableRow } from './rows';
+import type { TableView } from './views';
 import type { FieldTypeId } from '../types';
 import { FIELD_TYPE_IDS } from '../types';
 
@@ -50,11 +52,16 @@ export const DOCUMENT_VERSION = 1;
 /** Every document schema version this build can load. Newer versions are refused, never migrated down. */
 export const SUPPORTED_DOCUMENT_VERSIONS: readonly number[] = [DOCUMENT_VERSION];
 
-/** One table: identity, display name, and its fields. Rows/views arrive in step 5. */
+/**
+ * One table: identity, display name, its fields, its rows — in manual order, which *is* the
+ * document order of the array (ADR-0003) — and its saved views.
+ */
 export interface DatabaseTable {
 	readonly id: string;
 	readonly name: string;
 	readonly fields: readonly TableField[];
+	readonly rows: readonly TableRow[];
+	readonly views: readonly TableView[];
 	readonly unknown: readonly UnknownEntry[];
 }
 

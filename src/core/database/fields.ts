@@ -62,6 +62,9 @@ export interface FieldSettings {
 	readonly allowMultiple?: boolean;
 	/** `link`: the field on the target table this link mirrors. Absent means no inverse is shown. */
 	readonly inverseFieldId?: string;
+	/** `link`: true on the *inverse* side — a field that is derived, never stored in cells
+	 * (ADR-0001 §3). The relation itself is owned by the field that names it as its inverse. */
+	readonly generated?: boolean;
 }
 
 /** A field this build understands. */
@@ -104,7 +107,7 @@ const SETTING_KEYS: { readonly [type in DocumentFieldTypeId]: readonly string[] 
 	singleSelect: ['options'],
 	multiSelect: ['options'],
 	attachment: [],
-	link: ['targetTableId', 'allowMultiple', 'inverseFieldId'],
+	link: ['targetTableId', 'allowMultiple', 'inverseFieldId', 'generated'],
 	createdTime: [],
 	lastModifiedTime: [],
 };
@@ -215,6 +218,7 @@ function readSettings(
 		targetTableId?: string;
 		allowMultiple?: boolean;
 		inverseFieldId?: string;
+		generated?: boolean;
 	} = {};
 	let failed = false;
 
@@ -343,6 +347,18 @@ function readSettings(
 				);
 			} else {
 				settings.inverseFieldId = inverse;
+			}
+		}
+		const generated = value['generated'];
+		if (generated !== undefined) {
+			if (typeof generated !== 'boolean') {
+				fail(
+					'invalid-generated-flag',
+					`The generated marker must be true or false, not ${describeJson(generated)}.`,
+					`${path}.generated`,
+				);
+			} else {
+				settings.generated = generated;
 			}
 		}
 	}
@@ -525,6 +541,7 @@ function serializeSettings(
 				['targetTableId', settings.targetTableId],
 				['allowMultiple', settings.allowMultiple],
 				['inverseFieldId', settings.inverseFieldId],
+				['generated', settings.generated],
 			];
 		default:
 			return [];

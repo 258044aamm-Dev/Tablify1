@@ -7,12 +7,16 @@
     {
       "id": "tbl_tasks00000000000000000000b",
       "name": "Tasks",
-      "fields": []
+      "fields": [],
+      "rows": [],
+      "views": []
     },
     {
       "id": "tbl_tasks00000000000000000000b",
       "name": "Tasks again",
-      "fields": []
+      "fields": [],
+      "rows": [],
+      "views": []
     }
   ]
 }
