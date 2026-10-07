@@ -88,7 +88,6 @@ function fixtureHost(initial: {
 
 /** The context the fixture's descriptors are resolved with, so the assertions read the same columns. */
 const CONTEXT: FieldContext = {
-	path: '',
 	now: () => 0,
 	timezone: 'UTC',
 	locale: 'en-GB',
@@ -618,9 +617,10 @@ describe('toCellValue', () => {
 		expect(toCellValue(null)).toBeNull();
 	});
 
-	it('turns a YAML list into a list of labels, never a stringified list', () => {
+	it('keeps a list a list, never a stringified list', () => {
 		expect(toCellValue(['a', 'b'])).toEqual(['a', 'b']);
-		expect(toCellValue(['a', null, 3])).toEqual(['a', '', '3']);
+		// A list in the canonical vocabulary holds text: every list-valued field type holds ids or paths.
+		expect(toCellValue(['Doing', 'Waiting'])).toEqual(['Doing', 'Waiting']);
 	});
 });
 

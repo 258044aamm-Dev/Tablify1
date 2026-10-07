@@ -38,7 +38,7 @@ import type {
 	PropertyDefinition,
 	ResolvedField,
 } from '../../core/schema/propertySchema';
-import type { CellValue, FieldContext, PropertyId, YamlValue } from '../../core/types';
+import type { CellValue, FieldContext, PropertyId } from '../../core/types';
 
 /** One row as the host offers it. `filePath` is the identity; `label` is for messages. */
 export type BasesRowHost = {
@@ -96,7 +96,7 @@ function definitionOf(definition: PropertyDefinition): PropertyDefinition {
  * entry, and a `null` entry (which no descriptor produces for a list) becomes the empty string rather than
  * a hole. Scalars pass through untouched, including `null`, which the queue reads as "delete this key".
  */
-export function toCellValue(value: YamlValue): CellValue {
+export function toCellValue(value: CellValue): CellValue {
 	if (
 		value === null ||
 		typeof value === 'string' ||
@@ -334,7 +334,6 @@ export function createBasesSource(options: BasesSourceOptions): BasesSource {
 	/** The base context for one row: same environment, that row's path. */
 	const contextFor = (filePath: RowId, field: ResolvedField): FieldContext => ({
 		...field.context,
-		path: filePath,
 	});
 
 	/** Reads the sidecar's `fieldOptions` map: `{ "note.Status": { type: "singleSelect", … } }`. */
@@ -381,7 +380,6 @@ export function createBasesSource(options: BasesSourceOptions): BasesSource {
 			// stores: `definition.name` stays the property name, exactly as `docs/03` §write rules 4 says.
 			const columnName = host.displayName(id) ?? definition.name;
 			const ctx: FieldContext = {
-				path: '',
 				now: env.now,
 				timezone: env.timezone,
 				locale: env.locale,
@@ -473,7 +471,7 @@ export function createBasesSource(options: BasesSourceOptions): BasesSource {
 				// rules 4 — a rename in the `.base` changes what a message calls the column, not the key the
 				// note stores. `getValue` maps the other way, so a caller keeps speaking Bases ids.
 				propertyId: field.definition.name,
-				value: toCellValue(field.descriptor.toYaml(value, field.context)),
+				value: toCellValue(field.descriptor.toJson(value, field.context)),
 			});
 		};
 		switch (op.kind) {
@@ -614,7 +612,7 @@ export function createBasesSource(options: BasesSourceOptions): BasesSource {
 							(candidate) => candidate.definition.id === propertyId,
 						);
 						if (field !== undefined && !field.readOnly) {
-							frontmatter[field.definition.name] = field.descriptor.toYaml(
+							frontmatter[field.definition.name] = field.descriptor.toJson(
 								value,
 								field.context,
 							);

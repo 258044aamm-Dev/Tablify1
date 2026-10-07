@@ -37,7 +37,6 @@ import type { ResolvedField } from '../../src/core/schema/propertySchema';
 import type { GridRowPorts } from '../../src/grid/menus/context';
 
 const CONTEXT: FieldContext = {
-	path: '',
 	now: () => 0,
 	timezone: 'UTC',
 	locale: 'en-GB',

@@ -44,7 +44,6 @@ import type { GridStore } from '../../src/grid/store/types';
 import type { FieldContext } from '../../src/core/types';
 
 const CONTEXT: FieldContext = {
-	path: '',
 	now: () => Date.UTC(2026, 9, 6),
 	timezone: 'UTC',
 	locale: 'en-GB',

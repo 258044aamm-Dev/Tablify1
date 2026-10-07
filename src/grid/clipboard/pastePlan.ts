@@ -353,7 +353,7 @@ export function readAndPlan(
  * sixteen types*, and a table with one row is a table that invites a second. Measured on the frozen registry:
  *
  *     text longText number checkbox date datetime url email phone singleSelect multiSelect rating
- *     currency percent duration attachment        — `toYaml(null) === null` and `parsePlain('') === null`
+ *     currency percent duration attachment        — `toJson(null) === null` and `parsePlain('') === null`
  *
  * So clearing writes a canonical `null` and the write queue deletes the key — `docs/03` §write rules 3,
  * *"Clearing deletes the key rather than writing `\"\"`/`null`"*, and it is the deletion, not a value, that a

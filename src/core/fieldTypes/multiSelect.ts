@@ -1,10 +1,12 @@
 /**
- * `multiSelect` — several labels from the column's option list, stored as a **YAML list of labels**
- * (docs/03 §the mapping table).
+ * `multiSelect` — several values from the column's option list, canonical as a **list of strings**
+ * (`docs/03` §3, the value mapping).
  *
- *     Tags:
- *      - research
- *      - draft
+ * The list is ordered and holds text — in a Markdown note that text is an option's label, because the
+ * label is that model's identity; in a `.tablify` document it is an `opt_…` id, because the document
+ * keeps labels, colours and order in the field's metadata and stores only identity in the cell
+ * (`docs/03` §1). The descriptor itself is identity-agnostic: it treats each entry as an opaque string
+ * and never rewrites one into the other (R3 step 3's documented call).
  *
  * Rules, and why each one exists:
  *
@@ -19,7 +21,7 @@
  *   5. **The clipboard form quotes labels that contain a comma** (see `format/text.ts`), so
  *      `parsePlain(formatPlain(v)) === v` holds even for a label like `Berlin, Mitte`.
  */
-import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, YamlValue } from '../types';
+import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, CellValue } from '../types';
 import { parseFailed, parsed } from '../types';
 import { joinLabelList, splitLabelList } from '../format/text';
 import { registerField } from './registry';
@@ -113,8 +115,8 @@ export const multiSelectField: FieldDescriptor<MultiSelectValue> = {
 
 	parse: (raw: unknown, ctx: FieldContext): Parsed<MultiSelectValue> => readMultiSelect(raw, ctx),
 
-	/** A flat list of scalars: the only YAML shape short of a nested map (see `YamlValue`). */
-	toYaml(value: MultiSelectValue): YamlValue {
+	/** A plain list of strings — one canonical shape, no wrapper and no `undefined` (see `CellValue`). */
+	toJson(value: MultiSelectValue): CellValue {
 		return value;
 	},
 

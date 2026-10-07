@@ -7,7 +7,7 @@
  * lower-casing someone's address is not this plugin's decision — while **matching and grouping fold case**,
  * because the same person writing `Sam@Example.com` and `sam@example.com` means one value.
  */
-import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, YamlValue } from '../types';
+import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, CellValue } from '../types';
 import { parseFailed, parsed } from '../types';
 import { compareNullableText, matchesText, textGroupKey } from '../format/text';
 import { looksLikeEmail } from '../format/validation';
@@ -46,7 +46,7 @@ export const emailField: FieldDescriptor<EmailValue> = {
 
 	parse: (raw: unknown, ctx: FieldContext): Parsed<EmailValue> => readEmail(raw, ctx),
 
-	toYaml(value: EmailValue): YamlValue {
+	toJson(value: EmailValue): CellValue {
 		return value;
 	},
 

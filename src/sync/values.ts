@@ -13,10 +13,10 @@
  *     paste use. A value the column cannot accept is not a conflict and not a crash: it is
  *     {@link RemoteValueProblem}, a sentence, which `diff.ts` reports as a `type-mismatch` and the review dialog
  *     shows with both values so a person can see what arrived.
- *   · **local → remote** starts from `descriptor.toYaml` — *"canonical value → what actually gets written to
+ *   · **local → remote** starts from `descriptor.toJson` — *"canonical value → what actually gets written to
  *     frontmatter"*, which is exactly the same question one provider further out — and then keeps the provider's
  *     own shapes for the four kinds it stores natively (number, boolean, list of text, text). Anything with a
- *     richer YAML shape (a nested object, an `undefined`) is sent as plain text, because a provider that stores
+ *     richer shape (a nested object, an `undefined`) is sent as plain text, because a provider that stores
  *     scalar fields cannot hold structure and inventing a stringification silently would be worse than the rule.
  *
  * Nothing here decides policy: no field is skipped, no value is coerced, and the client's `typecast: false` means
@@ -68,15 +68,15 @@ function isRemoteList(value: unknown): value is readonly string[] {
 /**
  * A local canonical value in the form the provider stores.
  *
- * The order matters: `toYaml` first (so a currency's number and a checkbox's boolean arrive as the numbers and
+ * The order matters: `toJson` first (so a currency's number and a checkbox's boolean arrive as the numbers and
  * booleans they are), then a check that the result is something the provider can hold, then — and only then —
  * plain text. `formatPlain` is the descriptor's own *"the text a spreadsheet reads back unchanged"*, which is the
  * same promise a remote text field needs.
  */
 export function localToRemote(field: ResolvedField, value: CellValue): unknown {
-	const yaml = field.descriptor.toYaml(value, field.context);
-	if (yaml === null || isRemoteScalar(yaml) || isRemoteList(yaml)) {
-		return yaml;
+	const cell = field.descriptor.toJson(value, field.context);
+	if (cell === null || isRemoteScalar(cell) || isRemoteList(cell)) {
+		return cell;
 	}
 	return field.descriptor.formatPlain(value, field.context);
 }

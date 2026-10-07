@@ -36,7 +36,6 @@ import type { ResolvedField } from '../../src/core/schema/propertySchema';
 import type { GridStore } from '../../src/grid/store/types';
 
 const CONTEXT: FieldContext = {
-	path: '',
 	now: () => 0,
 	timezone: 'UTC',
 	locale: 'en-GB',

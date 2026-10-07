@@ -15,7 +15,7 @@
  * Comparisons always go through epoch milliseconds, so `09:30Z` and `03:30Z` compare by the moment, never by
  * their text.
  */
-import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, YamlValue } from '../types';
+import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, CellValue } from '../types';
 import { parseFailed, parsed } from '../types';
 import {
 	canonicalInstantText,
@@ -81,7 +81,7 @@ export const datetimeField: FieldDescriptor<DateTimeValue> = {
 
 	parse: (raw: unknown, ctx: FieldContext): Parsed<DateTimeValue> => readDateTime(raw, ctx),
 
-	toYaml(value: DateTimeValue): YamlValue {
+	toJson(value: DateTimeValue): CellValue {
 		return value;
 	},
 

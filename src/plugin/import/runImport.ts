@@ -36,7 +36,7 @@
 import { frontmatterBody } from '../../adapters/notes/createNote';
 import type { NoteVault } from '../../adapters/notes/createNote';
 import type { ImportPlan, PlannedCollision, PlannedSkip } from '../../core/import/plan';
-import type { YamlValue } from '../../core/types';
+import type { CellValue } from '../../core/types';
 
 /** Notes created per macrotask. See the header for the arithmetic; the number is asserted in the tests. */
 export const CHUNK = 25;
@@ -220,7 +220,7 @@ function undoStepFor(paths: readonly string[]): ImportUndoStep {
  */
 async function createOne(
 	path: string,
-	frontmatter: Readonly<Record<string, YamlValue>>,
+	frontmatter: Readonly<Record<string, CellValue>>,
 	vault: ImportVault,
 	folder: string,
 ): Promise<string | null> {

@@ -5,27 +5,26 @@
  */
 
 /**
- * The canonical cell value.
+ * The canonical cell value — the one value vocabulary this project has, and the shape a `.tablify`
+ * document stores (R3 step 3).
  *
- * `null` means "no value" — the same thing as an absent frontmatter key, because clearing a property
- * *deletes* it rather than writing `""`/`null` (docs/03 §frontmatter write rules). A field type's own
- * canonical value is a subset of this union: `text` is `string | null`, `checkbox` is `boolean | null`.
+ * `null` means "no value", and it is **not** the same thing as `false`, `0`, `""` or `[]`: clearing a
+ * cell is `null`, and every falsy value that a field type can really hold stays itself (ADR-0004's
+ * matrix). A field type's own canonical value is a subset of this union: `text` is `string | null`,
+ * `checkbox` is `boolean | null`, a `link` is `string | string[] | null`.
+ *
+ * Lists are lists of **strings** — option ids, row ids, vault-relative attachment paths — because the
+ * three list-valued types all hold identifiers or addresses, never mixtures. A scalar-only list shape
+ * (`readonly (string | number | boolean | null)[]`) belonged to the YAML era and is gone: the document
+ * writes this union, and `CanonicalCell` in `core/database/values.ts` is deliberately the same union,
+ * asserted as mutually assignable in `tests/unit/value-vocabulary.test.ts`.
+ *
+ * Nothing here says *how* a value is spelled in a file. A `.tablify` document writes it as JSON; a
+ * Markdown note's frontmatter writes a scalar or a flat list as YAML, which is the note path's own
+ * business (R6 removes that path). The descriptors no longer carry a YAML conversion — see
+ * {@link FieldDescriptor.toJson}.
  */
 export type CellValue = string | number | boolean | null | readonly string[];
-
-/** A YAML-safe scalar: the only shapes a canonical value may reach frontmatter as. */
-export type YamlScalar = string | number | boolean | null;
-
-/** A YAML-safe list of scalars. `undefined` is never a member: YAML has no such value. */
-export type YamlList = readonly YamlScalar[];
-
-/**
- * Exactly what `toYaml` may return: a scalar, a flat list of scalars, or `null` for "write nothing" (the
- * write queue deletes the key). Never an object and never `undefined` — a value from a cell has one
- * machine-readable spelling, and the `longText` block-scalar style is derived from the text itself by the
- * serializer rather than carried on the value.
- */
-export type YamlValue = YamlScalar | YamlList;
 
 /** A property id is a Bases id, prefixed by its source: `file.name`, `note.Status`, `formula.Total`. */
 export type PropertyId = string;
@@ -136,7 +135,19 @@ export function parseFailed(error: string, raw: unknown): Parsed<never> {
 	return { ok: false, error, raw };
 }
 
-/** One select option. Identity is the `name` (the value frontmatter stores); `id` and `color` are presentation. */
+/**
+ * One select option, as the descriptor vocabulary has always carried it: `{ id, name, color? }`.
+ *
+ * **Two identities, and the rule that separates them (R3 step 3's documented call).** In a `.tablify`
+ * document the option's **id** is identity: a cell holds `opt_…`, and `name`/`color`/order live in the
+ * field's metadata, so renaming or recolouring an option rewrites no cell (`core/database/fields.ts`
+ * says the same thing from the document's side — see `SelectOption`). On a Markdown note's frontmatter
+ * the **label** is identity, because that is the only thing a note can spell, and it must stay that way
+ * while that path still runs: the note model lets a person type a brand-new option, so mapping labels to
+ * ids there would either invent ids for labels no metadata knows (silently mutating the data) or drop the
+ * value (worse). R6 deletes the note path; until then the label is an opaque string to every descriptor
+ * and the document's id identity is the destination.
+ */
 export type FieldOption = {
 	readonly id: string;
 	readonly name: string;
@@ -178,10 +189,16 @@ export type StandardSchemaV1<TInput = unknown, TOutput = TInput> = {
 	};
 };
 
-/** Everything a descriptor may know about the world that is not the value itself. */
+/**
+ * Everything a descriptor may know about the world that is not the value itself.
+ *
+ * There is deliberately **no path** here (R3 step 3). A descriptor answers questions about a value and
+ * its column; where a cell's bytes live — a document path, a note path, a Base's sidecar — is the
+ * repository's or the view's knowledge, and passing it in was how a pure field type ended up able to
+ * resolve a file. Attachment *existence* and link *labels* are resolved by the adapter/view through a
+ * read-only lookup; the core stores a vault-relative path or a row id and nothing more.
+ */
 export type FieldContext = {
-	/** Vault-relative path of the note the value belongs to: `Projects/Widening.md`. */
-	readonly path: string;
 	/** Current time, epoch milliseconds. A function so a long-lived render cannot hold a stale clock. */
 	readonly now: () => number;
 	/** IANA zone used when rendering an instant: `Asia/Dhaka`. */
@@ -211,11 +228,21 @@ export interface FieldDescriptor<TValue = CellValue> {
 	/** The value a newly created cell holds before anyone types. */
 	readonly defaultValue: TValue;
 
-	/** Canonical value from a frontmatter-ish input. Never throws; returns a tagged error. */
+	/**
+	 * Canonical value from an untrusted input: a value read from a file (a document cell, a note's
+	 * frontmatter), a pasted cell or an import cell. Never throws; returns a tagged error.
+	 */
 	parse(raw: unknown, ctx: FieldContext): Parsed<TValue>;
 
-	/** Canonical value → what actually gets written to frontmatter. */
-	toYaml(value: TValue, ctx: FieldContext): YamlValue;
+	/**
+	 * Canonical value → the value a document stores, in the one canonical vocabulary (R3 step 3).
+	 *
+	 * For most types this is the identity, which is the point: the document stores what the field type
+	 * calls the value, so there is no second encoding to keep in step and no YAML shape to translate.
+	 * `null` answers "nothing to write" — a document omits the key. Never an object and never
+	 * `undefined`: one value, one machine-readable spelling.
+	 */
+	toJson(value: TValue, ctx: FieldContext): CellValue;
 
 	/** Canonical value → what the cell shows. */
 	formatDisplay(value: TValue, ctx: FieldContext): string;

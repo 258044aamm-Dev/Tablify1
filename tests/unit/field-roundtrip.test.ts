@@ -1,7 +1,7 @@
 /**
  * The round-trip table: one entry per type, covering the shapes a real vault contains.
  *
- * What it proves, for every case in the table: `parse` → `toYaml` → `parse` is stable, and the YAML form is
+ * What it proves, for every case in the table: `parse` → `toJson` → `parse` is stable, and the YAML form is
  * stable too (a second cycle writes byte-identical frontmatter, which is what keeps a no-op edit from
  * touching a note). It then renders both display forms and asserts the two things a cell must never show:
  * `undefined`, `NaN` or `[object Object]`.
@@ -310,11 +310,11 @@ describe('every type round-trips through frontmatter', () => {
 
 					results.push({ id: table.id, label: testCase.label, outcome: 'round-trip' });
 					const value = first.value;
-					const yaml = field.toYaml(value, table.ctx);
+					const yaml = field.toJson(value, table.ctx);
 					const second = field.parse(yaml, table.ctx);
 					expect(
 						second.ok,
-						`${table.id}: parse(toYaml(parse(${testCase.label}))) failed`,
+						`${table.id}: parse(toJson(parse(${testCase.label}))) failed`,
 					).toBe(true);
 					if (second.ok) {
 						expect(
@@ -322,7 +322,7 @@ describe('every type round-trips through frontmatter', () => {
 							`${table.id}: the round-trip changed ${testCase.label}`,
 						).toEqual(value);
 						expect(
-							field.toYaml(second.value, table.ctx),
+							field.toJson(second.value, table.ctx),
 							`${table.id}: YAML is not stable`,
 						).toEqual(yaml);
 					}

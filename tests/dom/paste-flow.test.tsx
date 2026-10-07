@@ -35,7 +35,6 @@ import type { RowId, RowState } from '../../src/core/ops/types';
 Object.assign(window, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const CONTEXT: FieldContext = {
-	path: '',
 	now: () => Date.UTC(2026, 9, 6),
 	timezone: 'UTC',
 	locale: 'en-GB',

@@ -268,7 +268,6 @@ describe('the long-press session', () => {
 /* ── the grid, wearing it ─────────────────────────────────────────────────────────────────────────────── */
 
 const CONTEXT: FieldContext = {
-	path: '',
 	now: () => 0,
 	timezone: 'UTC',
 	locale: 'en-GB',

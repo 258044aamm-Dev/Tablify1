@@ -3,12 +3,13 @@
  *
  * **The divergence, stated once and asserted in `tests/unit/field-roundtrip.test.ts`:**
  * this plugin stores `25` for 25 %. The upstream schema stores `0.25` for 25 % and multiplies by 100 to
- * render. The stored number here is therefore the number a person reads: opening the note in a text editor
- * shows `progress: 25`, which is the whole point of "frontmatter must stay human-readable and
- * hand-editable" (docs/03 §the mapping table). Sync maps between the two conventions (step 26); nothing
- * else scales, and `parse(0.25)` means a quarter of one percent — never 25 %.
+ * render. The stored number here is therefore the number a person reads: opening the document shows
+ * `25`, and a Markdown note (while that path still runs) shows `progress: 25` — which is the whole point
+ * of "values must stay human-readable and hand-editable" (docs/03 §3, the value mapping). Sync maps
+ * between the two conventions (step 26); nothing else scales, and `parse(0.25)` means a quarter of one
+ * percent — never 25 %.
  */
-import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, YamlValue } from '../types';
+import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, CellValue } from '../types';
 import { parseFailed, parsed } from '../types';
 import {
 	compareNullableNumbers,
@@ -50,7 +51,7 @@ export const percentField: FieldDescriptor<PercentValue> = {
 		return parseFailed('a percentage is expected here', raw);
 	},
 
-	toYaml(value: PercentValue): YamlValue {
+	toJson(value: PercentValue): CellValue {
 		return value;
 	},
 

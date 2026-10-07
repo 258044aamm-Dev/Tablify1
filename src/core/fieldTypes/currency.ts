@@ -1,12 +1,12 @@
 /**
  * `currency` — a number whose symbol and precision are **render-only** (docs/03 §the mapping table).
  *
- * `toYaml` writes the bare number, because a symbol belongs to the view, not to the note: changing `$` to
+ * `toJson` writes the bare number, because a symbol belongs to the view, not to the note: changing `$` to
  * `€` in `fieldOptions` must not rewrite a single file. The symbol is prefixed with the sign in front of it
  * (`-$5.00`); placement is not localised, because a symbol is not a currency code and `Intl`'s currency
  * style needs one. That is a deliberate simplification, recorded here and in PROGRESS.md.
  */
-import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, YamlValue } from '../types';
+import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, CellValue } from '../types';
 import { parseFailed, parsed } from '../types';
 import {
 	compareNullableNumbers,
@@ -82,7 +82,7 @@ export const currencyField: FieldDescriptor<CurrencyValue> = {
 		return parseFailed('an amount is expected here', raw);
 	},
 
-	toYaml(value: CurrencyValue): YamlValue {
+	toJson(value: CurrencyValue): CellValue {
 		return value;
 	},
 

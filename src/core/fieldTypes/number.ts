@@ -1,11 +1,13 @@
 /**
- * `number` — a plain decimal, stored as a YAML number (docs/03 §the mapping table).
+ * `number` — a plain decimal. The canonical value is a finite JSON number (`docs/03` §3, the value
+ * mapping); how a file spells it is the boundary's business, and a `.tablify` document spells it as that
+ * same number.
  *
  * Display groups digits in the vault's locale; the clipboard and export do not, so a copied value pastes
  * back as the same number in any spreadsheet. Precision is never trimmed for display: the cell may be too
  * narrow to show every digit, but the value it shows is the value that is stored.
  */
-import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, YamlValue } from '../types';
+import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, CellValue } from '../types';
 import { parseFailed, parsed } from '../types';
 import {
 	compareNullableNumbers,
@@ -46,7 +48,7 @@ export const numberField: FieldDescriptor<NumberValue> = {
 
 	parse: (raw: unknown, ctx: FieldContext): Parsed<NumberValue> => readNumber(raw, ctx),
 
-	toYaml(value: NumberValue): YamlValue {
+	toJson(value: NumberValue): CellValue {
 		return value;
 	},
 

@@ -1,20 +1,17 @@
 /**
- * `longText` — text with newlines, written as a YAML block scalar (docs/03 §the mapping table).
+ * `longText` — text with newlines, canonical as a **JSON string** (`docs/03` §3: *“Preserve exact
+ * content; long text may contain newlines”*).
  *
- * The difference from `text` is not the editor, it is the **file**: a long value becomes
- *
- *     Notes: |-
- *       First line
- *       Second line
- *
- * because a block scalar is what a person can read and edit in a note, and a quoted scalar with `\n` escapes
- * is what they cannot. A short value stays a plain scalar. The style choice travels on the value as a
- * {@link YamlTextNode}, so the write queue emits the decision this type made rather than re-guessing it.
+ * The difference from `text` is the editor and the newlines, not the encoding. A Markdown note may
+ * present a multi-line value as a YAML block scalar because that is what a person can read and edit
+ * there — but that choice is a *function of the text* (does it contain a newline?) and it belongs to
+ * whoever writes the note, not to this value: the descriptor hands over one string, and the note path
+ * decides how to spell it. A `.tablify` document spells it as an ordinary JSON string with `\n`.
  *
  * A value that is only whitespace is `null`: an empty long-text cell means "no value", never a block scalar
  * full of spaces. Interior whitespace and newlines are preserved exactly.
  */
-import type { FieldDescriptor, FilterOpId, Parsed, YamlValue } from '../types';
+import type { FieldDescriptor, FilterOpId, Parsed, CellValue } from '../types';
 import { parseFailed, parsed } from '../types';
 import { compareNullableText, matchesText, textGroupKey } from '../format/text';
 import { registerField } from './registry';
@@ -50,12 +47,13 @@ export const longTextField: FieldDescriptor<LongTextValue> = {
 	/**
 	 * The text itself — a plain string, never a style wrapper.
 	 *
-	 * docs/03 says a multi-line value is written as a YAML block scalar; that choice is a *function of the
-	 * value* (it contains a newline), so the serializer derives it when it writes (step 12) instead of the
-	 * value carrying a flag. Keeping it out of `YamlValue` is also what lets `parse(toYaml(v))` work: the
-	 * write form is one of the shapes `parse` reads.
+	 * A note's frontmatter may carry a multi-line value as a YAML block scalar (docs/03 §the mapping
+	 * table, about notes); that choice is a *function of the value* (it contains a newline), so the note
+	 * writer derives it when it writes instead of the value carrying a flag. Keeping the style out of
+	 * `CellValue` is also what lets `parse(toJson(v))` work: the stored form is one of the shapes `parse`
+	 * reads.
 	 */
-	toYaml(value: LongTextValue): YamlValue {
+	toJson(value: LongTextValue): CellValue {
 		return value;
 	},
 

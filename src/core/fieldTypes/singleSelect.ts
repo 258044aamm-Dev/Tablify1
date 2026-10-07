@@ -1,6 +1,12 @@
 /**
- * `singleSelect` — one label from the column's option list, stored as the label text (docs/03 §the mapping
- * table: the option's **identity is the label**, so a note says `Status: Doing` and not `Status: opt_3`).
+ * `singleSelect` — one value from the column's option list, canonical as a **string** (`docs/03` §3).
+ *
+ * Which string, exactly, is the one thing to be careful about, and `types.ts` §`FieldOption` states the
+ * rule in full: a `.tablify` document stores the option **id** (`opt_…`, with labels and colours in the
+ * field's metadata), while a Markdown note's frontmatter stores the **label** because a note cannot spell
+ * anything else. This descriptor treats the string as opaque and works in whichever spelling it is
+ * handed: it canonicalises against `ctx.fieldOptions` to keep one spelling per option and never invents
+ * an id or a label of its own.
  *
  * Three rules, and the reasoning for each:
  *
@@ -10,13 +16,13 @@
  *   2. **A known label is canonicalised to the list's spelling.** If the list says `Doing` and the file says
  *      `doing`, the value becomes `Doing` — one option, not two that differ only in case. Without this,
  *      grouping by a select column would show `Doing` and `doing` as separate groups forever.
- *   3. **Identity is exact, so the round-trip is exact.** `toYaml` writes the label as it stands, and
- *      `parse` of that label is that label — which is what `parse(toYaml(v)) === v` requires.
+ *   3. **Identity is exact, so the round-trip is exact.** `toJson` writes the label as it stands, and
+ *      `parse` of that label is that label — which is what `parse(toJson(v)) === v` requires.
  *
  * Colours and order live in `fieldOptions`, which is the `.base` sidecar's business, not the note's; a label
  * moved or recoloured rewrites no files.
  */
-import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, YamlValue } from '../types';
+import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, CellValue } from '../types';
 import { parseFailed, parsed } from '../types';
 import { compareNullableText, matchesText, textGroupKey } from '../format/text';
 import { registerField } from './registry';
@@ -27,8 +33,10 @@ export type SingleSelectValue = string | null;
 /**
  * The option names configured for this column, in the order the option manager shows them.
  *
- * `fieldOptions.options` is a list of `{ id, name, color? }`, and **`name` is the identity** — the value
- * frontmatter stores — while `id` and `color` are presentation (see `types.ts`).
+ * `fieldOptions.options` is a list of `{ id, name, color? }`. Which of `id`/`name` is identity depends on
+ * where the value is stored — the document says `id`, a note says `name` (see `types.ts` §`FieldOption`)
+ * — so this helper resolves the *names*, which is the vocabulary a note path and this descriptor's
+ * canonicalisation both need.
  */
 export function optionNamesFor(ctx: FieldContext): readonly string[] {
 	return (ctx.fieldOptions.options ?? []).map((option) => option.name);
@@ -90,7 +98,7 @@ export const singleSelectField: FieldDescriptor<SingleSelectValue> = {
 	parse: (raw: unknown, ctx: FieldContext): Parsed<SingleSelectValue> =>
 		readSingleSelect(raw, ctx),
 
-	toYaml(value: SingleSelectValue): YamlValue {
+	toJson(value: SingleSelectValue): CellValue {
 		return value;
 	},
 

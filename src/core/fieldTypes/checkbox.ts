@@ -1,5 +1,5 @@
 /**
- * `checkbox` — a YAML boolean (docs/03 §the mapping table).
+ * `checkbox` — a `true`/`false` value, canonical as a JSON boolean (`docs/03` §3, the value mapping).
  *
  * Three states exist even though the editor shows two: `true`, `false`, and `null` for "nobody has decided
  * yet". `formatDisplay` shows them as `Yes`/`No`/empty so a text context can tell `false` from unset, while
@@ -8,7 +8,7 @@
  * Pasting is forgiving on purpose (`docs/01` §import): `true/false`, `yes/no`, `y/n`, `1/0` and the
  * checkmark all read as answers, because a checkbox column arriving from a spreadsheet is full of all five.
  */
-import type { FieldDescriptor, FilterOpId, Parsed, YamlValue } from '../types';
+import type { FieldDescriptor, FilterOpId, Parsed, CellValue } from '../types';
 import { parseFailed, parsed } from '../types';
 import { registerField } from './registry';
 
@@ -62,7 +62,7 @@ export const checkboxField: FieldDescriptor<CheckboxValue> = {
 
 	parse: (raw: unknown): Parsed<CheckboxValue> => readCheckbox(raw),
 
-	toYaml(value: CheckboxValue): YamlValue {
+	toJson(value: CheckboxValue): CellValue {
 		return value;
 	},
 

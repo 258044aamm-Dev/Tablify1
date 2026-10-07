@@ -61,7 +61,6 @@ const FIXED_NOW = 1_758_695_200_000;
 export function makeContext(overrides: Partial<FieldContext> = {}): FieldContext {
 	const clock = createFakeClock(FIXED_NOW);
 	return {
-		path: 'Projects/Widening.md',
 		now: () => clock.now(),
 		timezone: 'UTC',
 		locale: 'en-GB',
@@ -124,7 +123,7 @@ export type FieldFixture<TValue> = {
 	readonly ctx: FieldContext;
 };
 
-/** Thrown when a value reaching `toYaml` is not a YAML-safe shape. */
+/** Thrown when a value reaching `toJson` is not a YAML-safe shape. */
 function yamlProblem(value: unknown, path: string, depth: number): string | undefined {
 	if (value === null || typeof value === 'string' || typeof value === 'boolean') {
 		return undefined;
@@ -158,7 +157,7 @@ function sign(value: number): -1 | 0 | 1 {
 /**
  * Asserts the whole contract for one descriptor. Call inside a `describe`, at collection time.
  *
- * Covers: display and plain-text round-trips for every fixture value; `toYaml` returning YAML-safe shapes;
+ * Covers: display and plain-text round-trips for every fixture value; `toJson` returning YAML-safe shapes;
  * `compare` being a total order whose zero agrees with `groupKey`; every declared filter operator having a
  * case and producing the expected boolean; and `parse` surviving the hostile table without throwing.
  */
@@ -209,17 +208,17 @@ export function runFieldContractSuite<TValue extends CellValue>(
 		});
 
 		it('the default value is itself a canonical value', () => {
-			const back = field.parse(field.toYaml(field.defaultValue, ctx), ctx);
+			const back = field.parse(field.toJson(field.defaultValue, ctx), ctx);
 			expect(back.ok || field.defaultValue === null).toBe(true);
 			if (back.ok) {
 				expect(back.value).toEqual(field.defaultValue);
 			}
 		});
 
-		it('toYaml returns only YAML-safe shapes', () => {
+		it('toJson returns only YAML-safe shapes', () => {
 			for (const value of fixture.values) {
-				const yaml = field.toYaml(value, ctx);
-				const problem = yamlProblem(yaml, `toYaml(${JSON.stringify(value)})`, 0);
+				const yaml = field.toJson(value, ctx);
+				const problem = yamlProblem(yaml, `toJson(${JSON.stringify(value)})`, 0);
 				if (problem !== undefined) {
 					throw new Error(problem);
 				}

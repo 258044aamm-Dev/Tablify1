@@ -26,7 +26,7 @@
  * use the fallback everywhere" — is why `mode: 'menu'` degrades to `direct` (and says so) rather than
  * throwing: the spike's runtime row is still PENDING-RUN.
  */
-import type { CellValue, YamlList, YamlValue } from '../../core/types';
+import type { CellValue } from '../../core/types';
 import type { ResolvedField } from '../../core/schema/propertySchema';
 
 /** A file the service created, as the parts the rest of the plugin needs. */
@@ -72,7 +72,7 @@ export type CreateNoteOptions = {
 	readonly template: string;
 	/** Canonical values, keyed by prefixed property id. */
 	readonly values: Readonly<Record<string, CellValue>>;
-	/** The columns, so `toYaml` and the "non-default" rule come from the registry, never duplicated here. */
+	/** The columns, so `toJson` and the "non-default" rule come from the registry, never duplicated here. */
 	readonly fields: readonly ResolvedField[];
 	/** Where the values' leading property comes from in the filename: `note.Name` by default. */
 	readonly primaryFieldId?: string;
@@ -176,8 +176,8 @@ function joinPath(folder: string, name: string): string {
 }
 
 /** The frontmatter a new note gets: only the columns whose value differs from the column's default. */
-export function frontmatterFor(options: CreateNoteOptions): Record<string, YamlValue> {
-	const frontmatter: Record<string, YamlValue> = {};
+export function frontmatterFor(options: CreateNoteOptions): Record<string, CellValue> {
+	const frontmatter: Record<string, CellValue> = {};
 	for (const field of options.fields) {
 		if (field.readOnly) {
 			continue;
@@ -189,7 +189,7 @@ export function frontmatterFor(options: CreateNoteOptions): Record<string, YamlV
 		if (value === field.descriptor.defaultValue) {
 			continue;
 		}
-		frontmatter[field.definition.name] = field.descriptor.toYaml(value, field.context);
+		frontmatter[field.definition.name] = field.descriptor.toJson(value, field.context);
 	}
 	return frontmatter;
 }
@@ -279,10 +279,10 @@ export async function createNote(options: CreateNoteOptions): Promise<CreateNote
 
 /**
  * A note's text: the YAML block, then nothing. Written by hand rather than by a YAML library — the same
- * rule the note says about `toYaml`: values that need quoting are quoted, everything else is written as a
+ * rule the note says about `toJson`: values that need quoting are quoted, everything else is written as a
  * person would type it, and an empty property map produces no frontmatter block at all.
  */
-export function frontmatterBody(frontmatter: Readonly<Record<string, YamlValue>>): string {
+export function frontmatterBody(frontmatter: Readonly<Record<string, CellValue>>): string {
 	const entries = Object.entries(frontmatter);
 	if (entries.length === 0) {
 		return '';
@@ -292,26 +292,39 @@ export function frontmatterBody(frontmatter: Readonly<Record<string, YamlValue>>
 }
 
 /** Is this value a list? A type predicate, because `Array.isArray` does not narrow a `readonly` array. */
-function isList(value: YamlValue): value is YamlList {
+function isList(value: CellValue): value is readonly string[] {
 	return typeof value === 'object' && value !== null;
 }
 
 /**
- * One YAML scalar or list, on one line where it fits. The parameter is `YamlValue` — exactly what a
- * descriptor's `toYaml` may return — so the last branch is a real string and not an `unknown` happening to
+ * One YAML scalar or list, on one line where it fits. The parameter is `CellValue` — exactly what a
+ * descriptor's `toJson` may return — so the last branch is a real string and not an `unknown` happening to
  * stringify well.
  */
-function serializeScalar(value: YamlValue): string {
+function serializeScalar(value: CellValue): string {
 	if (value === null) {
 		return 'null';
 	}
 	if (isList(value)) {
-		return `[${value.map((entry) => serializeScalar(entry)).join(', ')}]`;
+		// A list element is always text in the canonical vocabulary (an option id, a row id, a path), so
+		// the list is a list of quoted-or-plain strings.
+		return `[${value.map((entry) => serializeText(entry)).join(', ')}]`;
 	}
 	if (typeof value === 'number' || typeof value === 'boolean') {
 		return String(value);
 	}
-	const text = value;
+	return serializeText(value);
+}
+
+/**
+ * One YAML scalar, quoted exactly when a plain scalar would change meaning.
+ *
+ * This is the note path's own serializer, not a general YAML writer, and it is the R6-deleted half of
+ * the pair (R3 step 3): the document writes JSON through `core/database/values.ts`. What matters here is
+ * that the descriptors no longer carry a YAML conversion at all — the note path turns canonical values
+ * into YAML text at its own boundary.
+ */
+function serializeText(text: string): string {
 	// Quote when a plain scalar would change meaning: empty, leading/trailing space, or a character that
 	// starts a YAML structure. This mirrors what the field types produce; it is not a general YAML writer.
 	if (text === '' || /^[\s]|[\s]$|\n|:\s|^[-?*&!%@`>|#'"[{]|^- /.test(text)) {

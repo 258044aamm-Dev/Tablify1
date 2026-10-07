@@ -7,12 +7,12 @@
  *
  * The measured answer is *all sixteen delete, none writes*, and the reason it is a table with one row is worth
  * stating here rather than in prose: the clear path carries a canonical `null` (`core/ops/apply.ts` §`clearCells`),
- * each descriptor's `toYaml` is the identity, and the write queue turns a `null` value into `delete
+ * each descriptor's `toJson` is the identity, and the write queue turns a `null` value into `delete
  * frontmatter[key]` (`src/adapters/writeQueue.ts` §`mutateWith`). The three types that could plausibly have
  * needed a representation — `checkbox` → `false`, `multiSelect` → `[]`, `rating` → `0` — all render an absent key
  * as exactly the state a cleared cell means (unchecked, empty list, no stars).
  *
- * **This file is the guard, not the documentation.** The invariant is `toYaml(null) === null` for every
+ * **This file is the guard, not the documentation.** The invariant is `toJson(null) === null` for every
  * registered descriptor, and the escape hatch is deliberate: a new field type that *does* require a value on
  * clear fails the first test with its own id in the message, and the fix is to teach the clear path about it —
  * rather than to loosen the test. The second test asserts the other half of the same contract, which is what a
@@ -28,7 +28,6 @@ import '../../src/core/fieldTypes/index';
 
 /** A context for the calls: the descriptors that need one read only these fields (the fixture's own shape). */
 const CONTEXT: FieldContext = {
-	path: '',
 	now: () => Date.UTC(2026, 9, 6),
 	timezone: 'UTC',
 	locale: 'en-GB',
@@ -49,10 +48,10 @@ describe('clearing a cell', () => {
 		expect(allFields().length).toBe(16);
 	});
 
-	it('deletes the key for every registered type: `toYaml(null)` is `null`', () => {
+	it('deletes the key for every registered type: `toJson(null)` is `null`', () => {
 		for (const field of allFields()) {
 			expect(
-				field.toYaml(null, CONTEXT),
+				field.toJson(null, CONTEXT),
 				`${field.id}: a cleared cell must delete the key, so its write form of null must be null`,
 			).toBeNull();
 		}
@@ -62,8 +61,8 @@ describe('clearing a cell', () => {
 		for (const [id, representation] of Object.entries(WOULD_HAVE_WRITTEN)) {
 			const field = allFields().find((candidate) => candidate.id === id);
 			expect(field, `${id} is in the registry`).toBeDefined();
-			expect(field?.toYaml(null, CONTEXT)).not.toEqual(representation);
-			expect(field?.toYaml(null, CONTEXT)).toBeNull();
+			expect(field?.toJson(null, CONTEXT)).not.toEqual(representation);
+			expect(field?.toJson(null, CONTEXT)).toBeNull();
 		}
 	});
 

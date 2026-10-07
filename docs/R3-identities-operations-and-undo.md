@@ -33,9 +33,11 @@ The audit deliverable landed with it, and it is a gate rather than a paragraph:
 (`filePath`, `PropertyId`, `propertyId`, `YamlValue`, `toYaml`, `RowSource`, `processFrontMatter`,
 `metadataCache`, `getFileCache`), classifies every match by an explicit rule table, and **fails** when
 a file with matches has no class. The committed report is
-[`docs/audit/R3-identity-inventory.md`](audit/R3-identity-inventory.md): 104 files, 1315 occurrences,
-`replace` 808 / `historical` 482 / `host-path` 11 / `remote-record-id` 10 / `guard` 4, and **zero**
-inside the R2 native path. `tests/unit/r3-inventory.test.ts` holds the report to the tree byte for
+[`docs/audit/R3-identity-inventory.md`](audit/R3-identity-inventory.md), regenerated from the tree at
+each step. Its numbers move *because R3 is landing*, which is the point: 1205 occurrences at step 3
+(48 `replace` files, 727 occurrences; 463 `historical`; 8 `guard`; 7 `remote-record-id`; `host-path`
+now **empty** — it held `src/adapters/notes/createNote.ts` through that file's `toYaml`/`YamlValue`
+matches, and step 3 removed those names, see below), and **zero** inside the R2 native path. `tests/unit/r3-inventory.test.ts` holds the report to the tree byte for
 byte, asserts every class is used and the native path stays clean, so the numbers in this paragraph
 cannot drift from the code while the rest of R3 is implemented.
 
@@ -95,7 +97,50 @@ regenerated from the tree and the marker was reworded rather than the report bei
 - Query stable-sort tie-break uses stable `RowId`, not path/name. The row-order ADR determines any manual ordering key.
 - Keep Obsidian file paths only at explicit host boundaries for `.tablify` addressing and attachment resolution.
 
-### Step 3 — Replace YAML/frontmatter value conversion
+### Step 3 — Replace YAML/frontmatter value conversion ✅ landed
+
+**What landed, in one sentence:** the field descriptors speak the document's canonical JSON and nothing
+else; the YAML vocabulary is gone from `src/**`; and a descriptor can no longer address a file.
+
+- **`toYaml` → `toJson`.** The contract method on `FieldDescriptor` (`src/core/types.ts`) now returns
+  `CellValue` — the canonical value — instead of a YAML shape, and the three YAML value aliases
+  (`YamlScalar`, `YamlList`, `YamlValue`) are deleted. All sixteen registered descriptors and the
+  read-only file-time column in `core/schema/propertySchema.ts` were renamed with it; the call sites
+  (`core/import/plan.ts`, `adapters/notes/createNote.ts`, `adapters/bases/BasesSource.ts`,
+  `sync/values.ts`) hand the value to the host's frontmatter writer, which serializes it as YAML at
+  that boundary. Where the conversion was already the identity it is now *literally* the identity:
+  most descriptors return their value unchanged.
+- **One vocabulary, asserted.** `tests/unit/value-vocabulary.test.ts` proves `CellValue` and
+  `CanonicalCell` (`core/database/values.ts`) are mutually assignable, so the descriptor layer and the
+  document codec cannot drift; and for every registered type it feeds a sample of canonical values
+  through `toJson` into `encodeCell`, asserting the document accepts every one of them.
+- **`parsePlain`/`formatPlain` stay.** Both remain on the contract and are asserted present, because
+  clipboard and spreadsheet interchange is a *text* format and never went through YAML.
+- **`FieldContext.path` is gone.** The property was declared and read by nothing (it carried the note's
+  path), so removing it deleted one line from the type and one property from every construction site —
+  including `adapters/bases/BasesSource.ts`, which passed the row's file path in for no reader. A
+  descriptor cannot address a file any more; attachment existence and link labels resolve in the
+  adapter/view. Asserted at the type level and as a runtime key check.
+- **Numeric conventions held.** `percent` still stores percent points (`25` is 25 %) and `duration`
+  still stores seconds, with the column's `unit` remaining an input convention only; both are asserted
+  through the descriptor *and* through the document codec in the same test file.
+- **The inventory's `host-path` class emptied, and the report says so.** Its only member was
+  `src/adapters/notes/createNote.ts`, matched through that file's YAML vocabulary rather than through a
+  path; the class and its rule stay, and the guard test now names the one class a step emptied instead
+  of pretending all five still have members.
+
+**The select-identity call, recorded.** The step's bullet — *"move select option label/color/order into
+field metadata and store cell option IDs"* — is **landed in the document half** (R1: `SelectOption` in
+`core/database/fields.ts`, `opt_…` ids in `values.ts`, labels/colours/order in the field's settings) and
+proven by this step's tests: a fixture document holds an `opt_…` id in the cell, the label and colour
+come from the field, renaming the option leaves every cell byte-identical, and a *label* written where an
+id belongs becomes a preserved invalid cell rather than a silent repair. What this step deliberately does
+**not** do is change the note path's label identity. A note's frontmatter can only spell a label, and the
+note model lets a person type a brand-new option no metadata knows: mapping labels to ids there would
+either invent ids for unseen labels (silently mutating the user's data) or drop the value. So the label
+stays the string on that path, every descriptor treats it as opaque, and the rule is stated once in
+`types.ts` §`FieldOption` for whoever touches either side. R6 deletes the note path; the document's id
+identity is the destination.
 
 - Replace descriptor `toYaml` with JSON-compatible encode/decode or direct canonical JSON values where sufficient.
 - Preserve `parsePlain`/`formatPlain` for clipboard/spreadsheet interchange; their text semantics do not depend on YAML.

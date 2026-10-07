@@ -103,7 +103,7 @@ function writeWrites(store: GridStore, writes: readonly CellWrite[], label: stri
  * 400-cell clear is the shape of a 400-cell paste.
  *
  * **Which types write something on clear: none of them.** The op carries a canonical `null` per cell
- * (`core/ops/apply.ts` §`clearCells`), every descriptor's `toYaml` is the identity — so `null` stays `null` —
+ * (`core/ops/apply.ts` §`clearCells`), every descriptor's `toJson` is the identity — so `null` stays `null` —
  * and the queue turns that into a deleted key (`src/adapters/writeQueue.ts` §`mutateWith`, `docs/03` §write
  * rules 3). `checkbox` → `false`, `multiSelect` → `[]` and `rating` → `0` are the three that could plausibly
  * have needed a representation, and all three delete instead: an absent key renders as an unchecked box, an

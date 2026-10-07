@@ -47,20 +47,20 @@ describe('every marker is classified', () => {
 		expect(inventory.unclassified).toEqual([]);
 	});
 
-	it('uses every class the report documents', () => {
+	it('uses every class the report documents, and empties only the one R3 step 3 emptied', () => {
 		const used = new Set(inventory.files.map((file) => inventory.classOf(file.path)));
-		expect([...used].sort()).toEqual([
-			'guard',
-			'historical',
-			'host-path',
-			'remote-record-id',
-			'replace',
-		]);
+		// `host-path` is the one class a step may empty, and step 3 did: `src/adapters/notes/` was its
+		// only member, and it matched there through the YAML vocabulary (`toYaml`/`YamlValue`) rather
+		// than through a path. When those names went, the class had no members left — which is a fact
+		// about the tree, not a hole in the taxonomy: a host-path match is still classified here, and
+		// the report's own per-class counts are where emptiness shows up.
+		expect([...used].sort()).toEqual(['guard', 'historical', 'remote-record-id', 'replace']);
 		expect(inventory.classOf('src/adapters/bases/BasesSource.ts')).toBe('replace');
 		expect(inventory.classOf('src/adapters/notes/createNote.ts')).toBe('host-path');
 		expect(inventory.classOf('src/sync/pullPush.ts')).toBe('remote-record-id');
 		expect(inventory.classOf('tests/fakes/rowSource.ts')).toBe('historical');
 		expect(inventory.classOf('tests/unit/view-state.test.ts')).toBe('guard');
+		expect(inventory.classOf('tests/unit/value-vocabulary.test.ts')).toBe('guard');
 	});
 
 	it('classifies the native path as native, marker-free or not', () => {

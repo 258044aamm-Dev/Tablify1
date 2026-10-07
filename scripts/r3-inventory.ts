@@ -126,6 +126,11 @@ export const RULES: readonly {
 		why: 'The scan that forbids these names.',
 	},
 	{
+		prefix: 'tests/unit/value-vocabulary.test.ts',
+		cls: 'guard',
+		why: 'R3 step 3: the same kind of scan for the YAML vocabulary, naming what it forbids.',
+	},
+	{
 		prefix: 'src/adapters/tablifyFile/',
 		cls: 'native',
 		why: 'R2 file I/O: documents, not notes.',

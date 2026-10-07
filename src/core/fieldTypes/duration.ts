@@ -20,7 +20,7 @@
  * The old build's other reported bug (`AUDIT-REPORT.md` §13, a value turning into nonsense when a column's
  * type changed) is a *conversion* bug, not a parsing one: nothing here reads the raw value of another type.
  */
-import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, YamlValue } from '../types';
+import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, CellValue } from '../types';
 import { parseFailed, parsed } from '../types';
 import {
 	compareNullableNumbers,
@@ -187,7 +187,7 @@ export const durationField: FieldDescriptor<DurationValue> = {
 
 	parse: (raw: unknown, ctx: FieldContext): Parsed<DurationValue> => readDuration(raw, ctx),
 
-	toYaml(value: DurationValue): YamlValue {
+	toJson(value: DurationValue): CellValue {
 		return value;
 	},
 

@@ -58,7 +58,7 @@ export function fieldDefinitionProblems<TValue extends CellValue>(
 	}
 	const methods = [
 		'parse',
-		'toYaml',
+		'toJson',
 		'formatDisplay',
 		'formatPlain',
 		'parsePlain',

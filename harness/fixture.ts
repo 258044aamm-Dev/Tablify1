@@ -115,7 +115,6 @@ export type HarnessFixture = {
  */
 export function createHarnessFixture(rowCount = TOTAL_ROWS): HarnessFixture {
 	const context: FieldContext = {
-		path: '',
 		now: () => Date.UTC(2026, 9, 6),
 		timezone: 'UTC',
 		locale: 'en-GB',

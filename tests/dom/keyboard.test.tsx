@@ -38,7 +38,6 @@ import type { CellRef } from '../../src/core/ops/types';
 Object.assign(window, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const CONTEXT: FieldContext = {
-	path: '',
 	now: () => 0,
 	timezone: 'UTC',
 	locale: 'en-GB',

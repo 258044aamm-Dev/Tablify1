@@ -1,23 +1,21 @@
 /**
- * `attachment` — a list of vault paths, stored as a YAML list (docs/03 §the mapping table).
- *
- *     Files:
- *      - Assets/wireframe.png
- *      - Assets/budget.xlsx
+ * `attachment` — an ordered list of vault-relative paths, canonical as a **list of strings** (`docs/03`
+ * §3, the value mapping; §9, the `.tablify` attachment rule).
  *
  * Three decisions worth stating:
  *
- *   1. **A path, not a markdown link.** Frontmatter holds `Assets/wireframe.png`; a link is a *rendering*
- *      choice, so the cell renderer (step 16) builds one. This also means a value survives the note being
- *      renamed by Obsidian — links get rewritten, plain paths in a list do not, so the renderer resolves a
- *      path that no longer exists as a missing file rather than silently pointing somewhere else.
+ *   1. **A path, not a markdown link.** The value is `Assets/wireframe.png` — text the core stores and
+ *      never resolves. A link is a *rendering* choice, so the cell renderer (step 16) builds one. This
+ *      also means a value survives a rename — links get rewritten, plain paths in a list do not, so a
+ *      renderer resolves a path that no longer exists as a missing file rather than silently pointing
+ *      somewhere else. Whether the file exists at all is the view's question, never this type's.
  *   2. **Wikilinks and markdown links are still *read*.** `[[Assets/plan.pdf]]` and `[plan](Assets/plan.pdf)`
  *      arrive from the old build's data and from hand-edited notes; both are unwrapped to their path. Writing
  *      always produces the path, so a migration normalises the file once and never again.
  *   3. **The plugin never touches the vault's files.** This type stores strings; resolving them, opening them
  *      and drawing a preview belongs to the view layer, and nothing here imports `obsidian` (lint-enforced).
  */
-import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, YamlValue } from '../types';
+import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, CellValue } from '../types';
 import { parseFailed, parsed } from '../types';
 import { joinLabelList, splitLabelList } from '../format/text';
 import { registerField } from './registry';
@@ -91,7 +89,7 @@ export const attachmentField: FieldDescriptor<AttachmentValue> = {
 
 	parse: (raw: unknown, ctx: FieldContext): Parsed<AttachmentValue> => readAttachment(raw, ctx),
 
-	toYaml(value: AttachmentValue): YamlValue {
+	toJson(value: AttachmentValue): CellValue {
 		return value;
 	},
 

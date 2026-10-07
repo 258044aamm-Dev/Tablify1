@@ -25,7 +25,7 @@ import type {
 	FilterOpId,
 	Parsed,
 	PropertyId,
-	YamlValue,
+	CellValue,
 } from '../types';
 import { isFieldTypeId, parseFailed, parsed } from '../types';
 import { getField } from '../fieldTypes';
@@ -315,7 +315,7 @@ function localDay(ms: number, ctx: FieldContext): string {
 /**
  * Builds one of the two read-only, file-metadata-backed descriptors.
  *
- * `toYaml` always returns `null` — not "no value", but "nothing to write": the column is not stored, so the
+ * `toJson` always returns `null` — not "no value", but "nothing to write": the column is not stored, so the
  * write queue must never reach this branch (it refuses when `ResolvedField.readOnly` is set). The value
  * itself comes from the adapter, which passes `file.ctime`/`file.mtime` as epoch milliseconds.
  */
@@ -354,7 +354,7 @@ function createFileTimeField(
 			}
 			return parsed(new Date(ms).toISOString());
 		},
-		toYaml(_value: string | null, _ctx: FieldContext): YamlValue {
+		toJson(_value: string | null, _ctx: FieldContext): CellValue {
 			return null;
 		},
 		formatDisplay(value: string | null, ctx: FieldContext): string {

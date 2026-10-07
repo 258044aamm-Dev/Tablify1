@@ -20,7 +20,6 @@ import { createFakeVault } from '../fakes/vault';
 import type { CellValue, FieldContext } from '../../src/core/types';
 
 const CONTEXT: FieldContext = {
-	path: '',
 	now: () => 0,
 	timezone: 'UTC',
 	locale: 'en-GB',

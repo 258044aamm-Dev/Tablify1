@@ -3,12 +3,12 @@
  *
  * **The value is never reformatted.** `+1 (415) 555-0132` is stored exactly as typed, because a plugin has no
  * business deciding where a country's parentheses belong, and because rewriting a phone number changes what
- * a dialler does with it. Display, clipboard and YAML all carry the same text.
+ * a dialler does with it. Display, clipboard and the stored value all carry the same text.
  *
  * The check is only "could this be a number": six digits or more, and nothing but digits and the punctuation
  * people write numbers with. Fewer digits is a warning, not a failure.
  */
-import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, YamlValue } from '../types';
+import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, CellValue } from '../types';
 import { parseFailed, parsed } from '../types';
 import { compareNullableText, matchesText, textGroupKey } from '../format/text';
 import { looksLikePhone } from '../format/validation';
@@ -50,7 +50,7 @@ export const phoneField: FieldDescriptor<PhoneValue> = {
 
 	parse: (raw: unknown, ctx: FieldContext): Parsed<PhoneValue> => readPhone(raw, ctx),
 
-	toYaml(value: PhoneValue): YamlValue {
+	toJson(value: PhoneValue): CellValue {
 		return value;
 	},
 

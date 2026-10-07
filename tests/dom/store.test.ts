@@ -33,7 +33,6 @@ import type { CellRef } from '../../src/core/ops/types';
 import type { GridStore } from '../../src/grid/store/types';
 
 const CONTEXT: FieldContext = {
-	path: '',
 	now: () => 0,
 	timezone: 'UTC',
 	locale: 'en-GB',

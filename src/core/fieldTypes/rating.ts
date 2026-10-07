@@ -8,7 +8,7 @@
  * A fractional rating is kept as written (`4.5` shows four and a half stars) — half-stars are a real
  * convention, and rounding a value the user typed is data loss.
  */
-import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, YamlValue } from '../types';
+import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, CellValue } from '../types';
 import { parseFailed, parsed } from '../types';
 import {
 	compareNullableNumbers,
@@ -133,7 +133,7 @@ export const ratingField: FieldDescriptor<RatingValue> = {
 
 	parse: (raw: unknown, ctx: FieldContext): Parsed<RatingValue> => readRating(raw, ctx),
 
-	toYaml(value: RatingValue): YamlValue {
+	toJson(value: RatingValue): CellValue {
 		return value;
 	},
 

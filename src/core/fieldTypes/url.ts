@@ -10,7 +10,7 @@
  * link into a note should not have to spell the scheme, and silently rewriting their text to `https://…`
  * would rewrite an authored note.
  */
-import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, YamlValue } from '../types';
+import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, CellValue } from '../types';
 import { parseFailed, parsed } from '../types';
 import { compareNullableText, matchesText, textGroupKey } from '../format/text';
 import { looksLikeUrl } from '../format/validation';
@@ -54,7 +54,7 @@ export const urlField: FieldDescriptor<UrlValue> = {
 
 	parse: (raw: unknown, ctx: FieldContext): Parsed<UrlValue> => readUrl(raw, ctx),
 
-	toYaml(value: UrlValue): YamlValue {
+	toJson(value: UrlValue): CellValue {
 		return value;
 	},
 

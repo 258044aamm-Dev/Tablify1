@@ -796,7 +796,6 @@ export function boot(): HarnessApi {
 						has: () => false,
 						hasFolder: () => true,
 						fields: importFields(planned, {
-							path: '',
 							now: () => Date.now(),
 							timezone: 'UTC',
 							locale: 'en-GB',
@@ -1013,7 +1012,6 @@ export function boot(): HarnessApi {
 				included: true,
 			}));
 			const fields = importFields(planned, {
-				path: '',
 				now: () => Date.now(),
 				timezone: 'UTC',
 				locale: 'en-GB',

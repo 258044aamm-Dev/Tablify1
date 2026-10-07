@@ -5,29 +5,30 @@
  *
  *   1. a canonical value type (`TextValue`) — a subset of `CellValue`, `null` for "no value";
  *   2. `parse` for untrusted input: it *never throws*, it returns `parsed(value)` or `parseFailed(...)`;
- *   3. `toYaml` for what reaches frontmatter, `formatDisplay` for the cell, `formatPlain` for the
- *      clipboard and `parsePlain` for a spreadsheet paste;
+ *   3. `toJson` for what a document stores (the canonical value itself, for this type), `formatDisplay`
+ *      for the cell, `formatPlain` for the clipboard and `parsePlain` for a spreadsheet paste;
  *   4. `filterOps` (declared) and `matches`/`compare`/`groupKey` (implemented) — a declared operator that
  *      `matches` does not handle is a bug the shared contract suite catches;
  *   5. metadata: `id`, `label`, `icon`, `editable`, `defaultValue`, `editor`.
  *
  * Two rules that are easy to get wrong, and that the contract suite enforces:
  *   - `parse(formatDisplay(v)) === v` and `parsePlain(formatPlain(v)) === v`, for every canonical value;
- *   - `toYaml` returns only YAML-safe shapes: a scalar, or a flat list of scalars. No `undefined`.
+ *   - `toJson` returns only `CellValue` shapes: a scalar or a list of strings. No `undefined`, no object.
  *
  * Whitespace and Unicode policy, asserted in `tests/unit/field-contract.text.test.ts`:
- *   - frontmatter is authored text, so `parse` **preserves** whitespace and code points exactly as written;
+ *   - a file's text is authored text, so `parse` **preserves** whitespace and code points exactly as
+ *     written (a document's JSON string and a note's frontmatter scalar both arrive here);
  *   - a pasted cell is machine text, so `parsePlain` **trims** and **normalises to NFC** (`é` typed as
  *     `e` + U+0301 becomes the single code point), because the same name from two apps must not become two
  *     values that group separately;
- *   - a value that is only whitespace is the empty value in both paths, and `toYaml` writes it as "delete
+ *   - a value that is only whitespace is the empty value in both paths, and `toJson` writes it as "delete
  *     the key" (`null`). So a canonical `text` value is never an empty string.
  *
  * The consequence of never rewriting authored text is that canonical values can be visually identical and
  * distinct (`é` vs `e`+U+0301). `compare` therefore ends with a code-point tiebreak, so a sort is
  * deterministic and `groupKey` stays consistent with `compare`: see the assertion in the shared suite.
  */
-import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, YamlValue } from '../types';
+import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, CellValue } from '../types';
 import { parseFailed, parsed } from '../types';
 import { registerField } from './registry';
 
@@ -119,11 +120,11 @@ export const textField: FieldDescriptor<TextValue> = {
 	},
 
 	/**
-	 * Canonical value → frontmatter. The value is written exactly as it is (see the whitespace policy in
-	 * the file header); `null` means "no value", which the write queue turns into a deleted key rather than
-	 * an empty string.
+	 * Canonical value → the value a document stores. For text that is the value itself (see the whitespace
+	 * policy in the file header); `null` means "no value", which a writer spells as an omitted key rather
+	 * than an empty string.
 	 */
-	toYaml(value: TextValue, _ctx: FieldContext): YamlValue {
+	toJson(value: TextValue, _ctx: FieldContext): CellValue {
 		return value;
 	},
 

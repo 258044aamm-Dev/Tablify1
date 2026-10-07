@@ -113,7 +113,7 @@ type FileState = {
 
 /**
  * The callback the writer receives. Values are YAML scalars by the time they arrive — the caller applied the
- * column's `toYaml`. `null` **deletes** the key rather than writing `null` or `""` (`docs/03` §write rules 3,
+ * column's `toJson`. `null` **deletes** the key rather than writing `null` or `""` (`docs/03` §write rules 3,
  * "clearing deletes the key"), and every other key of the object is left exactly as it was found.
  */
 function mutateWith(writes: readonly QueueWrite[]) {

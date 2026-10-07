@@ -17,7 +17,7 @@ import { joinNotePath, noteBaseName, resolveCollision } from './naming';
 import type { Matrix } from '../selection/clipboard';
 import type { ColumnInference } from './preview';
 import type { ResolvedField } from '../schema/propertySchema';
-import type { CellValue, FieldTypeId, YamlValue } from '../types';
+import type { CellValue, FieldTypeId } from '../types';
 
 /** One column as the person confirmed it in the wizard: the inference, with the overrides applied. */
 export type PlannedColumn = {
@@ -60,7 +60,7 @@ export type PlannedNote = {
 	/** `0` when the name was free; `1` for ` 2`, and so on. */
 	readonly suffix: number;
 	/** Only the non-default values, keyed by the column's **name** (`docs/03` §write rules 4). */
-	readonly frontmatter: Readonly<Record<string, YamlValue>>;
+	readonly frontmatter: Readonly<Record<string, CellValue>>;
 	/** The canonical values, keyed by property id — what the row shows in the grid once it is loaded. */
 	readonly values: Readonly<Record<string, CellValue>>;
 };
@@ -97,7 +97,7 @@ export type PlanEnvironment = {
 	readonly has: (path: string) => boolean;
 	readonly hasFolder: (folder: string) => boolean;
 	/**
-	 * The descriptors for the confirmed columns, so `parsePlain`/`toYaml` come from the registry. Not vaults, not
+	 * The descriptors for the confirmed columns, so `parsePlain`/`toJson` come from the registry. Not vaults, not
 	 * `App` — the plan is a pure function of a matrix, some columns and these three answers.
 	 */
 	readonly fields: readonly ResolvedField[];
@@ -157,7 +157,7 @@ export function buildPlan(
 	rows.forEach((line, at) => {
 		const rowNumber = at + (options.hasHeader ? 1 : 0);
 		const values: Record<string, CellValue> = {};
-		const frontmatter: Record<string, YamlValue> = {};
+		const frontmatter: Record<string, CellValue> = {};
 		let parsed = 0;
 		for (const column of included) {
 			const text = (line[column.index] ?? '').trim();
@@ -187,7 +187,7 @@ export function buildPlan(
 			values[field.definition.id] = value;
 			parsed += 1;
 			if (value !== field.descriptor.defaultValue && !field.readOnly) {
-				frontmatter[field.definition.name] = field.descriptor.toYaml(value, field.context);
+				frontmatter[field.definition.name] = field.descriptor.toJson(value, field.context);
 			}
 		}
 		if (parsed === 0 && included.length > 0) {

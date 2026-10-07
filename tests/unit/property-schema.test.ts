@@ -231,7 +231,7 @@ describe('the file-metadata columns P11 made read-only', () => {
 	it('writes nothing, and says so by being uneditable', () => {
 		expect(createdTimeField.editable).toBe(false);
 		expect(createdTimeField.editor).toBe('readonly');
-		expect(createdTimeField.toYaml(INSTANT, ctx)).toBeNull();
+		expect(createdTimeField.toJson(INSTANT, ctx)).toBeNull();
 		expect(createdTimeField.defaultValue).toBeNull();
 	});
 
@@ -311,7 +311,6 @@ describe('resolveField, source by source', () => {
 		expect(resolved.options).toEqual({ type: 'text', max: 5 });
 		expect(resolved.context.columnName).toBe('Notes');
 		expect(resolved.context.fieldOptions).toEqual({ type: 'text', max: 5 });
-		expect(resolved.context.path).toBe(ctx.path);
 		expect(resolved.context.locale).toBe(ctx.locale);
 		expect(resolved.reasons).toEqual(['unknown field option "wat" — ignored']);
 	});

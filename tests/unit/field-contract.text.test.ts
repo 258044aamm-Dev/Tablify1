@@ -80,10 +80,10 @@ describe('text — the whitespace policy', () => {
 		expect(textField.parsePlain('   ', ctx)).toEqual({ ok: true, value: null });
 	});
 
-	it('mirrors the policy in toYaml: the value is written verbatim, absence is null', () => {
-		expect(textField.toYaml('  padded  ', ctx)).toBe('  padded  ');
-		expect(textField.toYaml(null, ctx)).toBeNull();
-		expect(textField.toYaml('', ctx)).toBe('');
+	it('mirrors the policy in toJson: the value is written verbatim, absence is null', () => {
+		expect(textField.toJson('  padded  ', ctx)).toBe('  padded  ');
+		expect(textField.toJson(null, ctx)).toBeNull();
+		expect(textField.toJson('', ctx)).toBe('');
 	});
 });
 

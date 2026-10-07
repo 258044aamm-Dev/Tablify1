@@ -95,7 +95,6 @@ function targetFor(doc: TabulaDoc, options?: { readonly template?: string }): Mi
  * fall back to text for every column and quietly stringify the boolean and the select.
  */
 const CONTEXT: FieldContext = {
-	path: '',
 	now: () => 0,
 	timezone: 'UTC',
 	locale: 'en-GB',

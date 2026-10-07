@@ -8,7 +8,7 @@
  * A value that arrives as a full instant (`2025-09-24T06:26:00Z`) is truncated to its **date part as
  * written** — no conversion to the vault's zone. A date column is about the day somebody wrote down.
  */
-import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, YamlValue } from '../types';
+import type { FieldContext, FieldDescriptor, FilterOpId, Parsed, CellValue } from '../types';
 import { parseFailed, parsed } from '../types';
 import {
 	calendarDateFromText,
@@ -67,7 +67,7 @@ export const dateField: FieldDescriptor<DateValue> = {
 
 	parse: (raw: unknown, ctx: FieldContext): Parsed<DateValue> => readDate(raw, ctx),
 
-	toYaml(value: DateValue): YamlValue {
+	toJson(value: DateValue): CellValue {
 		return value;
 	},
 
