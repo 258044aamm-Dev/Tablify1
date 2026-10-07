@@ -1,6 +1,6 @@
 # R2 — Database repository and Obsidian file view
 
-**Mode:** design and future implementation guide. No source code is authorized by this document update. **Dependencies:** R1 schema frozen; Obsidian API assumptions verified against pinned typings and a real app before product implementation.
+**Mode:** implementation guide. Authorized for implementation 2026-10-07 (see [`08-decisions.md`](08-decisions.md) §Implementation authorization log): steps commit and push one at a time on `refactor/native-tablify`. **Status:** in progress — steps marked ✅ are implemented, gated and pushed; implementation state is always the source at HEAD. **Dependencies:** R1 schema frozen (✅ complete); Obsidian API assumptions are checked against the pinned typings ([`10-verification-and-ai-hygiene.md`](10-verification-and-ai-hygiene.md) §Required claims ledger) and, for the app-version question, by the user-run probe kit in [`probes/r2-file-view/`](../probes/r2-file-view/README.md) — never claimed from typings alone (ADR-0010). **Blocking decisions:** ADR-0005 (external edit, never a silent overwrite), ADR-0010 (app-version floor stays at 1.13.0 until the probes report).
 
 ## Objective
 
