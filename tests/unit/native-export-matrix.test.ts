@@ -9,6 +9,7 @@ import { invalidCell } from '../../src/core/database/values';
 import { nativeTableMatrix, nativeViewMatrix } from '../../src/core/database/export/nativeMatrix';
 import type { TableView } from '../../src/core/database/views';
 import { emptyOf, notOf } from '../../src/core/query/ast';
+import { getField } from '../../src/core/fieldTypes/registry';
 
 const ENV = {
 	now: () => Date.parse('2026-10-08T10:20:30.000Z'),
@@ -239,6 +240,34 @@ describe('native saved-view export matrix', () => {
 		if (!outcome.ok) return;
 		expect(outcome.result.rowCount).toBe(2);
 		expect(outcome.result.matrix.map((row) => row[0])).toEqual(['Name', 'Ada', 'Bea']);
+	});
+
+	it('still writes the rows of a collapsed group: collapse is a display state, not a filter', () => {
+		const key = getField('text')?.groupKey('Ada', {
+			now: () => 0,
+			timezone: 'UTC',
+			locale: 'en-GB',
+			fieldOptions: {},
+			columnName: 'Name',
+		});
+		expect(key).toBe('Ada');
+		const open = nativeViewMatrix(
+			projectedTable(document),
+			viewOf({ groupBy: 'fld_name' }),
+			'display',
+			ENV,
+		);
+		const collapsed = nativeViewMatrix(
+			projectedTable(document),
+			viewOf({ groupBy: 'fld_name', collapsedKeys: [key ?? ''] }),
+			'display',
+			ENV,
+		);
+		expect(open.ok && collapsed.ok).toBe(true);
+		if (!open.ok || !collapsed.ok) return;
+		expect(collapsed.result.rowCount).toBe(open.result.rowCount);
+		expect(collapsed.result.matrix).toEqual(open.result.matrix);
+		expect(collapsed.result.matrix.flat()).toContain('Ada');
 	});
 
 	it('refuses, with a reason, a filter that reads the link field the export does not write', () => {

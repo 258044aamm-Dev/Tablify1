@@ -205,6 +205,19 @@ function selectNamed(root: HTMLElement, ariaLabel: string, value: string): void 
 	select.dispatchEvent(new Event('change'));
 }
 
+function pickOptions(root: HTMLElement, ariaLabel: string, values: readonly string[]): void {
+	const select = Array.from(root.querySelectorAll('select')).find(
+		(candidate) => candidate.getAttribute('aria-label') === ariaLabel,
+	);
+	if (select === undefined) {
+		throw new Error(`no multi-select named ${ariaLabel}`);
+	}
+	for (const option of Array.from(select.options)) {
+		option.selected = values.includes(option.value);
+	}
+	select.dispatchEvent(new Event('change'));
+}
+
 function setNewTableName(root: HTMLElement, name: string): void {
 	const input = root.querySelector<HTMLInputElement>('.tablify-native-import-name');
 	if (input === null) {
@@ -299,6 +312,52 @@ describe('native import panel', () => {
 		expect(orders?.rows.map((row) => row.cells.get('fld_client'))).toEqual([
 			rowId('ada'),
 			rowId('grace'),
+		]);
+		await fixture.close();
+	});
+
+	it('a multi-link value takes every row picked for it, in table order, and saves as one list', async () => {
+		const base = linkedDocument();
+		const document: DatabaseDocument = {
+			...base,
+			tables: base.tables.map((table) =>
+				table.id === 'tbl_orders'
+					? {
+							...table,
+							fields: table.fields.map((field) =>
+								field.kind === 'field' && field.id === 'fld_client'
+									? {
+											...field,
+											settings: {
+												targetTableId: 'tbl_clients',
+												allowMultiple: true,
+											},
+										}
+									: field,
+							),
+						}
+					: table,
+			),
+		};
+		const fixture = await rig(document);
+		const { root, panel } = mount(fixture.store);
+
+		toLinkStep(root);
+		pickOptions(root, 'Rows for "Ada"', [rowId('ada'), rowId('grace')]);
+		pickOptions(root, 'Rows for "Grace"', [rowId('grace')]);
+		buttonNamed(root, 'Review').click();
+		expect(buttonNamed(root, 'Apply import').disabled).toBe(false);
+
+		buttonNamed(root, 'Apply import').click();
+		await vi.waitFor(() => {
+			expect(panel.currentStep()).toBe('done');
+		});
+		const orders = fixture.session
+			.getDocument()
+			.tables.find((table) => table.id === 'tbl_orders');
+		expect(orders?.rows.map((row) => row.cells.get('fld_client'))).toEqual([
+			[rowId('ada'), rowId('grace')],
+			[rowId('grace')],
 		]);
 		await fixture.close();
 	});
