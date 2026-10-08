@@ -2,7 +2,7 @@
 
 **Mode:** active implementation guide under the authorized R1–R5 scope; proceed one gated step at a time. **Dependencies:** stable R1 schema, R2 repository, R3 IDs/ops, and R4 field/table UI.
 
-**Status (2026-10-08):** Part A Steps 1–3 have verified source-preview, destination-contract, and exact-plan checkpoints. R5 is not complete: Part A Step 4 and Parts B–C remain open. XLSX workbook reading/worksheet selection, native importer UI/apply, R6, release metadata, and version tags remain untouched. Native Obsidian-host and physical-device checks remain **NOT RUN**.
+**Status (2026-10-08):** Part A Steps 1–3 have verified source-preview, destination-contract, and exact-plan checkpoints. Part A Step 4 now has a verified transactional-runner checkpoint but remains open for the native wizard and user-facing progress/cancellation surface; Parts B–C remain open. XLSX workbook reading/worksheet selection, R6, release metadata, and version tags remain untouched. Native Obsidian-host and physical-device checks remain **NOT RUN**.
 
 ## Objective
 
@@ -48,11 +48,17 @@ The pure plan contains selected table, included columns, field types/options, ro
 
 **VERIFIED gates:** targeted native planner + destination + preview + legacy-import suites passed 69/69. `npx --yes bun run check` passed: 90 test files / 1,985 tests and all type, lint, brand, manifest, format, test, build, contrast, CSS, and bundle-size gates. `npx --yes bun run test:layout` passed 115/115; that harness still covers the pre-existing grid, not the native importer or FileView. **NOT RUN:** real Obsidian-host and physical-device checks.
 
-**OPEN:** Step 4 transaction/undo/write, cancellation and native progress/UI remain unimplemented. XLSX workbook reading and worksheet selection remain deferred; a pre-parsed matrix is the only XLSX seam. Parts B–C, R6, release metadata, and tags remain untouched.
+**OPEN:** the native wizard/progress UI remains unimplemented. XLSX workbook reading and worksheet selection remain deferred; a pre-parsed matrix is the only XLSX seam. Parts B–C, R6, release metadata, and tags remain untouched.
 
 ### Step 4 — Apply as one transaction where feasible
 
 Prefer one database command, one undo entry, and one repository write. If a 400×6 or larger import requires chunking for responsiveness, design chunk visibility/undo semantics explicitly and preserve a cancelable progress report. Never leave unreported partial data after cancellation.
+
+**VERIFIED transactional-runner checkpoint (2026-10-08):** `src/adapters/tablifyFile/importRunner.ts` consumes the Step 3 plan unchanged, refuses stale or externally changed documents, dispatches its exact operation list as one database-session history entry, and flushes through the existing shared write queue. It does not modify the legacy note importer or its runner. Cancellation is honored before dispatch and reports zero committed records; after dispatch, the runner waits for the save result and distinguishes a saved transaction from an applied-but-unsaved transaction. It does not chunk. A 400×6 regression case verifies one atomic undo entry and one repository write.
+
+**VERIFIED gates:** runner + database-store + session + write-queue targeted suites passed 44/44. `npx --yes bun run check` passed in a clean copy with the unrelated uncommitted BOM fixture restored to HEAD: 91 test files / 1,992 tests and all repository gates. `npx --yes bun run test:layout` passed 115/115 after installing Chromium system libraries.
+
+**OPEN:** the native CSV/TSV source chooser/wizard, destination and explicit link-mapping controls, confirmation UI, and visible progress/cancel behavior remain unimplemented. The runner checkpoint does not complete Part A Step 4.
 
 ## Part B — CSV/TSV/XLSX export
 

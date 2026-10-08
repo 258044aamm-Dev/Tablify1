@@ -42,3 +42,11 @@ export type {
 } from './session';
 export { openDatabase } from './session';
 export type { DatabaseHistorySummary } from '../../core/database/history';
+export type {
+	DatabaseImportApplyResult,
+	DatabaseImportRunPhase,
+	DatabaseImportRunProgress,
+	DatabaseImportRunnerOptions,
+	ImportSaveFailure,
+} from './importRunner';
+export { applyDatabaseImportPlan } from './importRunner';
