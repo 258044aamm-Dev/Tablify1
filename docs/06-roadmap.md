@@ -84,6 +84,8 @@ not represented as passing by this R3 completion.
 
 **Goal:** give the user the existing spreadsheet-class workflows on a native database.
 
+**Step 1 — VERIFIED (2026-10-08):** the native file-view shell now has database/table/view hierarchy, pane-local table/view navigation, create-table/create-view controls through the shared store/queue, a grid region, history/recovery actions, and a status region. DOM tests cover create/switch/restore, two-pane selection isolation, and no-write navigation. The header flex-wraps within the available host; actual FileView geometry is **NOT RUN**. The unchanged Bases grid remains isolated. R2 desktop/phone probes remain user-run. Steps 2–6 are still open.
+
 - [ ] Add table/view switching, create/rename/delete UX for tables/fields/views, and persist saved views in the `.tablify` file.
 - [ ] Retain selection, keyboard, editing, clipboard, bulk operations, row/column order, undo/redo, accessibility, mobile layout, and performance.
 - [ ] Add linked-record chooser, display, navigation, missing-target state, and keyboard/screen-reader behavior.

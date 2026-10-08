@@ -163,11 +163,11 @@ describe('the zones and the cascade', () => {
 		expect(hostTokens.size).toBeGreaterThan(20);
 	});
 
-	it('imports the three files in cascade order — tokens, brand, grid', () => {
+	it('imports the token, brand, grid and native workspace layers in cascade order', () => {
 		const order = [...indexCss.matchAll(/@import\s+'\.\/([\w-]+)\.css'/g)].map(
 			(match) => match[1],
 		);
-		expect(order).toEqual(['tokens', 'brand', 'grid']);
+		expect(order).toEqual(['tokens', 'brand', 'grid', 'native-workspace']);
 	});
 
 	it('scopes the host mapping to body, which is what makes it win without a specificity fight', () => {

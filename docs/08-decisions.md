@@ -24,20 +24,20 @@ This file is the durable product/engineering decision ledger. “Confirmed” re
 
 `0.1.0` remains a Bases-backed GitHub prerelease. It has a tag and release; manual real-vault and physical-device verification is still recorded as `NOT RUN`. The target docs describe future work. Keep `manifest.json`, `package.json`, and README claims truthful to the code until a native-format build ships. Do not revise old changelog/progress history to make it appear the new format was present earlier.
 
-## Proposed data-model defaults (not yet user-approved)
+## Accepted data-model decisions
 
-| ID | Proposal | Phase to resolve |
+| ID | Decision | Resolution |
 |---|---|---|
-| D1 | Stable IDs for database/table/field/row/view/option; labels are not identity. | R1 |
-| D2 | Select cells store option IDs; options carry labels/colors/order. | R1 |
-| D3 | A link field targets one table and stores an ordered list of row IDs; single-link is a cardinality constraint if needed. | R1/R4 |
-| D4 | Row deletion clears inbound links in one undoable operation; table deletion is blocked while inbound relations remain. Never cascade-delete silently. | R3 |
-| D5 | Saved views are table-scoped and stored in the database file; workspace active table/view state does not write to the file. | R1/R2 |
-| D6 | Explicit row order is persisted; sort/group presentation is distinct from source order. | R1/R4 |
-| D7 | Preserve unknown keys within a supported schema version; future versions open read-only and are never rewritten. | R1/R2 |
-| D8 | One local table links to one Airtable table; different local tables may link independently. | R5 |
-| D9 | Existing Airtable link files keyed by `.base` path + view name are not migrated by default; leave them untouched and create fresh links for native tables. | R5; ask before changing |
-| D10 | External changes to a dirty database are detected and trigger reload/keep-copy/conflict UX; no silent last-writer-wins. | R2 |
+| D1 | Stable IDs for database/table/field/row/view/option; labels are not identity. | ADR-0011 accepted (R1) |
+| D2 | Select cells store option IDs; options carry labels/colors/order. | R1 field schema; option-ID identity in accepted ADR-0011 |
+| D3 | A link field targets one table, supports single or multiple cardinality, stores ordered row IDs on one side, and derives any inverse read-only. | ADR-0001 accepted (R1/R4) |
+| D4 | Row deletion clears inbound links in one undoable operation; table deletion is blocked while inbound relations remain. Never cascade-delete silently. | ADR-0002 accepted (R1/R3) |
+| D5 | Saved views are table-scoped and stored in the database file; workspace active table/view state does not write to the file. | R1/R2 view-state contract; ADR-0012 accepted (R3/R4) |
+| D6 | Explicit row order is persisted; sort/group presentation is distinct from source order. | ADR-0003 accepted (R1/R4) |
+| D7 | Preserve unknown keys within a supported schema version; future versions open read-only and are never rewritten. | ADR-0011 accepted (R1/R2) |
+| D8 | One local table links to one Airtable table; different local tables may link independently. | ADR-0008 accepted (R5) |
+| D9 | Existing Airtable link files keyed by `.base` path + view name are not migrated by default; leave them untouched and create fresh links for native tables. | ADR-0006 accepted (R5) |
+| D10 | External changes to a dirty database are detected and trigger reload/keep-copy/conflict UX; no silent last-writer-wins. | ADR-0005 accepted (R2) |
 
 ## Engineering decisions to retain unless a measured need changes them
 
@@ -53,18 +53,20 @@ This file is the durable product/engineering decision ledger. “Confirmed” re
 
 ## Open decisions — phase blockers
 
-| Question | Recommended default | Needed by |
+Only questions without an accepted ADR remain blockers:
+
+| Question | Recommended default / required evidence | Needed by |
 |---|---|---|
-| Link cardinality and inverse fields? | One field targets one table; ordered list representation; decide if inverse is explicit or generated. | R1/R4 |
-| Broken/dangling link parsing? | Preserve reference and show repair state; do not delete during read. | R1 |
-| Table/row deletion rules? | No silent cascade; row deletion removes inbound refs atomically/undoably; table deletion blocked until inbound links resolved. | R3 |
-| Drag reorder under sort/group? | Hide/disable reorder when it cannot have clear semantics, or define a stable explicit order operation. | R4 |
-| `null` vs absent vs empty string/list? | Field-specific canonical rules with exact tests. | R1 |
-| External edit while dirty? | Stop write and offer reload or keep-copy/compare path. | R2 |
-| Old sync sidecar conversion? | No conversion by default; preserve files and make new links. | R5 |
-| App-version floor? | Keep current manifest floor until custom FileView APIs are verified on the oldest supported desktop and phone. | R2/R6 |
-| Import replace field/schema behavior? | Preview every destructive change; require confirmation. | R5 |
-| Document-size/write threshold? | Measure parse/serialize/write on target-sized fixtures before setting limits. | R2/R5 |
+| Oldest supported Obsidian app version? | Keep the current floor until custom FileView behavior is verified on the oldest supported desktop and phone. | R2/R6; ADR-0010 |
+| Document-size/write threshold? | Measure parse/serialize/write on target-sized fixtures before setting limits. | R2/R5; ADR-0009 |
+
+### Decisions already closed by accepted ADRs
+
+- **Links and broken references:** ADR-0001 settles cardinality, one-sided storage, generated inverse fields, order preservation, and visible-but-preserved unresolved links.
+- **Deletion and manual order:** ADR-0002 settles row/table deletion with inbound links; ADR-0003 disables manual reorder while the selected view is sorted or grouped.
+- **Empty values and external edits:** ADR-0004 settles field-specific empty/unknown values; ADR-0005 requires revision checks and explicit reload/keep-copy conflict handling.
+- **Airtable metadata/import behavior:** ADR-0006 leaves retired path-keyed links untouched; ADR-0007 defines previewed import replacement; ADR-0008 settles cross-table link mapping rules.
+- **Document identity:** ADR-0011 freezes the v1 envelope, IDs, and uniqueness scopes.
 
 ### ADR index (opened 2026-10-07)
 
@@ -85,6 +87,7 @@ that will close them, and nothing may assume the answer in the meantime.
 | [0009](adr/ADR-0009-performance-limits.md) | Document-size/write thresholds | R2, R5 | Open — deferred to measurement |
 | [0010](adr/ADR-0010-app-version-floor.md) | App-version floor | R2, R6 | Open — deferred to the R2 probes |
 | [0011](adr/ADR-0011-document-schema-identifiers.md) | v1 key set, ids, uniqueness scopes | R1 | Accepted |
+| [0012](adr/ADR-0012-state-ownership-and-history.md) | Canonical database state, per-pane projection, and shared history | R3–R5 | Accepted |
 
 ## Implementation authorization log
 

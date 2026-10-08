@@ -1,6 +1,8 @@
 # R4 — Grid parity, saved views, and linked records
 
-**Mode:** design and future implementation guide. No source code is authorized by this document update. **Dependencies:** R2 file-view host and R3 stable database operations.
+**Mode:** implementation guide; this document is not stand-alone authorization. The user separately authorized R1–R5 implementation, one gated step at a time. **Dependencies:** R2 file-view host and R3 stable database operations.
+
+**Progress (2026-10-08):** Step 1 — workspace shell — is implemented and locally verified: native table/view navigation and table/view creation through the shared operation store. Its flex-wrapped controls use available host space; actual FileView geometry/lifecycle remains **NOT RUN**. The existing grid remains unconnected to this shell until Step 2. Steps 2–6 and real-Obsidian FileView probes remain open; `docs/06-roadmap.md` records the phase status.
 
 ## Objective
 
@@ -25,7 +27,7 @@ R4 is not complete if a native file opens but key existing workflows disappear. 
 
 Within the custom `.tablify` file view, create a clear hierarchy: database title, table switcher, saved-view switcher, toolbar, grid, and status region. The open database is one file; the selected table is one table in that document; a saved view is scoped to that table. Make “create table” available from the database context and “create view” from the table context.
 
-Do not reuse Bases toolbar, view picker, or `.base` embed controls. Determine available width from the actual FileView host, not device width alone.
+Do not reuse Bases toolbar, view picker, or `.base` embed controls. Determine available width from the actual FileView host, not device width alone. The shell’s flex-wrapped header responds to its own host width; table and view switching are pane-local workspace state and dispatch no document operation. Create-table and create-view forms use the R3 operation store and shared queue.
 
 ### Step 2 — Reconnect the existing grid to the active table projection
 
@@ -39,7 +41,7 @@ Do not reuse Bases toolbar, view picker, or `.base` embed controls. Determine av
 
 A link cell stores target row IDs. The editor/display resolves row labels from the target table through a read-only lookup supplied by the repository; field descriptor code remains pure.
 
-The ADR must decide whether the first editor supports single and multiple links, reciprocal/inverse fields, and link ordering. At minimum the UX must support:
+ADR-0001 is accepted. The UI must implement its decisions: both single and multiple cardinalities; one-sided stored IDs; generated inverses are read-only; order is preserved; broken references remain stored and are visibly reported. At minimum the UX must support:
 
 - choose an existing target row using search over the target table;
 - add/remove one or more links within the decided cardinality;

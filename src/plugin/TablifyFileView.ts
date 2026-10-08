@@ -1,34 +1,29 @@
 /**
- * `TablifyFileView` — R2 step 6: the Obsidian-native view a `.tablify` file opens in.
+ * `TablifyFileView` — the native workspace for a `.tablify` database.
  *
- * This replaces the Bases-backed grid view as the *file* half of the refactor: the extension is
- * registered by the plugin (`main.ts`), Obsidian routes a `.tablify` file here, and the view asks the
- * shared registry (`registry.ts`) for the handle to that path's session. Two leaves on one file get
- * the same session, so nothing here can clobber a newer revision — that is the registry's contract,
- * and this view is one more client of it.
+ * The registry gives each open path one shared session and write queue. Each leaf adds a small
+ * `DatabaseStore` projection, so table navigation is local to the pane while document operations
+ * and history still belong to the shared database. R4 reconnects the existing grid in the next step;
+ * this file-view shell owns the database/table/view hierarchy and never uses Bases controls.
  *
- * What the view does in R2, deliberately, and what it does not:
- *
- *   - it renders the **document**, not a grid: name, table list with counts, the parse findings, and
- *     the session state. The editable grid arrives in R4; a view that only reads cannot lie about
- *     editing, and this one is honest about being read-only for now.
- *   - it **never writes on open, focus, rename or restore**. Opening a file reads it; the only two
- *     paths that write are the user pressing "Reload from disk" (which adopts the disk text) and
- *     "Keep a copy" (ADR-0005's escape hatch, written to a *new* path).
- *   - a file that cannot be read as a database gets a **read-only panel that says why**, never a
- *     blank surface: `missing`, `invalid` (with the parser's findings) and `unsupported-version` are
- *     three different messages, and none of them touches the file.
- *   - the workspace remembers which table was selected through `getState`/`setState` (step 7's
- *     policy: selection is workspace state, never document data). `setState` never writes.
- *
- * Listener discipline: the view subscribes to the session while it holds a handle and unsubscribes
- * when it releases it, so closing a leaf leaves no writer, no timer and no callback behind.
+ * The file view remains responsible for R2's honest failure and recovery paths: unreadable files are
+ * read-only, open/restore/navigation do not write, conflicts offer reload or keep-a-copy, and every
+ * handle and store subscription is released with the leaf.
  */
 import { FileView, Notice } from 'obsidian';
 import type { TFile, ViewStateResult, WorkspaceLeaf } from 'obsidian';
 
-import type { DatabaseHandle, RegistryResult, SessionRegistry } from '../adapters/tablifyFile';
-import type { SessionChange, SessionState } from '../adapters/tablifyFile';
+import type {
+	DatabaseHandle,
+	DatabaseStore,
+	DatabaseStoreSnapshot,
+	RegistryResult,
+	SessionRegistry,
+	SessionChange,
+	SessionState,
+} from '../adapters/tablifyFile';
+import { createDatabaseStore } from '../adapters/tablifyFile';
+import type { IdKind } from '../core/database';
 import type { TablifyLeafState } from './viewState';
 import { EMPTY_LEAF_STATE, leafStateOf, readLeafState } from './viewState';
 
@@ -41,12 +36,31 @@ export const TABLIFY_FILE_EXTENSION = 'tablify';
 /** What the workspace restores for this view: a selection, never document data (step 7). */
 export type TablifyFileViewState = TablifyLeafState;
 
-/** The two host services the view needs. The plugin supplies both; tests supply fakes. */
+/** The host services the view needs. The plugin supplies them; tests exercise the real host wiring. */
 export interface TablifyFileViewHost {
 	/** The shared registry: one session per open path, however many panes. */
 	readonly registry: SessionRegistry;
+	/** Secure, kind-prefixed ids from the plugin's injected Web Crypto source. */
+	readonly createId: (kind: IdKind) => string;
 	/** Write ADR-0005's recovery copy. Must refuse a path that already exists. */
 	copyDatabase(path: string, text: string): Promise<void>;
+}
+
+interface FocusSnapshot {
+	readonly key: string;
+	readonly selectionStart: number | null;
+	readonly selectionEnd: number | null;
+}
+
+interface NameEditorState {
+	readonly kind: 'table' | 'view';
+	readonly draft: string;
+	readonly error: string | null;
+}
+
+/** A tag-name guard works across windows without relying on the host's optional DOM prototype helper. */
+function isHtmlInputElement(element: Element): element is HTMLInputElement {
+	return element.localName === 'input';
 }
 
 /** The one-line description of a session state, so the panel and the tests agree on the words. */
@@ -70,9 +84,14 @@ export function describeState(state: SessionState): string {
 export class TablifyFileView extends FileView {
 	private readonly host: TablifyFileViewHost;
 	private currentHandle: DatabaseHandle | null = null;
+	private databaseStore: DatabaseStore | null = null;
 	private unsubscribe: (() => void) | null = null;
+	private unsubscribeStore: (() => void) | null = null;
 	private failure: RegistryResult | null = null;
 	private selection: TablifyFileViewState = EMPTY_LEAF_STATE;
+	private nameEditor: NameEditorState | null = null;
+	/** A preferred focus target for transitions that replace the focused control. */
+	private focusControl: string | null = null;
 	/** The path this pane was loaded with, so the title is right before `this.file` is assigned. */
 	private loadedPath: string | null = null;
 
@@ -87,8 +106,8 @@ export class TablifyFileView extends FileView {
 
 	/**
 	 * The handle this pane holds, or `null` before a file is loaded and after it is released.
-	 * The pane's own UI reads the document and dispatches commands through it (R4); tests use it to
-	 * put the pane into a state a read-only panel cannot reach on its own.
+	 * The pane's commands go through the derived database store; tests use this handle to inspect the
+	 * shared session and queue without adding a second document copy.
 	 */
 	handle(): DatabaseHandle | null {
 		return this.currentHandle;
@@ -126,6 +145,28 @@ export class TablifyFileView extends FileView {
 	async setState(state: unknown, result: ViewStateResult): Promise<void> {
 		void result;
 		this.selection = readLeafState(state);
+		const store = this.databaseStore;
+		if (store !== null) {
+			const snapshot = store.getSnapshot();
+			const requested = snapshot.document.tables.find(
+				(table) => table.id === this.selection.tableId,
+			);
+			const table = requested ?? snapshot.document.tables[0];
+			if (table !== undefined) {
+				store.selectTable(table.id);
+			}
+			const selected = store.getSnapshot();
+			const activeTable = selected.document.tables.find(
+				(candidate) => candidate.id === selected.activeTableId,
+			);
+			const viewExists =
+				this.selection.viewId !== null &&
+				activeTable?.views.some((view) => view.id === this.selection.viewId) === true;
+			this.selection = {
+				tableId: selected.activeTableId,
+				viewId: viewExists ? this.selection.viewId : null,
+			};
+		}
 		// A restore is a read: it re-renders and writes nothing.
 		this.render();
 	}
@@ -133,6 +174,7 @@ export class TablifyFileView extends FileView {
 	async onLoadFile(file: TFile): Promise<void> {
 		await this.release();
 		this.failure = null;
+		this.nameEditor = null;
 		this.loadedPath = file.path;
 		const opened = await this.host.registry.open(file.path);
 		if (!opened.ok) {
@@ -181,22 +223,67 @@ export class TablifyFileView extends FileView {
 
 	private adopt(handle: DatabaseHandle): void {
 		this.currentHandle = handle;
+		const store = createDatabaseStore({
+			session: handle.session,
+			queue: handle.queue,
+			...(this.selection.tableId === null ? {} : { initialTableId: this.selection.tableId }),
+		});
+		this.databaseStore = store;
+		this.reconcileSelection(store.getSnapshot());
+		this.unsubscribeStore = store.subscribe(() => {
+			this.onStoreChange();
+		});
 		this.unsubscribe = handle.session.subscribe((change: SessionChange) => {
 			this.onSessionChange(change);
 		});
 		this.render();
 	}
 
-	private onSessionChange(change: SessionChange): void {
+	private onStoreChange(): void {
+		const store = this.databaseStore;
+		if (store === null) {
+			return;
+		}
+		this.reconcileSelection(store.getSnapshot());
 		this.render();
+	}
+
+	/** Keep the workspace's view selection scoped to the table the per-pane store currently projects. */
+	private reconcileSelection(snapshot: DatabaseStoreSnapshot): void {
+		if (this.selection.tableId !== snapshot.activeTableId) {
+			this.selection = { tableId: snapshot.activeTableId, viewId: null };
+			return;
+		}
+		const table = snapshot.document.tables.find(
+			(candidate) => candidate.id === snapshot.activeTableId,
+		);
+		if (
+			this.selection.viewId !== null &&
+			!table?.views.some((view) => view.id === this.selection.viewId)
+		) {
+			this.selection = { tableId: snapshot.activeTableId, viewId: null };
+		}
+	}
+
+	private onSessionChange(change: SessionChange): void {
 		if (change.kind === 'conflict') {
 			new Notice('Tablify: the file changed on disk. Reload from disk or keep a copy.');
 		} else if (change.kind === 'write-failed') {
 			new Notice(`Tablify: the change is still unsaved — ${change.message}`);
 		}
+		// The DatabaseStore subscription renders the new session snapshot exactly once.
 	}
 
 	private async release(): Promise<void> {
+		const unsubscribeStore = this.unsubscribeStore;
+		this.unsubscribeStore = null;
+		if (unsubscribeStore !== null) {
+			unsubscribeStore();
+		}
+		const store = this.databaseStore;
+		this.databaseStore = null;
+		store?.dispose();
+
 		const unsubscribe = this.unsubscribe;
 		this.unsubscribe = null;
 		if (unsubscribe !== null) {
@@ -240,48 +327,77 @@ export class TablifyFileView extends FileView {
 		this.render();
 	}
 
-	/** Draw the whole panel. Idempotent: a render is a read of the current handle and nothing else. */
+	private captureFocus(root: HTMLElement): FocusSnapshot | null {
+		const active = root.ownerDocument.activeElement;
+		if (active === null || !root.contains(active)) {
+			return null;
+		}
+		const key = active.getAttribute('data-focus-key');
+		if (key === null) {
+			return null;
+		}
+		if (isHtmlInputElement(active)) {
+			return {
+				key,
+				selectionStart: active.selectionStart,
+				selectionEnd: active.selectionEnd,
+			};
+		}
+		return { key, selectionStart: null, selectionEnd: null };
+	}
+
+	private restoreFocus(
+		root: HTMLElement,
+		preferredKey: string | null,
+		previous: FocusSnapshot | null,
+	): void {
+		const key = preferredKey ?? previous?.key ?? null;
+		if (key !== null) {
+			const target = Array.from(root.querySelectorAll<HTMLElement>('[data-focus-key]')).find(
+				(element) => element.getAttribute('data-focus-key') === key,
+			);
+			if (target !== undefined) {
+				target.focus();
+				if (
+					isHtmlInputElement(target) &&
+					(previous?.key === key || preferredKey === 'name-input')
+				) {
+					const start = previous?.selectionStart ?? target.value.length;
+					const end = previous?.selectionEnd ?? start;
+					target.setSelectionRange(start, end);
+				}
+			}
+		}
+		this.focusControl = null;
+	}
+
+	/** Draw the whole panel. Reads the store snapshot; never dispatches from a render path. */
 	render(): void {
 		const root = this.containerEl;
+		const previousFocus = this.captureFocus(root);
+		const preferredFocus = this.focusControl;
 		root.empty();
 		const panel = root.createDiv({ cls: 'tablify-file-view' });
-		panel.createDiv({ cls: 'tablify-file-title', text: this.getDisplayText() });
 
 		if (this.failure !== null) {
+			panel.createDiv({ cls: 'tablify-file-title', text: this.getDisplayText() });
 			this.renderFailure(panel, this.failure);
+			this.restoreFocus(root, preferredFocus, previousFocus);
 			return;
 		}
 		const handle = this.currentHandle;
-		if (handle === null) {
+		const store = this.databaseStore;
+		if (handle === null || store === null) {
+			panel.createDiv({ cls: 'tablify-file-title', text: this.getDisplayText() });
 			panel.createDiv({
 				cls: 'tablify-file-empty',
 				text: 'No database is open in this pane.',
 			});
+			this.restoreFocus(root, preferredFocus, previousFocus);
 			return;
 		}
-		this.renderDocument(panel, handle);
-	}
-
-	/**
-	 * The table this pane is showing: the restored one if the document still has it, otherwise the
-	 * first. A selection that names a table the document no longer has is not an error — the file may
-	 * have been edited elsewhere — so the pane falls back instead of showing nothing.
-	 */
-	private selectedTable(
-		document: ReturnType<DatabaseHandle['session']['getDocument']>,
-	): (typeof document.tables)[number] | null {
-		const found = document.tables.find((table) => table.id === this.selection.tableId);
-		return found ?? document.tables[0] ?? null;
-	}
-
-	/**
-	 * Navigation, and nothing else: selecting a table or a view changes the leaf's state and
-	 * re-renders. There is no `dispatch` on this path by construction, which is what "restoring
-	 * and switching create no document writes" means in code.
-	 */
-	private select(tableId: string, viewId: string | null): void {
-		this.selection = { tableId, viewId };
-		this.render();
+		this.renderWorkspace(panel, store.getSnapshot());
+		this.restoreFocus(root, preferredFocus, previousFocus);
 	}
 
 	private renderFailure(
@@ -303,69 +419,332 @@ export class TablifyFileView extends FileView {
 		}
 	}
 
-	private renderDocument(
+	private renderWorkspace(
 		panel: ReturnType<HTMLElement['createDiv']>,
-		handle: DatabaseHandle,
+		snapshot: DatabaseStoreSnapshot,
 	): void {
-		const document = handle.session.getDocument();
-		const state = handle.session.getState();
-		const status = panel.createDiv({ cls: 'tablify-file-status', text: describeState(state) });
-		status.setAttribute('data-state', state);
-
-		panel.createDiv({ cls: 'tablify-file-database', text: document.name });
-		const rowCount = document.tables.reduce((total, table) => total + table.rows.length, 0);
-		panel.createDiv({
-			cls: 'tablify-file-summary',
-			text: `${String(document.tables.length)} tables · ${String(rowCount)} rows`,
+		panel.addClass('tablify-root');
+		panel.addClass('tablify-native-workspace');
+		const titleRow = panel.createDiv({ cls: 'tablify-native-header' });
+		const titleBlock = titleRow.createDiv({ cls: 'tablify-native-title-block' });
+		titleBlock.createEl('h1', {
+			cls: 'tablify-native-database-title',
+			text: snapshot.document.name,
+		});
+		const rowCount = snapshot.document.tables.reduce(
+			(total, table) => total + table.rows.length,
+			0,
+		);
+		titleBlock.createDiv({
+			cls: 'tablify-native-summary',
+			text: `${String(snapshot.document.tables.length)} tables · ${String(rowCount)} rows`,
 		});
 
-		const current = this.selectedTable(document);
-		const list = panel.createDiv({ cls: 'tablify-file-tables' });
-		for (const table of document.tables) {
-			const selected = table.id === current?.id ? ' (selected)' : '';
-			const entry = list.createEl('button', {
-				cls: 'tablify-file-table',
-				text: `${table.name} — ${String(table.fields.length)} fields, ${String(table.rows.length)} rows${selected}`,
+		const current = snapshot.activeTable?.table ?? null;
+		const controls = titleRow.createDiv({ cls: 'tablify-native-selectors' });
+		const tableLabel = controls.createEl('label', { cls: 'tablify-native-control' });
+		tableLabel.createSpan({ text: 'Table' });
+		const tableSelect = tableLabel.createEl('select', { cls: 'tablify-native-select' });
+		tableSelect.setAttribute('aria-label', 'Table');
+		tableSelect.setAttribute('data-focus-key', 'table-select');
+		for (const table of snapshot.document.tables) {
+			const option = tableSelect.createEl('option', {
+				text: `${table.name} — ${String(table.rows.length)} rows`,
 			});
-			entry.onclick = (): void => {
-				this.select(table.id, null);
-			};
+			option.value = table.id;
 		}
-
 		if (current !== null) {
-			const views = panel.createDiv({ cls: 'tablify-file-views' });
-			views.createDiv({ cls: 'tablify-file-views-label', text: 'Views' });
-			if (current.views.length === 0) {
-				views.createDiv({ cls: 'tablify-file-view-none', text: 'No saved views yet.' });
-			}
-			for (const view of current.views) {
-				const selected = view.id === this.selection.viewId ? ' (selected)' : '';
-				const entry = views.createEl('button', {
-					cls: 'tablify-file-view',
-					text: `${view.name}${selected}`,
-				});
-				entry.onclick = (): void => {
-					this.select(current.id, view.id);
-				};
-			}
+			tableSelect.value = current.id;
+		}
+		tableSelect.disabled = snapshot.document.tables.length === 0;
+		tableSelect.onchange = (): void => {
+			this.selectTable(tableSelect.value);
+		};
+		this.makeButton(controls, 'Create table', 'create-table', () => {
+			this.openNameEditor('table');
+		});
+
+		const viewLabel = controls.createEl('label', { cls: 'tablify-native-control' });
+		viewLabel.createSpan({ text: 'View' });
+		const viewSelect = viewLabel.createEl('select', { cls: 'tablify-native-select' });
+		viewSelect.setAttribute('aria-label', 'Saved view');
+		viewSelect.setAttribute('data-focus-key', 'view-select');
+		const defaultOption = viewSelect.createEl('option', { text: 'Default view' });
+		defaultOption.value = '';
+		for (const view of current?.views ?? []) {
+			const option = viewSelect.createEl('option', { text: view.name });
+			option.value = view.id;
+		}
+		viewSelect.value = this.selection.viewId ?? '';
+		viewSelect.disabled = current === null;
+		viewSelect.onchange = (): void => {
+			this.selectView(viewSelect.value === '' ? null : viewSelect.value);
+		};
+		this.makeButton(
+			controls,
+			'Create view',
+			'create-view',
+			() => {
+				this.openNameEditor('view');
+			},
+			current === null,
+		);
+
+		const toolbar = panel.createDiv({ cls: 'tablify-toolbar tablify-native-toolbar' });
+		toolbar.setAttribute('role', 'group');
+		toolbar.setAttribute('aria-label', 'Database actions');
+		this.makeButton(
+			toolbar,
+			'Undo',
+			'undo',
+			() => {
+				this.databaseStore?.undo();
+			},
+			!snapshot.history.canUndo,
+		);
+		this.makeButton(
+			toolbar,
+			'Redo',
+			'redo',
+			() => {
+				this.databaseStore?.redo();
+			},
+			!snapshot.history.canRedo,
+		);
+		const currentSummary = toolbar.createSpan({
+			cls: 'tablify-native-current-table',
+			text:
+				current === null
+					? 'No table selected'
+					: `${current.name} · ${String(current.rows.length)} rows · ${String(current.fields.length)} fields`,
+		});
+		currentSummary.setAttribute('aria-live', 'polite');
+		this.makeButton(toolbar, 'Reload from disk', 'reload', () => {
+			void this.reloadFromDisk();
+		});
+		if (snapshot.sessionState === 'conflicted') {
+			this.makeButton(toolbar, 'Keep a copy', 'keep-copy', () => {
+				void this.keepAsCopy();
+			});
 		}
 
-		const actions = panel.createDiv({ cls: 'tablify-file-actions' });
-		const reload = actions.createEl('button', {
-			cls: 'tablify-file-reload',
-			text: 'Reload from disk',
-		});
-		reload.onclick = (): void => {
-			void this.reloadFromDisk();
-		};
-		if (state === 'conflicted') {
-			const keep = actions.createEl('button', {
-				cls: 'tablify-file-keep-copy',
-				text: 'Keep a copy',
-			});
-			keep.onclick = (): void => {
-				void this.keepAsCopy();
-			};
+		if (this.nameEditor !== null) {
+			this.renderNameEditor(panel, this.nameEditor);
 		}
+
+		const grid = panel.createDiv({ cls: 'tablify-grid-area tablify-native-grid' });
+		grid.setAttribute('role', 'region');
+		grid.setAttribute(
+			'aria-label',
+			current === null ? 'Table grid' : `Grid for ${current.name}`,
+		);
+		const placeholder = grid.createDiv({ cls: 'tablify-native-grid-placeholder' });
+		if (current === null) {
+			placeholder.createEl('h2', { text: 'No tables yet' });
+			placeholder.createEl('p', {
+				text: 'Create a table to start organizing records in this database.',
+			});
+		} else {
+			placeholder.createEl('h2', { text: current.name });
+			placeholder.createEl('p', {
+				text: `${String(current.rows.length)} rows · ${String(current.fields.length)} fields`,
+			});
+			placeholder.createEl('p', {
+				cls: 'tablify-native-grid-note',
+				text: 'The native row grid is coming next.',
+			});
+		}
+
+		const status = panel.createDiv({ cls: 'tablify-statusbar tablify-native-status' });
+		status.setAttribute('role', 'status');
+		status.setAttribute('aria-live', 'polite');
+		status.setAttribute('aria-atomic', 'true');
+		status.setText(
+			snapshot.writeError === null
+				? describeState(snapshot.sessionState)
+				: `Not saved: ${snapshot.writeError}`,
+		);
+	}
+
+	private makeButton(
+		container: HTMLElement,
+		label: string,
+		focusKey: string,
+		onClick: () => void,
+		disabled = false,
+	): HTMLButtonElement {
+		const button = container.createEl('button', {
+			cls: 'tablify-native-button',
+			text: label,
+		});
+		button.type = 'button';
+		button.disabled = disabled;
+		button.setAttribute('data-focus-key', focusKey);
+		button.onclick = onClick;
+		return button;
+	}
+
+	private selectTable(tableId: string): void {
+		const store = this.databaseStore;
+		if (store === null) {
+			return;
+		}
+		const selected = store.selectTable(tableId);
+		if (!selected.ok) {
+			new Notice(`Tablify: ${selected.message}`);
+			return;
+		}
+		if (!selected.changed) {
+			this.selection = { tableId, viewId: null };
+			this.render();
+		}
+	}
+
+	private selectView(viewId: string | null): void {
+		const tableId = this.databaseStore?.getSnapshot().activeTableId ?? null;
+		const table = this.databaseStore
+			?.getSnapshot()
+			.document.tables.find((candidate) => candidate.id === tableId);
+		if (viewId !== null && !table?.views.some((view) => view.id === viewId)) {
+			return;
+		}
+		this.selection = { tableId, viewId };
+		this.render();
+	}
+
+	private openNameEditor(kind: 'table' | 'view'): void {
+		this.nameEditor = { kind, draft: '', error: null };
+		this.focusControl = 'name-input';
+		this.render();
+	}
+
+	private cancelNameEditor(): void {
+		const kind = this.nameEditor?.kind;
+		this.nameEditor = null;
+		this.focusControl = kind === 'view' ? 'create-view' : 'create-table';
+		this.render();
+	}
+
+	private renderNameEditor(
+		panel: ReturnType<HTMLElement['createDiv']>,
+		editor: NameEditorState,
+	): void {
+		const section = panel.createDiv({ cls: 'tablify-native-name-editor' });
+		section.setAttribute('role', 'group');
+		section.setAttribute('aria-label', `Create ${editor.kind}`);
+		const heading = editor.kind === 'table' ? 'Create table' : 'Create saved view';
+		section.createEl('h2', { text: heading });
+		const form = section.createEl('form', { cls: 'tablify-native-name-form' });
+		form.setAttribute('aria-label', heading);
+		const label = form.createEl('label', { cls: 'tablify-native-control' });
+		label.createSpan({ text: 'Name' });
+		const input = label.createEl('input', {
+			cls: 'tablify-native-name-input',
+			type: 'text',
+		});
+		input.value = editor.draft;
+		input.required = true;
+		input.setAttribute('aria-label', `${editor.kind === 'table' ? 'Table' : 'View'} name`);
+		input.setAttribute('data-focus-key', 'name-input');
+		input.oninput = (): void => {
+			const current = this.nameEditor;
+			if (current !== null) {
+				this.nameEditor = { ...current, draft: input.value, error: null };
+			}
+		};
+		form.onsubmit = (event: SubmitEvent): void => {
+			event.preventDefault();
+			this.commitName(input.value);
+		};
+		const actions = form.createDiv({ cls: 'tablify-native-name-actions' });
+		const submit = actions.createEl('button', {
+			cls: 'tablify-native-button',
+			text: heading,
+		});
+		submit.type = 'submit';
+		submit.setAttribute('data-focus-key', 'name-submit');
+		this.makeButton(actions, 'Cancel', 'name-cancel', () => {
+			this.cancelNameEditor();
+		});
+		if (editor.error !== null) {
+			const error = section.createDiv({
+				cls: 'tablify-native-name-error',
+				text: editor.error,
+			});
+			error.setAttribute('role', 'alert');
+		}
+	}
+
+	private commitName(rawName: string): void {
+		const editor = this.nameEditor;
+		const store = this.databaseStore;
+		if (editor === null || store === null) {
+			return;
+		}
+		const name = rawName.trim();
+		if (name === '') {
+			this.nameEditor = {
+				...editor,
+				draft: rawName,
+				error: 'Enter a name before continuing.',
+			};
+			this.render();
+			return;
+		}
+		let entityId: string;
+		try {
+			entityId = this.host.createId(editor.kind);
+		} catch (error) {
+			const detail = error instanceof Error ? error.message : String(error);
+			this.nameEditor = {
+				...editor,
+				draft: rawName,
+				error: `A secure id could not be generated: ${detail}`,
+			};
+			this.render();
+			return;
+		}
+
+		if (editor.kind === 'table') {
+			const result = store.dispatch(
+				{ kind: 'create-table', tableId: entityId, name },
+				`Create table: ${name}`,
+			);
+			if (!result.ok) {
+				this.nameEditor = { ...editor, draft: rawName, error: result.message };
+				this.render();
+				return;
+			}
+			this.nameEditor = null;
+			this.focusControl = 'table-select';
+			store.selectTable(entityId);
+			this.selection = { tableId: entityId, viewId: null };
+			this.render();
+			return;
+		}
+
+		const tableId = store.getSnapshot().activeTableId;
+		if (tableId === null) {
+			this.nameEditor = {
+				...editor,
+				draft: rawName,
+				error: 'Create a table before adding a saved view.',
+			};
+			this.render();
+			return;
+		}
+		const result = store.dispatch(
+			{ kind: 'create-view', tableId, viewId: entityId, name },
+			`Create view: ${name}`,
+		);
+		if (!result.ok) {
+			this.nameEditor = { ...editor, draft: rawName, error: result.message };
+			this.render();
+			return;
+		}
+		this.nameEditor = null;
+		this.selection = { tableId, viewId: entityId };
+		this.focusControl = 'view-select';
+		this.render();
 	}
 }

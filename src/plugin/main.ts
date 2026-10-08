@@ -2,6 +2,7 @@ import { Notice, Plugin, TFile } from 'obsidian';
 
 import { createSessionRegistry } from '../adapters/tablifyFile/registry';
 import { createVaultPort } from '../adapters/tablifyFile/vaultPort';
+import { createIdFactory } from '../core/database';
 import { TABLIFY_FILE_EXTENSION, TABLIFY_FILE_VIEW_TYPE, TablifyFileView } from './TablifyFileView';
 import { TablifyView } from './TablifyView';
 import { KeyboardHelpModal } from './help/KeyboardHelpModal';
@@ -192,7 +193,17 @@ export default class TablifyPlugin extends Plugin {
 		 * unload finish, which is exactly what the R2 probe kit measures on a real device.
 		 */
 		const vaultPort = createVaultPort(this.app.vault);
-		const registry = createSessionRegistry(vaultPort);
+		const nativeIds = createIdFactory({
+			randomValues(length: number): Uint8Array {
+				if (typeof window === 'undefined') {
+					throw new Error('this host has no window.crypto; secure ids cannot be created');
+				}
+				const bytes = new Uint8Array(length);
+				window.crypto.getRandomValues(bytes);
+				return bytes;
+			},
+		});
+		const registry = createSessionRegistry(vaultPort, { ids: nativeIds });
 		this.register(() => {
 			void registry.disposeAll();
 		});
@@ -206,6 +217,7 @@ export default class TablifyPlugin extends Plugin {
 		this.registerView(TABLIFY_FILE_VIEW_TYPE, (leaf) => {
 			return new TablifyFileView(leaf, {
 				registry,
+				createId: nativeIds,
 				copyDatabase: async (path, text) => {
 					await vaultPort.create(path, text);
 				},

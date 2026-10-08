@@ -31,15 +31,16 @@ Audit baseline: `258044aamm-Dev/Tablify` `main` at `50f041f135abe9e7e9f111cf7c17
 | `.tablify` JSON multi-table, links v1, and no old migration are the target. | USER-CONFIRMED | User scope in the conversation, recorded in `docs/08-decisions.md`. | Do not reopen without asking. |
 | Custom file-view APIs can open `.tablify` on the intended oldest desktop/mobile app. | OPEN | Typed surface read 2026-10-07 from pinned `obsidian@1.13.1`: `Plugin.registerView` / `Plugin.registerExtensions` @since 0.9.7; `FileView` with `onLoadFile`, `onUnloadFile`, `onRename`, `setState` (@since 0.9.7), `canAcceptExtension` (@since 0.9.7). App-version behaviour needs the user-run kit [`probes/r2-file-view/`](../probes/r2-file-view/README.md) on desktop and phone. | R2 API spike blocks implementation claims; typings are not the app (ADR-0010). |
 | Obsidian write APIs provide the needed atomic/revision behavior. | OPEN | Signatures read 2026-10-07 from pinned `obsidian@1.13.1`: `Vault.read/create/modify/process/append/rename/delete` and events `modify`/`rename`/`delete`; `Vault.process` is the read-modify-write call (one round trip, no read/write gap). Whether a write notifies and what survives a crash is a real-vault question — kit step 2. | Do not claim crash durability; test/write strategy must be evidence-based. |
-| Link cardinality, inverse fields, relation delete rules, and external-edit UX are settled. | OPEN | Implementation-level ADRs remain in `docs/08-decisions.md`. | Do not guess in R1/R2/R3/R4. |
+| Link cardinality, inverse fields, relation delete rules, manual row order, and external-edit UX are settled. | VERIFIED | Accepted ADR-0001 through ADR-0005; core invariant/operation/session tests include `tests/unit/core-link-invariants.test.ts`, `tests/unit/core-operations.test.ts`, and `tests/unit/tablify-session.test.ts`. | R4 UI work must implement the accepted behavior; real FileView and device behavior remains OPEN/NOT RUN. |
 
 ## 3. Official API references
 
 - [Obsidian custom views](https://docs.obsidian.md/Plugins/User+interface/Views) describes custom view registration/lifecycle patterns.
 - [`Plugin.registerExtensions`](https://docs.obsidian.md/Reference/TypeScript+API/Plugin/registerExtensions) documents extension-to-view routing.
 - [`FileView.onLoadFile`](https://docs.obsidian.md/Reference/TypeScript+API/FileView/onLoadFile) is a relevant lifecycle reference; verify its exact signature against the pinned local declaration.
+- [HTML elements](https://docs.obsidian.md/Plugins/User+interface/HTML+elements) documents `HTMLElement.createEl()`; R4 Step 1 uses this existing host helper to build labeled controls. The pinned `obsidian@1.13.1` declaration exposes it as `Node.createEl` in `obsidian.d.ts` (no `@since` annotation on that symbol).
 
-These references support investigating a custom file view rather than relying on Bases. They do not by themselves prove the entire `.tablify` write, rename, multi-pane, or mobile lifecycle.
+These references support the custom file view and its DOM construction rather than relying on Bases. They do not by themselves prove the entire `.tablify` write, rename, multi-pane, or mobile lifecycle.
 
 ## 4. Evidence protocol for future implementation
 

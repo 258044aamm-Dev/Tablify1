@@ -1,0 +1,203 @@
+/* The native `.tablify` file-view shell. Layout follows the measured FileView host, not the window. */
+.tablify-native-workspace {
+	background: var(--tablify-surface);
+	color: var(--tablify-text);
+}
+
+.tablify-native-header {
+	display: flex;
+	flex: 0 0 auto;
+	flex-wrap: wrap;
+	align-items: end;
+	justify-content: space-between;
+	gap: var(--tablify-sp-3);
+	padding: var(--tablify-sp-3);
+	padding-left: max(var(--tablify-sp-3), env(safe-area-inset-left));
+	padding-right: max(var(--tablify-sp-3), env(safe-area-inset-right));
+	border-bottom: 1px solid var(--tablify-line);
+	background: var(--tablify-surface-raised);
+}
+
+.tablify-native-title-block {
+	display: flex;
+	flex: 1 1 180px;
+	flex-direction: column;
+	gap: var(--tablify-sp-1);
+	min-width: 0;
+}
+
+.tablify-native-database-title {
+	margin: 0;
+	color: var(--tablify-text);
+	font-family: var(--tablify-font-display);
+	font-size: var(--tablify-fs-xl);
+	line-height: var(--tablify-lh-tight);
+	overflow-wrap: anywhere;
+}
+
+.tablify-native-summary {
+	color: var(--tablify-text-muted);
+	font-size: var(--tablify-fs-xs);
+}
+
+.tablify-native-selectors {
+	display: flex;
+	flex: 1 1 340px;
+	flex-wrap: wrap;
+	align-items: end;
+	gap: var(--tablify-sp-2);
+}
+
+.tablify-native-control {
+	display: flex;
+	flex: 1 1 130px;
+	flex-direction: column;
+	gap: var(--tablify-sp-1);
+	min-width: 0;
+	color: var(--tablify-text-muted);
+	font-size: var(--tablify-fs-xs);
+}
+
+.tablify-native-select {
+	width: 100%;
+	min-width: 0;
+	min-height: 38px;
+	padding: var(--tablify-sp-2) var(--tablify-sp-3);
+	border: 1px solid var(--tablify-line-strong);
+	border-radius: var(--tablify-radius-s);
+	background: var(--tablify-surface);
+	color: var(--tablify-text);
+	font: inherit;
+	font-size: var(--tablify-input-fs);
+}
+
+.tablify-native-button {
+	display: inline-flex;
+	flex: 0 0 auto;
+	align-items: center;
+	justify-content: center;
+	min-height: 38px;
+	padding: var(--tablify-sp-2) var(--tablify-sp-3);
+	border: 1px solid var(--tablify-line-strong);
+	border-radius: var(--tablify-radius-s);
+	background: var(--tablify-surface-raised);
+	color: var(--tablify-text);
+	font: inherit;
+	cursor: pointer;
+}
+
+.tablify-native-button:disabled,
+.tablify-native-select:disabled {
+	color: var(--tablify-text-faint);
+	cursor: not-allowed;
+}
+
+.tablify-native-button:focus-visible,
+.tablify-native-select:focus-visible,
+.tablify-native-name-input:focus-visible {
+	outline: var(--tablify-focus-w) solid var(--tablify-focus-ring);
+	outline-offset: 2px;
+}
+
+.tablify-native-toolbar {
+	gap: var(--tablify-sp-2);
+}
+
+.tablify-native-current-table {
+	flex: 1 0 180px;
+	overflow: hidden;
+	color: var(--tablify-text-muted);
+	text-overflow: ellipsis;
+}
+
+.tablify-native-grid {
+	min-width: 0;
+}
+
+.tablify-native-grid-placeholder {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	flex: 1 1 auto;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: var(--tablify-sp-2);
+	min-width: 0;
+	min-height: 0;
+	padding: var(--tablify-sp-5);
+	color: var(--tablify-text-muted);
+	text-align: center;
+}
+
+.tablify-native-grid-placeholder h2,
+.tablify-native-grid-placeholder p {
+	max-width: 42rem;
+	margin: 0;
+}
+
+.tablify-native-grid-placeholder h2 {
+	color: var(--tablify-text);
+	font-family: var(--tablify-font-display);
+	font-size: var(--tablify-fs-xl);
+}
+
+.tablify-native-grid-note {
+	color: var(--tablify-text-faint);
+	font-size: var(--tablify-fs-xs);
+}
+
+.tablify-native-name-editor {
+	flex: 0 0 auto;
+	padding: var(--tablify-sp-3);
+	border-bottom: 1px solid var(--tablify-line);
+	background: var(--tablify-surface-sunken);
+}
+
+.tablify-native-name-editor h2 {
+	margin: 0 0 var(--tablify-sp-2);
+	font-size: var(--tablify-fs-l);
+}
+
+.tablify-native-name-form,
+.tablify-native-name-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: end;
+	gap: var(--tablify-sp-2);
+}
+
+.tablify-native-name-form .tablify-native-control {
+	flex: 1 1 220px;
+}
+
+.tablify-native-name-input {
+	width: 100%;
+	min-height: 38px;
+	padding: var(--tablify-sp-2) var(--tablify-sp-3);
+	border: 1px solid var(--tablify-line-strong);
+	border-radius: var(--tablify-radius-s);
+	background: var(--tablify-surface);
+	color: var(--tablify-text);
+	font: inherit;
+	font-size: var(--tablify-input-fs);
+}
+
+.tablify-native-name-error {
+	margin-top: var(--tablify-sp-2);
+	color: var(--tablify-negative);
+	font-size: var(--tablify-fs-m);
+}
+
+.tablify-native-status {
+	flex-wrap: wrap;
+	overflow-wrap: anywhere;
+}
+
+@media (pointer: coarse) {
+	.tablify-native-button,
+	.tablify-native-select,
+	.tablify-native-name-input {
+		min-height: var(--tablify-tap);
+	}
+}
