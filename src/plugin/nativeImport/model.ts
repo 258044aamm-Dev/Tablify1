@@ -17,6 +17,7 @@ import {
 import type {
 	DatabaseDocument,
 	DatabaseImportDestination,
+	DatabaseImportLinkValueMapping,
 	DatabaseImportPlan,
 	DatabaseImportPlanContext,
 	DatabaseImportPlanIssue,
@@ -34,6 +35,12 @@ import type { DatabaseImportApplyResult } from '../../adapters/tablifyFile';
 
 export type ImportMode = 'create' | 'append' | 'replace';
 
+/**
+ * Link choices the person made: source column → exact source text → the row IDs it links to. A single link holds
+ * one ID; a multi-link holds an ordered list. A value with no entry is unmapped, and the planner blocks on it.
+ */
+export type LinkChoices = ReadonlyMap<number, ReadonlyMap<string, readonly string[]>>;
+
 /** Everything the person has chosen so far. Immutable: every change produces a new draft. */
 export interface ImportDraft {
 	readonly sourceName: string;
@@ -49,6 +56,8 @@ export interface ImportDraft {
 	readonly fieldTargets: ReadonlyMap<number, string>;
 	/** For a replace: the source column whose values identify existing rows. `null` means append. */
 	readonly keyColumn: number | null;
+	/** Explicit row choices for link columns. Empty unless a link field is the target of a column. */
+	readonly linkValues: LinkChoices;
 }
 
 /** One selectable target for a column, or the reason it cannot be a target in this build. */
@@ -93,6 +102,7 @@ export function initialDraft(input: {
 		tableId: input.activeTableId,
 		fieldTargets: new Map(),
 		keyColumn: null,
+		linkValues: new Map(),
 	};
 }
 
@@ -108,18 +118,21 @@ export function previewOf(draft: ImportDraft): DatabaseImportPreviewResult {
  * Targets an existing table offers a column. Read-only and link fields are shown with the reason they cannot take a
  * value. Unsupported fields are left out: they have no usable ID to map to, so there is nothing to offer.
  */
-export function targetFieldsOf(table: DatabaseTable): readonly TargetFieldChoice[] {
+export function targetFieldsOf(
+	table: DatabaseTable,
+	tables: readonly DatabaseTable[] = [],
+): readonly TargetFieldChoice[] {
 	const choices: TargetFieldChoice[] = [];
 	for (const field of table.fields) {
 		if (field.kind !== 'field') {
 			continue;
 		}
-		choices.push(fieldChoice(field));
+		choices.push(fieldChoice(field, tables));
 	}
 	return choices;
 }
 
-function fieldChoice(field: FieldDefinition): TargetFieldChoice {
+function fieldChoice(field: FieldDefinition, tables: readonly DatabaseTable[]): TargetFieldChoice {
 	const base = { fieldId: field.id, name: field.name, type: field.type };
 	if (field.type === 'createdTime' || field.type === 'lastModifiedTime') {
 		return {
@@ -129,10 +142,24 @@ function fieldChoice(field: FieldDefinition): TargetFieldChoice {
 		};
 	}
 	if (field.type === 'link') {
+		if (field.settings.generated === true) {
+			return {
+				...base,
+				selectable: false,
+				reason: 'Generated inverse link fields cannot receive imported values.',
+			};
+		}
+		const targetTableId = field.settings.targetTableId;
+		if (
+			typeof targetTableId === 'string' &&
+			tables.some((table) => table.id === targetTableId)
+		) {
+			return { ...base, selectable: true, reason: null };
+		}
 		return {
 			...base,
 			selectable: false,
-			reason: 'Link fields need explicit row-ID mappings, which this import does not offer yet. Import the values as text in another field, or leave this column out.',
+			reason: 'Link fields take row-ID mappings from the source values, and this one has no existing target table to map to.',
 		};
 	}
 	return { ...base, selectable: true, reason: null };
@@ -234,9 +261,14 @@ export function planOf(
 		timezone: environment.timezone,
 		locale: environment.locale,
 	};
+	const destinationTable =
+		draft.mode === 'create' || draft.tableId === null
+			? undefined
+			: document.tables.find((table) => table.id === draft.tableId);
 	const result = buildDatabaseImportPlan(document, preview, choice.destination, {
 		ids: environment.createId,
 		context,
+		linkMappings: linkMappingsOf(draft, preview, destinationTable),
 	});
 	if (!result.ok) {
 		return { ok: false, reasons: reasonLines(result.issues), issues: result.issues };
@@ -318,4 +350,90 @@ export function resultMessage(result: DatabaseImportApplyResult): string {
 		case 'no-op':
 			return 'There was nothing to import.';
 	}
+}
+
+/** A row of a link target table, labelled by its first field's text, or by its ID when that field has no text. */
+export interface LinkTargetRow {
+	readonly rowId: string;
+	readonly label: string;
+}
+
+/** The rows a link field can point at, or `null` when the target table does not exist in this database. */
+export function linkTargetRowsOf(
+	tables: readonly DatabaseTable[],
+	targetTableId: string,
+): readonly LinkTargetRow[] | null {
+	const target = tables.find((table) => table.id === targetTableId);
+	if (target === undefined) {
+		return null;
+	}
+	const labelField = target.fields.find((field) => field.kind === 'field' && field.id !== null);
+	return target.rows.map((row) => {
+		const text =
+			labelField === undefined || labelField.kind !== 'field' || labelField.id === null
+				? undefined
+				: row.cells.get(labelField.id);
+		const label = typeof text === 'string' && text.trim() !== '' ? text : row.id;
+		return { rowId: row.id, label };
+	});
+}
+
+/** The distinct, non-blank source values of one column, in first-seen order: exactly what the planner will look up. */
+export function linkSourceValuesOf(
+	preview: DatabaseImportPreview,
+	sourceColumn: number,
+): readonly string[] {
+	const seen = new Set<string>();
+	const values: string[] = [];
+	for (const line of preview.body) {
+		const text = line[sourceColumn] ?? '';
+		if (text.trim() !== '' && !seen.has(text)) {
+			seen.add(text);
+			values.push(text);
+		}
+	}
+	return values;
+}
+
+/**
+ * The planner's link maps for the draft's choices. Only included columns whose target is an existing link field
+ * produce a map. A single link takes its one chosen ID; a multi-link takes the ordered list.
+ */
+export function linkMappingsOf(
+	draft: ImportDraft,
+	preview: DatabaseImportPreview,
+	destination: DatabaseTable | undefined,
+): readonly DatabaseImportLinkValueMapping[] {
+	if (destination === undefined) {
+		return [];
+	}
+	const included = new Set(includedColumnsOf(preview, draft));
+	const mappings: DatabaseImportLinkValueMapping[] = [];
+	for (const [sourceColumn, fieldId] of draft.fieldTargets) {
+		const choices = draft.linkValues.get(sourceColumn);
+		if (!included.has(sourceColumn) || choices === undefined || choices.size === 0) {
+			continue;
+		}
+		const field = destination.fields.find(
+			(candidate) => candidate.kind === 'field' && candidate.id === fieldId,
+		);
+		if (field === undefined || field.kind !== 'field' || field.type !== 'link') {
+			continue;
+		}
+		const targetTableId = field.settings.targetTableId;
+		if (typeof targetTableId !== 'string') {
+			continue;
+		}
+		const multiple = field.settings.allowMultiple === true;
+		const values = new Map<string, string | readonly string[]>();
+		for (const [text, ids] of choices) {
+			if (multiple) {
+				values.set(text, ids);
+			} else if (ids.length === 1 && ids[0] !== undefined) {
+				values.set(text, ids[0]);
+			}
+		}
+		mappings.push({ sourceColumn, fieldId, targetTableId, values });
+	}
+	return mappings;
 }

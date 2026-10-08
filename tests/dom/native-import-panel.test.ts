@@ -16,7 +16,7 @@ import { openDatabase } from '../../src/adapters/tablifyFile/session';
 import type { DatabaseStore } from '../../src/adapters/tablifyFile/databaseStore';
 import type { DatabaseSession } from '../../src/adapters/tablifyFile/session';
 import { serializeDocument } from '../../src/core/database';
-import type { DatabaseDocument } from '../../src/core/database';
+import type { DatabaseDocument, DatabaseTable } from '../../src/core/database';
 import { ID_PREFIXES } from '../../src/core/database/ids';
 import type { IdKind } from '../../src/core/database/ids';
 import { NativeImportPanel } from '../../src/plugin/nativeImport/NativeImportPanel';
@@ -59,8 +59,67 @@ interface Rig {
 	close(): Promise<void>;
 }
 
-async function rig(): Promise<Rig> {
-	const port = createFakePort({ [PATH]: serializeDocument(emptyDocument()) });
+/** A row ID of the shape the planner accepts for a row. */
+function rowId(stem: string): string {
+	return `row_${(stem + '0'.repeat(26)).slice(0, 26)}`;
+}
+
+/** Clients with two rows, and an empty Orders table whose Client field links to Clients. */
+function linkedDocument(): DatabaseDocument {
+	const clients = {
+		id: 'tbl_clients',
+		name: 'Clients',
+		fields: [
+			{
+				kind: 'field',
+				id: 'fld_cname',
+				name: 'Name',
+				type: 'text',
+				settings: {},
+				unknown: [],
+			},
+		],
+		rows: [
+			{
+				id: rowId('ada'),
+				cells: new Map([['fld_cname', 'Ada']]),
+				createdAt: null,
+				updatedAt: null,
+				unknown: [],
+			},
+			{
+				id: rowId('grace'),
+				cells: new Map([['fld_cname', 'Grace']]),
+				createdAt: null,
+				updatedAt: null,
+				unknown: [],
+			},
+		],
+		views: [],
+		unknown: [],
+	} satisfies DatabaseTable;
+	const orders = {
+		id: 'tbl_orders',
+		name: 'Orders',
+		fields: [
+			{
+				kind: 'field',
+				id: 'fld_client',
+				name: 'Client',
+				type: 'link',
+				settings: { targetTableId: 'tbl_clients' },
+				unknown: [],
+			},
+		],
+		rows: [],
+		views: [],
+		unknown: [],
+	} satisfies DatabaseTable;
+	return { ...emptyDocument(), tables: [clients, orders] };
+}
+
+async function rig(document: DatabaseDocument = emptyDocument()): Promise<Rig> {
+	const port = createFakePort({ [PATH]: serializeDocument(document) });
 	const opened = await openDatabase(port, PATH);
 	if (!opened.ok) {
 		throw new Error('the panel fixture must open');
@@ -120,6 +179,31 @@ function setText(root: HTMLElement, text: string): void {
 	area.dispatchEvent(new Event('change'));
 }
 
+/** Walks the wizard to the field step for an append into Orders, with the Client column linked. */
+function toLinkStep(root: HTMLElement): void {
+	setText(root, 'Client\nAda\nGrace\n');
+	buttonNamed(root, 'Next').click();
+	const append = root.querySelector<HTMLInputElement>('input[value="append"]');
+	if (append === null) {
+		throw new Error('the destination step must offer append');
+	}
+	append.checked = true;
+	append.dispatchEvent(new Event('change'));
+	selectNamed(root, 'Table to write to', 'tbl_orders');
+	selectNamed(root, 'Field for Client', 'fld_client');
+}
+
+function selectNamed(root: HTMLElement, ariaLabel: string, value: string): void {
+	const select = Array.from(root.querySelectorAll('select')).find(
+		(candidate) => candidate.getAttribute('aria-label') === ariaLabel,
+	);
+	if (select === undefined) {
+		throw new Error(`no select named ${ariaLabel}`);
+	}
+	select.value = value;
+	select.dispatchEvent(new Event('change'));
+}
+
 function setNewTableName(root: HTMLElement, name: string): void {
 	const input = root.querySelector<HTMLInputElement>('.tablify-native-import-name');
 	if (input === null) {
@@ -136,6 +220,45 @@ afterEach(() => {
 });
 
 describe('native import panel', () => {
+	it('blocks review while a link value has no chosen row, and names that value', async () => {
+		const fixture = await rig(linkedDocument());
+		const { root, panel } = mount(fixture.store);
+
+		toLinkStep(root);
+		selectNamed(root, 'Row for "Ada"', rowId('ada'));
+		buttonNamed(root, 'Review').click();
+
+		expect(panel.currentStep()).toBe('review');
+		expect(root.textContent).toContain('Link value "Grace" has no explicit row-ID mapping');
+		expect(buttonNamed(root, 'Apply import').disabled).toBe(true);
+		await fixture.close();
+	});
+
+	it('applies the link once every value has a chosen row, as one saved change', async () => {
+		const fixture = await rig(linkedDocument());
+		const { root, panel } = mount(fixture.store);
+
+		toLinkStep(root);
+		selectNamed(root, 'Row for "Ada"', rowId('ada'));
+		selectNamed(root, 'Row for "Grace"', rowId('grace'));
+		buttonNamed(root, 'Review').click();
+		expect(buttonNamed(root, 'Apply import').disabled).toBe(false);
+
+		buttonNamed(root, 'Apply import').click();
+		await vi.waitFor(() => {
+			expect(panel.currentStep()).toBe('done');
+		});
+		expect(panel.lastResult()).toMatchObject({ kind: 'saved', appliedRecords: 2 });
+		const orders = fixture.session
+			.getDocument()
+			.tables.find((table) => table.id === 'tbl_orders');
+		expect(orders?.rows.map((row) => row.cells.get('fld_client'))).toEqual([
+			rowId('ada'),
+			rowId('grace'),
+		]);
+		await fixture.close();
+	});
+
 	it('keeps Next disabled until the source reads, and says why nothing is previewed yet', async () => {
 		const fixture = await rig();
 		const { root } = mount(fixture.store);

@@ -21,6 +21,8 @@ import {
 	IMPORT_TYPE_CHOICES,
 	includedColumnsOf,
 	initialDraft,
+	linkSourceValuesOf,
+	linkTargetRowsOf,
 	needsAcknowledgement,
 	planOf,
 	previewOf,
@@ -436,6 +438,7 @@ export class NativeImportPanel {
 					tableId: value === '' ? null : value,
 					fieldTargets: new Map(),
 					keyColumn: null,
+					linkValues: new Map(),
 				});
 				this.render();
 			},
@@ -467,7 +470,8 @@ export class NativeImportPanel {
 			'tablify-dlg-hint',
 			'Each column becomes a new field unless you pick an existing one. Names are never matched for you.',
 		);
-		const targets = targetFieldsOf(table);
+		const allTables = this.options.store.getSnapshot().document.tables;
+		const targets = targetFieldsOf(table, allTables);
 		const included = includedColumnsOf(preview, this.draft);
 		for (const index of included) {
 			const column = preview.columns.find((candidate) => candidate.index === index);
@@ -501,11 +505,16 @@ export class NativeImportPanel {
 						value === '' && this.draft.keyColumn === index
 							? null
 							: this.draft.keyColumn;
-					this.update({ fieldTargets, keyColumn });
+					// A choice for a column is only meaningful for the field it was made for.
+					const linkValues = new Map(this.draft.linkValues);
+					linkValues.delete(index);
+					this.update({ fieldTargets, keyColumn, linkValues });
 					this.render();
 				},
 			);
 		}
+
+		this.renderLinkValues(body, preview, table, allTables, included);
 
 		if (this.draft.mode === 'replace') {
 			const keyOptions = included.filter((index) => this.draft.fieldTargets.has(index));
@@ -535,6 +544,105 @@ export class NativeImportPanel {
 				'Rows match only on the key field. Existing rows that no source row matches are kept. Without a key, rows are appended.',
 			);
 		}
+	}
+
+	/**
+	 * For each included column whose target is a link field, one picker per distinct source value. A value with no
+	 * chosen row stays unmapped, and the review blocks on it, naming the value.
+	 */
+	private renderLinkValues(
+		body: HTMLElement,
+		preview: DatabaseImportPreview,
+		table: DatabaseTable,
+		tables: readonly DatabaseTable[],
+		included: readonly number[],
+	): void {
+		for (const index of included) {
+			const fieldId = this.draft.fieldTargets.get(index);
+			const field = table.fields.find(
+				(candidate) => candidate.kind === 'field' && candidate.id === fieldId,
+			);
+			if (field === undefined || field.kind !== 'field' || field.type !== 'link') {
+				continue;
+			}
+			const targetTableId = field.settings.targetTableId;
+			const rows =
+				typeof targetTableId === 'string' ? linkTargetRowsOf(tables, targetTableId) : null;
+			if (rows === null) {
+				continue;
+			}
+			const column = preview.columns.find((candidate) => candidate.index === index);
+			const name = columnLabel(column?.name ?? '', index);
+			el(body, 'div', 'tablify-dlg-sub', `Link values for ${name}`);
+			el(
+				body,
+				'div',
+				'tablify-dlg-hint',
+				field.settings.allowMultiple === true
+					? 'Pick every row each value links to. A value with no row blocks the import; leaving the column out is the way to skip it.'
+					: 'Pick the one row each value links to. A value with no row blocks the import.',
+			);
+			const values = linkSourceValuesOf(preview, index);
+			if (values.length === 0) {
+				el(body, 'div', 'tablify-dlg-hint', 'This column has no values to map.');
+				continue;
+			}
+			if (rows.length === 0) {
+				el(
+					body,
+					'div',
+					'tablify-dlg-warning',
+					'The target table has no rows to link to yet.',
+				);
+			}
+			const choices = this.draft.linkValues.get(index);
+			for (const value of values) {
+				const chosen = choices?.get(value) ?? [];
+				const rowOptions = rows.map((row) => ({ value: row.rowId, label: row.label }));
+				if (field.settings.allowMultiple === true) {
+					const label = labelled(body, `${JSON.stringify(value)} links to`);
+					const select = el(label, 'select', 'tablify-native-select');
+					select.multiple = true;
+					select.setAttribute('aria-label', `Rows for ${JSON.stringify(value)}`);
+					for (const option of rowOptions) {
+						const item = el(select, 'option', undefined, option.label);
+						item.value = option.value;
+						item.selected = chosen.includes(option.value);
+					}
+					select.addEventListener('change', () => {
+						const ids = Array.from(select.selectedOptions, (option) => option.value);
+						this.setLinkChoice(index, value, ids);
+					});
+				} else {
+					selectWith(
+						labelled(body, `${JSON.stringify(value)} links to`),
+						`Row for ${JSON.stringify(value)}`,
+						[{ value: '', label: 'Choose a row…' }, ...rowOptions],
+						chosen[0] ?? '',
+						(choice) => {
+							this.setLinkChoice(index, value, choice === '' ? [] : [choice]);
+						},
+					);
+				}
+			}
+		}
+	}
+
+	private setLinkChoice(index: number, value: string, ids: readonly string[]): void {
+		const linkValues = new Map(this.draft.linkValues);
+		const forColumn = new Map(linkValues.get(index) ?? []);
+		if (ids.length === 0) {
+			forColumn.delete(value);
+		} else {
+			forColumn.set(value, ids);
+		}
+		if (forColumn.size === 0) {
+			linkValues.delete(index);
+		} else {
+			linkValues.set(index, forColumn);
+		}
+		this.update({ linkValues });
+		this.render();
 	}
 
 	private renderReview(body: HTMLElement): void {

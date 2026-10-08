@@ -9,6 +9,8 @@ import {
 	defaultTableName,
 	destinationOf,
 	initialDraft,
+	linkSourceValuesOf,
+	linkTargetRowsOf,
 	planOf,
 	previewOf,
 	progressLine,
@@ -179,5 +181,180 @@ describe('native import model', () => {
 			'Ready to apply 3 record(s). Cancel is still available.',
 		);
 		expect(progressLine('unknown', 0)).toBe('');
+	});
+});
+
+/** A valid row ID shape for the planner's row check (`row_` plus 26 lowercase letters or digits). */
+function rowId(stem: string): string {
+	return `row_${(stem + '0'.repeat(26)).slice(0, 26)}`;
+}
+
+function linkDocument(): DatabaseDocument {
+	const clients: DatabaseTable = {
+		id: 'tbl_clients',
+		name: 'Clients',
+		fields: [
+			{
+				kind: 'field',
+				id: 'fld_cname',
+				name: 'Name',
+				type: 'text',
+				settings: {},
+				unknown: [],
+			},
+		],
+		rows: [
+			{
+				id: rowId('ada'),
+				cells: new Map([['fld_cname', 'Ada']]),
+				createdAt: null,
+				updatedAt: null,
+				unknown: [],
+			},
+			{ id: rowId('grace'), cells: new Map(), createdAt: null, updatedAt: null, unknown: [] },
+		],
+		views: [],
+		unknown: [],
+	};
+	const orders: DatabaseTable = {
+		id: 'tbl_orders',
+		name: 'Orders',
+		fields: [
+			{
+				kind: 'field',
+				id: 'fld_client',
+				name: 'Client',
+				type: 'link',
+				settings: { targetTableId: 'tbl_clients' },
+				unknown: [],
+			},
+		],
+		rows: [],
+		views: [],
+		unknown: [],
+	};
+	return { ...emptyDocument(), tables: [clients, orders] };
+}
+
+describe('native import link values', () => {
+	const ADA = rowId('ada');
+	const GRACE = rowId('grace');
+
+	it('offers a link field as a target only when its target table exists in the database', () => {
+		const document = linkDocument();
+		const orders = document.tables[1];
+		if (orders === undefined) {
+			throw new Error('the link fixture has an orders table');
+		}
+		expect(targetFieldsOf(orders, document.tables)[0]?.selectable).toBe(true);
+		expect(targetFieldsOf(orders)[0]?.selectable).toBe(false);
+	});
+
+	it('lists each distinct, non-blank source value once, in first-seen order', () => {
+		const preview = previewOf(draftWith('Client\nAda\n\nAda\nGrace\n'));
+		if (!preview.ok) {
+			throw new Error('the link source must read');
+		}
+		expect(linkSourceValuesOf(preview, 0)).toEqual(['Ada', 'Grace']);
+	});
+
+	it('labels target rows by their first text field, and by ID when that is blank', () => {
+		const document = linkDocument();
+		expect(linkTargetRowsOf(document.tables, 'tbl_clients')).toEqual([
+			{ rowId: ADA, label: 'Ada' },
+			{ rowId: GRACE, label: GRACE },
+		]);
+		expect(linkTargetRowsOf(document.tables, 'tbl_missing')).toBeNull();
+	});
+
+	it('plans the link when every source value has a chosen row, and blocks on the one that has none', () => {
+		const document = linkDocument();
+		const text = 'Client\nAda\nGrace\n';
+		const base = draftWith(text, {
+			mode: 'append',
+			tableId: 'tbl_orders',
+			fieldTargets: new Map([[0, 'fld_client']]),
+		});
+
+		const partial = planOf(
+			document,
+			{ ...base, linkValues: new Map([[0, new Map([['Ada', [ADA]]])]]) },
+			ENV,
+		);
+		expect(partial.ok).toBe(false);
+		if (partial.ok) {
+			throw new Error('a value with no chosen row must block the import');
+		}
+		expect(partial.reasons.join('\n')).toContain(
+			'Link value "Grace" has no explicit row-ID mapping',
+		);
+
+		const complete = planOf(
+			document,
+			{
+				...base,
+				linkValues: new Map([
+					[
+						0,
+						new Map([
+							['Ada', [ADA]],
+							['Grace', [GRACE]],
+						]),
+					],
+				]),
+			},
+			ENV,
+		);
+		expect(complete.ok).toBe(true);
+	});
+
+	it('takes an ordered list for a multi-link field, and never turns a list into a single link', () => {
+		const document = linkDocument();
+		const orders = document.tables[1];
+		if (orders === undefined) {
+			throw new Error('the link fixture has an orders table');
+		}
+		const multi: DatabaseDocument = {
+			...document,
+			tables: [
+				document.tables[0] ?? orders,
+				{
+					...orders,
+					fields: [
+						{
+							kind: 'field',
+							id: 'fld_client',
+							name: 'Client',
+							type: 'link',
+							settings: { targetTableId: 'tbl_clients', allowMultiple: true },
+							unknown: [],
+						},
+					],
+				},
+			],
+		};
+		const base = draftWith('Client\nAda\n', {
+			mode: 'append',
+			tableId: 'tbl_orders',
+			fieldTargets: new Map([[0, 'fld_client']]),
+		});
+
+		const list = planOf(
+			multi,
+			{ ...base, linkValues: new Map([[0, new Map([['Ada', [ADA, GRACE]]])]]) },
+			ENV,
+		);
+		expect(list.ok).toBe(true);
+
+		const single = planOf(
+			document,
+			{ ...base, linkValues: new Map([[0, new Map([['Ada', [ADA, GRACE]]])]]) },
+			ENV,
+		);
+		expect(single.ok).toBe(false);
+		if (single.ok) {
+			throw new Error('a list must not be written to a single link');
+		}
+		expect(single.reasons.join('\n')).toContain('no explicit row-ID mapping');
 	});
 });
