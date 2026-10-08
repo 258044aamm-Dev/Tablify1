@@ -70,6 +70,8 @@ Prefer one database command, one undo entry, and one repository write. If a 400�
 - Attachment export emits path references or display names according to an explicit option; it never embeds the binary asset.
 - Spreadsheet formula injection safety remains: formula-shaped local text must export as literal text; reader never evaluates formulas.
 
+**Part B checkpoint (2026-10-08, partial):** `src/core/export/csv.ts` adds a pure CSV writer and reader. Writes follow RFC 4180 quoting; formula-leading cells are quoted by the same rule as the clipboard's TSV writer (a mitigation, not a guarantee). CRLF is the default and LF is an option. Every record is terminated, and an empty matrix is empty text. `fromCsv` never evaluates a cell. `tests/unit/native-csv-export.test.ts` (7 tests) covers escaping, formula text, line endings, empty cells, and round-trips. **NOT DONE:** the native table-to-matrix builder for selection/view/table scope, field-ID column order, the export dialog, XLSX from native tables, and linked-record or attachment representations. The existing grid export path is unchanged. **ASSUMED:** no byte-order mark is needed for spreadsheet readers; not verified on a real host.
+
 ## Part C — Airtable sync
 
 ### Step 1 — Preserve safety semantics
