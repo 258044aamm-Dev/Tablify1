@@ -54,7 +54,7 @@ interface NativeColumn {
 	readonly field: ResolvedField;
 }
 
-function optionsOf(field: FieldDefinition): FieldOptions {
+export function optionsOf(field: FieldDefinition): FieldOptions {
 	const settings = field.settings;
 	const options: FieldOptions = {
 		type: field.type,

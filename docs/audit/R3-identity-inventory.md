@@ -71,16 +71,17 @@ Rule: `src/adapters/`, `src/core/fieldTypes/`, `src/core/`, `src/grid/`, `src/pl
 | `src/plugin/export/runExport.ts` | filePath ×2, PropertyId ×2 |
 | `src/plugin/sync/local.ts` | filePath ×1, PropertyId ×4, RowSource ×3 |
 
-### `remote-record-id` — 2 file(s)
+### `remote-record-id` — 3 file(s)
 
 Rule: `src/sync/`
 
 | File | Matches |
 | --- | --- |
 | `src/sync/SyncTarget.ts` | RowSource ×1 |
+| `src/sync/nativePort.ts` | filePath ×4, propertyId ×1, RowSource ×1 |
 | `src/sync/pullPush.ts` | filePath ×2, PropertyId ×3, RowSource ×1 |
 
-### `historical` — 28 file(s)
+### `historical` — 29 file(s)
 
 Rule: `tests/`
 
@@ -108,6 +109,7 @@ Rule: `tests/`
 | `tests/unit/diff.test.ts` | filePath ×1, RowSource ×1 |
 | `tests/unit/edit-session.test.ts` | filePath ×2 |
 | `tests/unit/fakes-contract.test.ts` | processFrontMatter ×8, metadataCache ×2, getFileCache ×2 |
+| `tests/unit/native-port.test.ts` | filePath ×5, propertyId ×1 |
 | `tests/unit/ops-fixtures.ts` | filePath ×19, PropertyId ×2 |
 | `tests/unit/ops.test.ts` | filePath ×40 |
 | `tests/unit/r3-inventory.test.ts` | YamlValue ×1, toYaml ×1 |
@@ -126,12 +128,12 @@ Rule: `tests/unit/view-state.test.ts`, `tests/unit/value-vocabulary.test.ts`
 
 ## Totals
 
-80 files carry 1204 marker occurrences.
+82 files carry 1216 marker occurrences.
 
 - `replace`: 48 file(s), 726 occurrence(s)
 - `host-path`: 0 file(s), 0 occurrence(s)
-- `remote-record-id`: 2 file(s), 7 occurrence(s)
-- `historical`: 28 file(s), 463 occurrence(s)
+- `remote-record-id`: 3 file(s), 13 occurrence(s)
+- `historical`: 29 file(s), 469 occurrence(s)
 - `guard`: 2 file(s), 8 occurrence(s)
 - `native`: 0 file(s), 0 occurrence(s)
 
