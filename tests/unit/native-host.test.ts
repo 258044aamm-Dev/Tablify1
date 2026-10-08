@@ -510,3 +510,44 @@ describe('native sync host: the status the panel shows', () => {
 		expect(status?.problem).not.toBeNull();
 	});
 });
+
+describe('native sync host: the token never reaches an outcome, even from a failure that echoes it', () => {
+	it('redacts the token from a thrown remote error before it becomes a sentence', async () => {
+		const path = nativeLinkPath(DB, TABLE);
+		const original = serialiseNativeLink(linkedDocument());
+		const files = vault({ [path]: original });
+		const { target } = remote({
+			pull: async () => {
+				throw new Error(`the provider rejected ${TOKEN} as stale`);
+			},
+		});
+		const outcome = await syncNativeTable(options(files, target), {
+			databaseId: DB,
+			tableId: TABLE,
+			port: await port(),
+			direction: 'pull',
+		});
+		expect(outcome.kind).toBe('refused');
+		expect(JSON.stringify(outcome)).not.toContain(TOKEN);
+		expect(files.files.get(path)).toBe(original);
+	});
+});
+
+describe('native sync host: first link never echoes the token', () => {
+	it('redacts the token from a remote read that fails while linking', async () => {
+		const files = vault();
+		const { target } = remote({
+			pull: async () => {
+				throw new Error(`read refused for ${TOKEN}`);
+			},
+		});
+		const outcome = await linkActiveStore(options(files, target), {
+			store: await storeOf(),
+			keyFieldName: 'Title',
+			target: { baseId: 'appBASE', tableId: 'tblREMOTE' },
+		});
+		expect(outcome.kind).toBe('refused');
+		expect(JSON.stringify(outcome)).not.toContain(TOKEN);
+		expect(files.writes).toBe(0);
+	});
+});

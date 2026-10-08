@@ -125,13 +125,13 @@ export async function syncNativeTable(
 			...(options.now === undefined ? {} : { now: options.now }),
 		});
 	} catch (error) {
-		return refused('other', failureText(error));
+		return refused('other', scrubbed(failureText(error), token));
 	}
 
 	await options.files.write(path, serialiseNativeLink(result.document));
 	return {
 		kind: 'ran',
-		message: result.report.summary,
+		message: scrubbed(result.report.summary, token),
 		needsReview:
 			unresolvedConflicts(result.report.plan.diff.conflicts, input.choices ?? new Map())
 				.length > 0,
@@ -363,8 +363,17 @@ export async function linkActiveStore(
 			document,
 		};
 	} catch (error) {
-		return { kind: 'refused', message: failureText(error) };
+		return { kind: 'refused', message: scrubbed(failureText(error), token) };
 	}
+}
+
+/**
+ * A remote failure can echo what was sent, the token included (a provider or a transport error body, a stack line).
+ * Every sentence that leaves this file passes through here, so the token cannot reach a Notice, the status line or
+ * the outcome, whatever the failure said. The client already redacts its own errors; this covers the rest.
+ */
+function scrubbed(text: string, token: string): string {
+	return token === '' ? text : text.split(token).join('[token removed]');
 }
 
 function refused(reason: RefusalReason, message: string): NativeSyncOutcome {
