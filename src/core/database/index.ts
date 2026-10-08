@@ -127,3 +127,26 @@ export type {
 	ReplaceRowMatch,
 } from './import/destination';
 export { requiresImportMappingConfirmation } from './import/destination';
+export type {
+	DatabaseImportConfirmation,
+	DatabaseImportDuplicateDecision,
+	DatabaseImportLinkValueMapping,
+	DatabaseImportPlan,
+	DatabaseImportPlanContext,
+	DatabaseImportPlanIssue,
+	DatabaseImportPlanIssueCode,
+	DatabaseImportPlanMetrics,
+	DatabaseImportPlanOptions,
+	DatabaseImportPlanPolicy,
+	DatabaseImportPlanResult,
+	DatabaseImportPlanWarning,
+	DatabaseImportRemovedField,
+	DatabaseImportRowKeyDecision,
+	DatabaseImportSkippedValue,
+	DatabaseImportUnmatchedExistingRow,
+	PlannedDatabaseImportCell,
+	PlannedDatabaseImportColumn,
+	PlannedDatabaseImportDestination,
+	PlannedDatabaseImportRow,
+} from './import/plan';
+export { buildDatabaseImportPlan, describeDatabaseImportPlan } from './import/plan';

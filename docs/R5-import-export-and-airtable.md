@@ -2,7 +2,7 @@
 
 **Mode:** active implementation guide under the authorized R1–R5 scope; proceed one gated step at a time. **Dependencies:** stable R1 schema, R2 repository, R3 IDs/ops, and R4 field/table UI.
 
-**Status (2026-10-08):** Part A Steps 1–2 have verified source-preview and destination-contract checkpoints. R5 is not complete: Part A Steps 3–4 and Parts B–C remain open. R6, release metadata, and version tags remain untouched. Native Obsidian-host and physical-device checks remain **NOT RUN**.
+**Status (2026-10-08):** Part A Steps 1–3 have verified source-preview, destination-contract, and exact-plan checkpoints. R5 is not complete: Part A Step 4 and Parts B–C remain open. XLSX workbook reading/worksheet selection, native importer UI/apply, R6, release metadata, and version tags remain untouched. Native Obsidian-host and physical-device checks remain **NOT RUN**.
 
 ## Objective
 
@@ -18,7 +18,7 @@ Reuse matrix readers, header handling, type inference, per-column overrides, cli
 
 **VERIFIED gates:** `npx bun run check` passed, including 88 test files / 1,971 tests and the repository's type, lint, brand, manifest, format, build, contrast, CSS, and bundle-size checks. The targeted preview + legacy-import suites passed 40/40. The existing Playwright layout harness passed 115/115; it still exercises the pre-existing grid, not the native FileView or a native importer UI.
 
-**OPEN:** although `read-excel-file` is already a dependency, no production XLSX import adapter, workbook reader, or worksheet chooser exists yet; this checkpoint accepts a parsed matrix but does not claim user-visible XLSX import. Destination-specific collision reporting and native apply progress belong to the later destination/plan/apply steps. The existing note import wizard and its folder/template/frontmatter/vault-collision/progress behavior remain unchanged until the authorized removal phase, so this isolated native path does not regress that workflow. Real Obsidian-host and physical-device checks remain **NOT RUN**.
+**OPEN:** although `read-excel-file` is already a dependency, no production XLSX import adapter, workbook reader, or worksheet chooser exists yet; this checkpoint accepts a parsed matrix but does not claim user-visible XLSX import. Step 3 now rejects ambiguous native field-name mappings/collisions; native wizard conflict presentation, transactional apply, and progress reporting remain open. The existing note import wizard and its folder/template/frontmatter/vault-collision/progress behavior remain unchanged, so this isolated native path does not regress that workflow. Real Obsidian-host and physical-device checks remain **NOT RUN**.
 
 ### Step 2 — Define destinations
 
@@ -30,7 +30,7 @@ The native destination contract has three choices for the future wizard:
 
 The replace preview enumerates affected fields, type/cell changes, skipped or lossy values, and unmatched rows before an explicit confirmation. Apply must re-plan and refuse a stale plan. The source file remains an external import input; it is never renamed to `.tablify` or treated as a database without parsing/confirmation.
 
-**VERIFIED implementation checkpoint (2026-10-08):** `src/core/database/import/destination.ts` exports a discriminated destination contract for create, append, and replace plus the field-mapping and row-key choices. Name suggestions are distinguished from explicit stable-field-ID mappings, and the helper marks name-based matches as requiring confirmation. Replace defaults preserve import-absent fields, model field removal as an explicit choice, require an explicit stable field ID for key matching, and represent no-key behavior as append. No unmatched-row deletion or positional row matching is represented. This is a pure core contract, not a mounted wizard or an apply path; plan construction and destructive confirmation remain Step 3.
+**VERIFIED implementation checkpoint (2026-10-08):** `src/core/database/import/destination.ts` exports a discriminated destination contract for create, append, and replace plus the field-mapping and row-key choices. Name suggestions are distinguished from explicit stable-field-ID mappings, and the helper marks name-based matches as requiring confirmation. Replace defaults preserve import-absent fields, model field removal as an explicit choice, require an explicit stable field ID for key matching, and represent no-key behavior as append. No unmatched-row deletion or positional row matching is represented. This is the pure choice contract consumed by Step 3; it does not include a mounted wizard or apply path.
 
 **VERIFIED gates:** `npx bun run check` passed (89 test files / 1,976 tests and all automated repository gates); targeted destination + preview + legacy-import suites passed 45/45. `npx bun run test:layout` passed 115/115; that harness covers the pre-existing grid only. **NOT RUN:** native importer UI, Obsidian-host, and physical-device verification.
 
@@ -43,6 +43,12 @@ The pure plan contains selected table, included columns, field types/options, ro
 - Linked-record imports require a deterministic target mapping; do not guess from labels or silently import link text as a relationship.
 - Warn based on measured size/performance policy rather than “large import ⇒ keep `.tabula`.”
 - Cancellation reports zero committed work, or precisely reports committed chunks if a documented chunked import is approved.
+
+**VERIFIED implementation checkpoint (2026-10-08):** `src/core/database/import/plan.ts` exports `buildDatabaseImportPlan` and `describeDatabaseImportPlan` through the native database index. The pure planner creates exact operations for create/append/replace, uses injected IDs and clock, converts through native field descriptors, keeps existing field types, applies preview-selected types to new fields, and carries explicit stable option IDs. It records included/excluded columns, per-row conversions and skipped values, confirmations, duplicate decisions, unmatched retained rows, serialized document bytes before/after, deterministic work units, and threshold-only warnings. Keyed replace refuses duplicate source/target keys; no-key import preserves source duplicates and lists all existing rows retained by replace. Link imports require exact source-value mappings to valid row IDs in the configured target table. The input document is not mutated; the exact operation list is checked in memory before it is returned. The note importer and its behavior were not changed.
+
+**VERIFIED gates:** targeted native planner + destination + preview + legacy-import suites passed 69/69. `npx --yes bun run check` passed: 90 test files / 1,985 tests and all type, lint, brand, manifest, format, test, build, contrast, CSS, and bundle-size gates. `npx --yes bun run test:layout` passed 115/115; that harness still covers the pre-existing grid, not the native importer or FileView. **NOT RUN:** real Obsidian-host and physical-device checks.
+
+**OPEN:** Step 4 transaction/undo/write, cancellation and native progress/UI remain unimplemented. XLSX workbook reading and worksheet selection remain deferred; a pre-parsed matrix is the only XLSX seam. Parts B–C, R6, release metadata, and tags remain untouched.
 
 ### Step 4 — Apply as one transaction where feasible
 
