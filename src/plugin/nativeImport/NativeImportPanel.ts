@@ -31,6 +31,7 @@ import {
 	targetFieldsOf,
 } from './model';
 import type { ImportDraft, ImportMode, ImportPlanEnvironment } from './model';
+import { readWorkbook } from './workbookReader';
 
 export interface NativeImportPanelOptions {
 	readonly store: DatabaseStore;
@@ -190,6 +191,9 @@ export class NativeImportPanel {
 		}
 	}
 
+	/** Why the last chosen workbook was refused, shown in the source step. `null` when there is none. */
+	private workbookNotice: string | null = null;
+
 	private update(patch: Partial<ImportDraft>): void {
 		this.draft = { ...this.draft, ...patch };
 	}
@@ -257,28 +261,52 @@ export class NativeImportPanel {
 		area.rows = 6;
 		area.setAttribute('aria-label', 'Table text to import');
 		area.addEventListener('change', () => {
-			this.update({ text: area.value });
+			this.workbookNotice = null;
+			this.update({ text: area.value, sheets: [], sheetName: null });
 			this.render();
 		});
 
 		const file = el(body, 'input', 'tablify-native-import-file');
 		file.type = 'file';
-		file.accept = '.tsv,.csv,.txt,.html';
-		file.setAttribute('aria-label', 'Choose a text file to import');
+		file.accept = '.tsv,.csv,.txt,.html,.xlsx';
+		file.setAttribute('aria-label', 'Choose a file to import');
 		file.addEventListener('change', () => {
 			const chosen = file.files?.[0];
 			if (chosen === undefined) {
 				return;
 			}
+			if (/\.xlsx$/i.test(chosen.name)) {
+				void this.openWorkbook(chosen);
+				return;
+			}
 			void chosen.text().then((text) => {
+				this.workbookNotice = null;
 				this.update({
 					text,
+					sheets: [],
+					sheetName: null,
 					sourceName: chosen.name,
 					newTableName: defaultTableName(chosen.name),
 				});
 				this.render();
 			});
 		});
+
+		if (this.workbookNotice !== null) {
+			el(body, 'div', 'tablify-dlg-warning', this.workbookNotice);
+		}
+		if (this.draft.sheets.length > 1) {
+			selectWith(
+				labelled(body, 'Worksheet'),
+				'Worksheet to import',
+				this.draft.sheets.map((sheet) => ({ value: sheet.name, label: sheet.name })),
+				this.draft.sheetName ?? '',
+				(value) => {
+					this.update({ sheetName: value });
+					this.render();
+				},
+			);
+		}
 
 		const header = el(
 			labelled(body, 'The first row is a header'),
@@ -295,8 +323,30 @@ export class NativeImportPanel {
 		this.renderPreview(body);
 	}
 
+	/** Reads an .xlsx file and makes its first worksheet the source. A refused file says why and changes nothing else. */
+	private async openWorkbook(file: File): Promise<void> {
+		const bytes = await file.arrayBuffer();
+		const read = await readWorkbook(bytes);
+		if (!read.ok) {
+			this.workbookNotice = read.reason;
+			this.update({ sheets: [], sheetName: null });
+			this.render();
+			return;
+		}
+		this.workbookNotice = null;
+		const first = read.sheets[0];
+		this.update({
+			text: '',
+			sheets: read.sheets,
+			sheetName: first?.name ?? null,
+			sourceName: file.name,
+			newTableName: defaultTableName(file.name),
+		});
+		this.render();
+	}
+
 	private renderPreview(body: HTMLElement): void {
-		if (this.draft.text.trim() === '') {
+		if (this.draft.sheetName === null && this.draft.text.trim() === '') {
 			el(body, 'div', 'tablify-dlg-hint', 'Nothing to preview yet.');
 			return;
 		}

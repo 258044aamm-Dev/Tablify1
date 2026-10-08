@@ -32,8 +32,15 @@ import type { DatabaseTable } from '../../core/database/schema';
 import { INFERABLE_TYPES } from '../../core/import/preview';
 import type { FieldTypeId } from '../../core/types';
 import type { DatabaseImportApplyResult } from '../../adapters/tablifyFile';
+import type { Matrix } from '../../core/selection/clipboard';
 
 export type ImportMode = 'create' | 'append' | 'replace';
+
+/** One worksheet of an opened workbook, as text, in the workbook's own order. */
+export interface WorksheetSource {
+	readonly name: string;
+	readonly matrix: Matrix;
+}
 
 /**
  * Link choices the person made: source column → exact source text → the row IDs it links to. A single link holds
@@ -58,6 +65,10 @@ export interface ImportDraft {
 	readonly keyColumn: number | null;
 	/** Explicit row choices for link columns. Empty unless a link field is the target of a column. */
 	readonly linkValues: LinkChoices;
+	/** Every worksheet of an opened workbook. Empty for pasted or text-file sources. */
+	readonly sheets: readonly WorksheetSource[];
+	/** The worksheet the preview reads. `null` means the text source is in use. */
+	readonly sheetName: string | null;
 }
 
 /** One selectable target for a column, or the reason it cannot be a target in this build. */
@@ -103,14 +114,28 @@ export function initialDraft(input: {
 		fieldTargets: new Map(),
 		keyColumn: null,
 		linkValues: new Map(),
+		sheets: [],
+		sheetName: null,
 	};
 }
 
 /** Read and infer the pasted or loaded text. An empty or unreadable source is a reason, not an exception. */
 export function previewOf(draft: ImportDraft): DatabaseImportPreviewResult {
+	const options = {
+		hasHeader: draft.hasHeader,
+		overrides: draft.overrides,
+		excluded: draft.excluded,
+	};
+	const sheet = draft.sheets.find((candidate) => candidate.name === draft.sheetName);
+	if (sheet !== undefined) {
+		return previewDatabaseImport(
+			{ kind: 'matrix', matrix: sheet.matrix, name: draft.sourceName },
+			options,
+		);
+	}
 	return previewDatabaseImport(
 		{ kind: 'text', text: draft.text, name: draft.sourceName },
-		{ hasHeader: draft.hasHeader, overrides: draft.overrides, excluded: draft.excluded },
+		options,
 	);
 }
 

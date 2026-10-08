@@ -17,6 +17,7 @@ import type { DatabaseStore } from '../../src/adapters/tablifyFile/databaseStore
 import type { DatabaseSession } from '../../src/adapters/tablifyFile/session';
 import { serializeDocument } from '../../src/core/database';
 import type { DatabaseDocument, DatabaseTable } from '../../src/core/database';
+import writeXlsxFile from 'write-excel-file/browser';
 import { ID_PREFIXES } from '../../src/core/database/ids';
 import type { IdKind } from '../../src/core/database/ids';
 import { NativeImportPanel } from '../../src/plugin/nativeImport/NativeImportPanel';
@@ -219,7 +220,50 @@ afterEach(() => {
 	}
 });
 
+/** A real two-sheet workbook, so the file picker reads an actual .xlsx. */
+async function twoSheetWorkbook(): Promise<ArrayBuffer> {
+	const blob = await writeXlsxFile([
+		{
+			sheet: 'People',
+			data: [[{ value: 'Name' }], [{ value: 'Ada' }]],
+		},
+		{
+			sheet: 'Stock',
+			data: [[{ value: 'Item' }], [{ value: 'Lamp' }]],
+		},
+	]).toBlob();
+	return blob.arrayBuffer();
+}
+
 describe('native import panel', () => {
+	it('opens an .xlsx file, offers its worksheets, and previews the one chosen', async () => {
+		const fixture = await rig();
+		const { root } = mount(fixture.store);
+		const file = new File([await twoSheetWorkbook()], 'book.xlsx');
+		const input = root.querySelector<HTMLInputElement>('input[type="file"]');
+		if (input === null) {
+			throw new Error('the source step must offer a file input');
+		}
+		Object.defineProperty(input, 'files', { value: [file], configurable: true });
+		input.dispatchEvent(new Event('change'));
+
+		await vi.waitFor(() => {
+			expect(root.textContent).toContain('book.xlsx: 1 column(s) × 1 row(s)');
+		});
+		expect(root.textContent).toContain('Worksheet');
+		expect(root.textContent).toContain('Name');
+		selectNamed(root, 'Worksheet to import', 'Stock');
+		await vi.waitFor(() => {
+			expect(root.textContent).toContain('Item');
+		});
+		expect(root.textContent).not.toContain('Name');
+		const chooser = Array.from(root.querySelectorAll('select')).find(
+			(candidate) => candidate.getAttribute('aria-label') === 'Worksheet to import',
+		);
+		expect(chooser?.value).toBe('Stock');
+		await fixture.close();
+	});
+
 	it('blocks review while a link value has no chosen row, and names that value', async () => {
 		const fixture = await rig(linkedDocument());
 		const { root, panel } = mount(fixture.store);
