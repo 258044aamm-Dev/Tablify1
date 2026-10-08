@@ -1,6 +1,8 @@
 # R5 — Spreadsheet interchange and Airtable sync
 
-**Mode:** design and future implementation guide. No source code is authorized by this document update. **Dependencies:** stable R1 schema, R2 repository, R3 IDs/ops, and R4 field/table UI.
+**Mode:** active implementation guide under the authorized R1–R5 scope; proceed one gated step at a time. **Dependencies:** stable R1 schema, R2 repository, R3 IDs/ops, and R4 field/table UI.
+
+**Status (2026-10-08):** Part A Step 1's source-only preview boundary has a verified implementation checkpoint. R5 is not complete: Part A Steps 2–4 and Parts B–C remain open. R6, release metadata, and version tags remain untouched. Native Obsidian-host and physical-device checks remain **NOT RUN**.
 
 ## Objective
 
@@ -11,6 +13,12 @@ Retain CSV/TSV/XLSX import/export and manual Airtable sync while redirecting all
 ### Step 1 — Keep the pure readers and preview logic
 
 Reuse matrix readers, header handling, type inference, per-column overrides, clipboard parsing, collision reporting where it applies, and progress reporting. Remove plan inputs about note folders, filename templates, frontmatter keys, and vault file collisions.
+
+**VERIFIED implementation checkpoint (2026-10-08):** `src/core/database/import/preview.ts` is a source-only native-table preview boundary over the existing pure `readSource`/`inferColumns` functions. It retains the matrix, exact header-adjusted dimensions, inference evidence, per-column type overrides, and excluded-column choices; it has no target table, database-write plan, folder/template/frontmatter, note path, or vault-file-collision inputs. CSV/TSV/HTML/clipboard text still use the existing readers; an already-parsed worksheet can enter as a matrix, so the native path does not need a second classifier. Tests cover this boundary alongside the unchanged note importer.
+
+**VERIFIED gates:** `npx bun run check` passed, including 88 test files / 1,971 tests and the repository's type, lint, brand, manifest, format, build, contrast, CSS, and bundle-size checks. The targeted preview + legacy-import suites passed 40/40. The existing Playwright layout harness passed 115/115; it still exercises the pre-existing grid, not the native FileView or a native importer UI.
+
+**OPEN:** although `read-excel-file` is already a dependency, no production XLSX import adapter, workbook reader, or worksheet chooser exists yet; this checkpoint accepts a parsed matrix but does not claim user-visible XLSX import. Destination-specific collision reporting and native apply progress belong to the later destination/plan/apply steps. The existing note import wizard and its folder/template/frontmatter/vault-collision/progress behavior remain unchanged until the authorized removal phase, so this isolated native path does not regress that workflow. Real Obsidian-host and physical-device checks remain **NOT RUN**.
 
 ### Step 2 — Define destinations
 

@@ -1,6 +1,6 @@
 # Tablify native `.tablify` refactor plan
 
-**Status:** user-confirmed product direction. *Amendment 2026-10-08:* this audit is a historical record of the pre-implementation state. R1–R3 are implemented; R4 is in progress (Step 1 plus the initial Step 2 native-grid checkpoint); R5 is authorized but not yet complete. R6, release metadata, and version tags remain untouched under the current scope. Current implementation state is always the source at HEAD; `docs/06-roadmap.md` is the concise phase tracker.
+**Status:** user-confirmed product direction. *Amendment 2026-10-08:* this audit is a historical record of the pre-implementation state. R1–R3 are implemented; R4 Steps 1–3 have verified implementation checkpoints, with full parity and real-host checks still open; R5 is authorized and Part A Step 1 has a verified source-only preview checkpoint, but R5 is not complete. R6, release metadata, and version tags remain untouched under the current scope. Current implementation state is always the source at HEAD; `docs/06-roadmap.md` is the concise phase tracker.
 
 **Repository audited:** `258044aamm-Dev/Tablify`, `main` at `50f041f135abe9e7e9f111cf7c170b32dc98e9e0` (2026-10-06); tag `0.1.0` exists.
 
@@ -209,6 +209,8 @@ Phases are dependency order, not calendar estimates. The previous plan’s week 
 **Exit:** a person can create a multi-table `.tablify` database, add linked records, create different views over a table, and complete the current grid workflows without any Bases view or Markdown rows.
 
 ### R5 — Rewire import/export and Airtable sync
+
+**Part A, Step 1 — VERIFIED checkpoint (2026-10-08):** `src/core/database/import/preview.ts` composes the existing source reader and inference for the native-table path, including header handling, evidence, column overrides, and exclusions. It is source-only and does not import the note-oriented plan; the legacy note wizard and its vault/path semantics remain unchanged. XLSX bytes/workbook reading and worksheet selection, native destinations, collision planning, and apply remain open.
 
 - [ ] Reuse CSV/TSV/XLSX readers, type inference, clipboard matrix logic, and XLSX/TSV serializers.
 - [ ] Change the import wizard target from “create notes / disabled `.tabula` alternative” to “create a table / append to a selected table / replace a table,” with an explicit preview and destructive-replace confirmation. One imported sheet should become one undoable database operation (or a documented sequence if size requires chunking).

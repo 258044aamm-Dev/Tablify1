@@ -112,3 +112,11 @@ export {
 } from './projection';
 export type { DocumentMigration, MigratedDocument } from './migrate';
 export { DOCUMENT_MIGRATIONS, migrateDocument, parseAndMigrate } from './migrate';
+export type {
+	DatabaseImportColumnPreview,
+	DatabaseImportPreview,
+	DatabaseImportPreviewFailure,
+	DatabaseImportPreviewOptions,
+	DatabaseImportPreviewResult,
+} from './import/preview';
+export { previewDatabaseImport } from './import/preview';

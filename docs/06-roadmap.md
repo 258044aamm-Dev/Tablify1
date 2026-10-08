@@ -1,6 +1,6 @@
 # 06 — Native `.tablify` refactor roadmap
 
-> **Status (2026-10-08):** implementation is in progress on `refactor/native-tablify`. R1–R3 are complete; R4 Steps 1–3 have passed their local implementation checkpoints. R5 is authorized but not yet complete; R6 and all release/version/tag metadata remain untouched. The published `0.1.0` release is still Bases/Markdown-note based; this branch is not a release and no `.tablify` support is claimed for `0.1.0`.
+> **Status (2026-10-08):** implementation is in progress on `refactor/native-tablify`. R1–R3 are complete; R4 Steps 1–3 have passed their local implementation checkpoints. R5 is authorized but not yet complete; Part A Step 1 has a verified source-only native preview checkpoint. R6 and all release/version/tag metadata remain untouched. The published `0.1.0` release is still Bases/Markdown-note based; this branch is not a release and no `.tablify` support is claimed for `0.1.0`.
 
 The implementation is deliberately phased, reviewable, and gated. Real Obsidian desktop/mobile probes remain **NOT RUN**; see [`docs/manual-test-log.md`](manual-test-log.md). Detailed step sequences, scope fences, tests, and exit criteria live in [`docs/`](README.md).
 
@@ -105,6 +105,8 @@ not represented as passing by this R3 completion.
 ## R5 — Spreadsheet interchange and Airtable
 
 **Goal:** preserve import/export and manual sync on stable local identities.
+
+**Part A, Step 1 — VERIFIED implementation checkpoint (2026-10-08):** the new native-table source preview composes the existing pure matrix reader and inference without using the note-oriented plan. It retains header-adjusted dimensions, source matrix, inference evidence, per-column overrides, and exclusions; it has no note destination or vault-file-collision inputs. Existing note-import behavior is unchanged. **VERIFIED:** `npx bun run check` passed (88 test files / 1,971 tests and all automated repository gates); the targeted preview + legacy-import suites passed 40/40. The existing Playwright layout harness passed 115/115, but covers the pre-existing grid only, not the native FileView/import UI. **OPEN:** XLSX bytes/workbook reading and worksheet selection are not implemented; a pre-parsed XLSX matrix can use this boundary. Destination collision handling and native progress reporting remain for the later plan/apply steps. Real-host and physical-device checks remain **NOT RUN**.
 
 - [ ] Rewire CSV/TSV/XLSX import to create/append/replace table data with exact preview and undo; no note creation or `.tabula` option.
 - [ ] Add CSV export alongside TSV/XLSX; define selection/view/table scope, link display, attachment reference, and formula-shaped literal rules.
