@@ -907,6 +907,12 @@ export type RunInput = {
 	readonly snapshot: Snapshot;
 	readonly direction: SyncDirection;
 	readonly choices?: ResolutionBook | undefined;
+	/**
+	 * How a conflict holds the run. `'plan'` (the default, used by the legacy host) holds every write while the plan
+	 * has any conflict, whatever the choices say. `'choices'` holds writes only while a conflict has no choice, so a
+	 * complete review can apply. A truncated read holds everything under both gates.
+	 */
+	readonly conflictGate?: 'plan' | 'choices' | undefined;
 	/** The cursor to pull with: `lastPulledAt` from the link file, or `null` for a full read. */
 	readonly since?: string | null | undefined;
 	readonly unmapped?: readonly UnmappedField[] | undefined;
@@ -960,7 +966,10 @@ export async function runSync(input: RunInput): Promise<SyncReport> {
 	// The plan's own verdict comes first: a truncated read means part of the table was never seen, so *nothing*
 	// is written — not the pulls that look safe, and certainly not a push. This is the guard the plan's `ready`
 	// flag exists for, and it is here rather than in the panel because a panel is not a safety property.
-	const holdsEverything = plan.blocked === null;
+	const holdsEverything =
+		input.conflictGate === 'choices'
+			? !truncated && unresolvedConflicts(plan.diff.conflicts, choices).length === 0
+			: plan.blocked === null;
 	let pullReport: PullReport | null = null;
 	if (wantsPull && holdsEverything) {
 		pullReport = await applyPull({ plan, local: input.local, choices, label: input.label });

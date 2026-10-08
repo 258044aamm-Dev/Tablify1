@@ -14,6 +14,7 @@ import type { DatabaseStore } from '../../adapters/tablifyFile/databaseStore';
 import { createAirtableClient } from '../../sync/airtable/client';
 import { createRequestUrlTransport } from '../../sync/airtable/transport';
 import { readToken, secretHostOf } from '../settings/secrets';
+import { ConflictReviewDialog } from './ConflictReview';
 import { linkActiveStore, syncActiveStore } from './nativeHost';
 import type { NativeSyncOptions, NativeSyncOutcome } from './nativeHost';
 
@@ -107,7 +108,9 @@ function labelled(parent: HTMLElement, label: string, placeholder: string): HTML
 
 /**
  * Runs a pull and push for the table the store shows. If the table has no link yet, it opens the link dialog instead
- * of failing: linking is the first thing a person needs, and it is their choice of identifiers that creates it.
+ * of failing: linking is the first thing a person needs, and it is their choice of identifiers that creates it. If
+ * a field changed on both sides, it opens the existing review dialog; the choices it returns are applied in a second
+ * run, and nothing is written before them.
  */
 export async function syncActiveNativeTable(input: {
 	readonly app: App;
@@ -132,6 +135,20 @@ export async function syncActiveNativeTable(input: {
 			? `${outcome.message} ${String(outcome.excluded.length)} field(s) are not synced yet.`
 			: outcome.message,
 	);
+	if (outcome.kind === 'ran' && outcome.needsReview) {
+		new ConflictReviewDialog(input.app, {
+			spec: { conflicts: outcome.report.plan.conflicts },
+			onConfirm: async (choices) => {
+				const applied = await syncActiveStore(options, {
+					store: input.store,
+					direction: 'both',
+					choices,
+				});
+				input.notify(applied.message);
+				return applied.message;
+			},
+		}).open();
+	}
 	return outcome;
 }
 

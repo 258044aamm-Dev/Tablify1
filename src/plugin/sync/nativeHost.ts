@@ -33,6 +33,7 @@ import type { SyncDirection, SyncReport } from '../../sync/pullPush';
 import { failureText } from '../../sync/pullPush';
 import type { SyncTarget } from '../../sync/SyncTarget';
 import type { ResolutionBook } from '../../sync/diff';
+import { unresolvedConflicts } from '../../sync/diff';
 
 /** The vault's text files, as this module needs them. Same shape as the legacy host's port. */
 export type NativeFilePort = {
@@ -128,7 +129,9 @@ export async function syncNativeTable(
 	return {
 		kind: 'ran',
 		message: result.report.summary,
-		needsReview: result.report.plan.conflicts.length > 0,
+		needsReview:
+			unresolvedConflicts(result.report.plan.diff.conflicts, input.choices ?? new Map())
+				.length > 0,
 		excluded: result.excluded,
 		report: result.report,
 	};

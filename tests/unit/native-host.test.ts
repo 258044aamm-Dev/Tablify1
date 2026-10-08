@@ -20,6 +20,7 @@ import {
 } from '../../src/plugin/sync/nativeHost';
 import type { NativeFilePort } from '../../src/plugin/sync/nativeHost';
 import { createFakeClock } from '../fakes/clock';
+import { fieldKey } from '../../src/sync/diff';
 import { createFakePort } from '../fakes/tablifyFile';
 
 const PATH = 'Databases/Host.tablify';
@@ -397,5 +398,72 @@ describe('native sync host: first link', () => {
 		});
 		expect(outcome.kind).toBe('refused');
 		expect(counts.describe).toBe(0);
+	});
+});
+
+describe('native sync host: a conflict is written only after a choice', () => {
+	it('reports the conflict and writes nothing, then applies the chosen side', async () => {
+		const store = await storeOf();
+		const port = createNativeSyncPort({
+			store,
+			tableId: TABLE,
+			environment: { now: () => 0, timezone: 'UTC', locale: 'en' },
+		});
+		const path = nativeLinkPath(DB, TABLE);
+		const files = vault({ [path]: serialiseNativeLink(linkedDocument()) });
+
+		// 1. An agreed baseline: local and remote hold the same title.
+		const baseline = remote({
+			pull: async () => ({
+				records: [{ id: 'recA', fields: { fldTitle: 'Rooftop' } }],
+				pulledAt: STAMP,
+				truncated: false,
+			}),
+		});
+		await syncNativeTable(options(files, baseline.target), {
+			databaseId: DB,
+			tableId: TABLE,
+			port,
+			direction: 'pull',
+		});
+
+		// 2. Both sides move: a local edit, and a different remote value.
+		store.dispatch(
+			{
+				kind: 'set-cells',
+				tableId: TABLE,
+				rowId: ROW,
+				edits: [{ fieldId: TITLE, value: 'Local edit' }],
+			},
+			'edit',
+		);
+		const changed = remote({
+			pull: async () => ({
+				records: [{ id: 'recA', fields: { fldTitle: 'Remote edit' } }],
+				pulledAt: STAMP,
+				truncated: false,
+			}),
+		});
+		const review = await syncNativeTable(options(files, changed.target), {
+			databaseId: DB,
+			tableId: TABLE,
+			port,
+			direction: 'both',
+		});
+		expect(review.kind === 'ran' && review.needsReview).toBe(true);
+		expect((await port.values(ROW))[TITLE]).toBe('Local edit');
+
+		// 3. The person keeps the remote side. Only now is the value written.
+		const choices = new Map([[fieldKey('recA', TITLE), { kind: 'remote' as const }]]);
+		const resolved = await syncNativeTable(options(files, changed.target), {
+			databaseId: DB,
+			tableId: TABLE,
+			port,
+			direction: 'both',
+			choices,
+		});
+		expect(resolved.kind).toBe('ran');
+		expect(resolved.kind === 'ran' && resolved.needsReview).toBe(false);
+		expect((await port.values(ROW))[TITLE]).toBe('Remote edit');
 	});
 });

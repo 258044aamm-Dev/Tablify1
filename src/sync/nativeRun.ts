@@ -124,6 +124,8 @@ export async function runNativeSync(input: NativeRunInput): Promise<NativeRunRes
 		snapshot: document.snapshot,
 		direction,
 		...(input.choices === undefined ? {} : { choices: input.choices }),
+		// A complete review must be able to apply; the legacy gate would hold it forever (see `runSync`).
+		conflictGate: 'choices',
 		since,
 		unmapped: mapping.unmapped,
 	});
