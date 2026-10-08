@@ -67,6 +67,18 @@ export { decodeCell, encodeCell, invalidCell, isInvalidCell } from './values';
 export { parseDocument, readDocument, serializeDocument } from './envelope';
 export type { CellRef, FieldRef, RowRef, TableRef, ViewRef } from './refs';
 export { cellKey, cellRef, sameCell } from './refs';
+export type {
+	LinkCellInspection,
+	LinkReferenceResolution,
+	RelationFinding,
+	RelationFindingCode,
+} from './relations';
+export {
+	inspectLinkCell,
+	linkTargetFinding,
+	relationFindings,
+	resolveLinkTarget,
+} from './relations';
 export type { ActiveTableSnapshot, FieldComparison } from './projection';
 export {
 	canonicalComparison,

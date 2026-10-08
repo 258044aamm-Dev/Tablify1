@@ -3,7 +3,7 @@
  *
  * The R3 guide is explicit: before any identity is replaced, "generate a read-only search inventory
  * and classify each match: a) row identity to replace, b) host path that remains for locating the
- * database/attachment, c) remote Airtable identifier that remains, d) historical test/document
+ * database/attachment, c) remote service record identifier that remains, d) historical test/document
  * string." This script does exactly that, and nothing else — it never writes source.
  *
  * The classification is **data**, not judgement at run time: `RULES` maps a path prefix to a class

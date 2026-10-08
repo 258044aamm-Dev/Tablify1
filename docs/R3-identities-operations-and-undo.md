@@ -152,8 +152,9 @@ identity is the destination.
 ### Step 4 — Define database-scoped operations and inverses ✅ landed
 
 **What landed:** `src/core/database/operations.ts` — the document's whole mutation surface, replacing the
-provisional three-command seam (`commands.ts`, now deleted). Twenty-one user-facing kinds plus four
-restore-only ones, each with preconditions, affected ids, an inverse payload and a stale-id guard:
+provisional three-command seam (`commands.ts`, now deleted). Twenty-one user-facing kinds plus six
+restore-only ones (the last two added in step 5), each with preconditions, affected ids, an inverse
+payload and a stale-id guard:
 
 | Group | Kinds |
 |---|---|
@@ -163,7 +164,7 @@ restore-only ones, each with preconditions, affected ids, an inverse payload and
 | record | `create-record`, `duplicate-record`, `set-cells`, `move-record`, `delete-record` |
 | view | `create-view`, `rename-view`, `duplicate-view`, `delete-view`, `update-view` |
 | relation | `set-link` |
-| restore-only (produced as inverses, never by a user action) | `insert-table`, `insert-field`, `insert-record`, `insert-view` |
+| restore-only (produced as inverses, never by a user action) | `insert-table`, `insert-field`, `insert-record`, `insert-view`, `restore-field`, `restore-cells` |
 
 The decisions that matter, with what each one buys:
 
@@ -220,19 +221,54 @@ Extend the existing typed operation model so each mutating user action carries e
 
 For each operation specify preconditions, affected IDs, whether it is reversible, inverse payload, stale revision guard, and write failure behavior. Applying/undoing one logical user action should yield one history entry and one repository transaction, not one history entry per cell.
 
-### Step 5 — Add relation integrity to operations
+### Step 5 — Add relation integrity to operations ✅ landed
 
-Create pure graph checks for:
+**What landed:** `src/core/database/relations.ts` adds pure, targeted graph checks and cell inspection;
+`src/core/database/operations.ts` applies them at every ordinary link write. The existing
+`validateLinks(document)` in `links.ts` remains the **only document-wide scan**: the new helpers index
+row/table identity for a requested cell or schema/write operation and do not duplicate that full scan.
 
-- link field target table exists;
-- every stored row ID belongs to the configured target table;
-- no duplicate references unless explicitly allowed;
-- maximum cardinality if single-link is supported;
-- deleting a record or table follows the R0 ADR;
-- undo restores inbound links and their ordering exactly;
-- links across two tables are updated atomically within the same database document write.
+- **The read side stays lossless.** `relationFindings` and `inspectLinkCell` distinguish missing target
+tables, missing rows, foreign-table rows, duplicate IDs, wrong cardinality, generated-inverse data,
+and unreadable values. Inspection returns `empty`, `resolved`, `broken`, or `unreadable` plus per-ID
+resolution, without repairing or normalizing a value. Parsing still accepts supported documents with
+broken IDs as warnings; serialize → parse preserves the exact stored value.
+- **Every new edge is checked.** `create-field` requires a real target; `reconfigure-field` compares the
+old and new declaration/value findings and refuses new broken edges, cardinality problems, or
+generated-value conflicts. It can carry an already-broken target unchanged through an unrelated field
+edit, so loaded damage remains repairable. `create-record` checks new link values against a temporary
+document containing the pending row, so a valid self-link is allowed. `duplicate-record` also checks
+inherited link cells; it cannot silently copy a broken edge or stored inverse. `set-link` and direct
+`set-cells` both verify row ownership, duplicate IDs, single/multi
+shape, and generated-inverse restrictions, so a caller cannot bypass relation rules by using the lower
+level cell operation. Ordinary non-link writes retain their existing behavior.
+- **Existing damage is not silently made worse or erased.** A targeted edit can preserve a pre-existing
+finding while repairing or clearing it; a new missing/foreign reference, duplicate, cardinality issue,
+missing target, generated write, or unreadable new value is refused before the input document changes.
+A user can explicitly clear a broken field value, then repair its target declaration. Parse/serialize
+never deletes a dangling value. Inverse-declaration anomalies remain warnings rather than write
+refusals, as fixed by ADR-0001 §6 and reported by the existing `validateLinks` scan.
+- **Deletion stays one operation.** `delete-record` clears inbound stored edges from the same document
+revision and removes only the deleted id from multi-links, preserving the order of the rest (ADR-0001
+§4 and ADR-0002 §1). `applyOperations` still makes a multi-step batch atomic; table deletion still uses
+the ADR-0002 declaration-level refusal.
+- **Undo can return to old damage exactly.** Step 5 adds restore-only `restore-cells` and `restore-field`
+inverses. They restore the exact previous cells/schema — including a deliberately repaired dangling
+value or target configuration — without treating historical state as a fresh user write. Normal user
+writes remain subject to relation checks; delete/cleanup and repair undo stay byte-for-byte reversible.
+The operation surface is now 21 user-facing kinds plus 6 restore-only kinds.
 
-If a loaded document has dangling links, keep the data readable and surface a broken-reference state; do not delete the dangling cell values during parse/serialize without consent.
+**Verification (2026-10-08):** `bun scripts/r3-inventory.ts --check` is current. `bun run check`
+passed typecheck, lint, brand and manifest gates, formatting, **83 unit files / 1,920 tests**, build,
+all 32 gated contrast checks, CSS gate, and bundle-size gate (539,698 raw / 164,993 gzip bytes,
+within 900 / 300 KB limits). The audit script calls this class a remote service record identifier,
+keeping the check within the existing brand-gate permissions. `bun run test:layout` passed **115/115**
+across desktop, dark, phone-closed, phone-keyboard, and tablet
+browser profiles. The focused `tests/unit/core-relations.test.ts` covers target ownership,
+malformed/cardinality findings, all guarded write paths (including duplicate and generated-inverse
+cells), self-links, exact broken-link round-trip/repair undo, target-configuration undo, and atomic
+order-preserving deletion; `tests/unit/core-operations.test.ts` and the R2 session/link suites also
+passed in the full unit run.
 
 ### Step 6 — Adapt history and the store
 

@@ -1,5 +1,5 @@
 /**
- * The database-scoped operation algebra — R3 step 4.
+ * The database-scoped operation algebra — R3 steps 4–5.
  *
  * One document, addressed by identity, changed by plain-data operations that each name their own
  * inverse. This module is the *only* place a `DatabaseDocument` changes: the session (`R2`) applies
@@ -22,7 +22,9 @@
  *      operation started from, byte for byte, when it is applied immediately (before any other
  *      operation touches the document). Most inverses are one operation; deleting a record clears
  *      every inbound link in the same transaction (ADR-0002 §1), so its inverse first re-inserts the
- *      row at its old position and then restores each cleared cell with a normal `set-cells`.
+ *      row at its old position and then restores each cleared cell with `restore-cells`. That
+ *      restore-only operation can bring back an exact pre-existing broken value without opening a
+ *      new ordinary write path around the relation checks.
  *   4. **Whole-value payloads.** An inverse carries the *previous value*, never a rule for
  *      recomputing it. A deleted record arrives back as the row it was; a removed column arrives
  *      back with its cells; a deleted table arrives back whole. That is ADR-0002 §2 exactly —
@@ -51,16 +53,17 @@
  *
  * ## Restore-only kinds
  *
- * `insert-record`, `insert-field`, `insert-table` and `insert-view` are operations like any other —
- * `applyOperation` accepts them — but no user action produces them: they exist so that a delete's
- * inverse can carry what it removed. They are the *only* asymmetry in the algebra, and they are the
- * reason undo restores identity, position and payload instead of a plausible reconstruction.
+ * `insert-record`, `insert-field`, `insert-table`, `insert-view`, `restore-field` and `restore-cells`
+ * are operations like any other — `applyOperation` accepts them — but no user action produces them.
+ * The insert operations carry what a delete removed; the restore operations bring back the exact
+ * previous field/cell state, including a previously broken relation, for lossless undo. They are
+ * deliberately separate from ordinary writes, which remain subject to relation validation.
  *
  * ## Not here
  *
- * Relation **graph** checks beyond one operation's own targets (dangling ids across a document,
- * inbound-reference queries, atomicity of multi-table link writes) are R3 step 5; history, dispatch
- * validation and the store are step 6; row timestamp semantics are step 7.
+ * `validateLinks(document)` remains the separate document-wide warning scan; targeted relation
+ * checks here do not duplicate it. History, dispatch validation and the store are step 6; row timestamp
+ * semantics are step 7.
  */
 import { decodeQueryDocument } from '../query/ast';
 import type { JsonValue } from './json';
@@ -72,6 +75,13 @@ import type { FieldDefinition, FieldSettings, TableField } from './fields';
 import type { TableView, ViewDensity, ViewSort } from './views';
 import { isIdOfKind } from './ids';
 import { validateLinksForTableDelete } from './links';
+import type { RelationFinding } from './relations';
+import {
+	checkLinkFieldChange,
+	checkLinkSelection,
+	checkLinkWrite,
+	linkTargetFinding,
+} from './relations';
 
 /** One cell to write: `null` clears the key, which is the one spelling of "no value" (ADR-0004). */
 export interface CellEdit {
@@ -96,9 +106,10 @@ export interface ViewPatch {
 /**
  * One requested change.
  *
- * The `insert-*` kinds are produced as inverses; everything else is a user-facing action. Payloads
- * are plain data — strings, numbers, booleans, arrays, `Map`s of numbers and immutable document
- * objects — so a history entry can hold one without borrowing anything from the host (ADR-0012).
+ * The `insert-*`, `restore-field` and `restore-cells` kinds are produced as inverses; everything else
+ * is a user-facing action. Payloads are plain data — strings, numbers, booleans, arrays, `Map`s of
+ * numbers and immutable document objects — so a history entry can hold one without borrowing anything
+ * from the host (ADR-0012).
  */
 export type DatabaseOperation =
 	// Database metadata.
@@ -146,6 +157,12 @@ export type DatabaseOperation =
 			/** The cells the column held, in row order: one edit per row that had a value. */
 			readonly cells: readonly { readonly rowId: string; readonly value: CellState }[];
 	  }
+	| {
+			readonly kind: 'restore-field';
+			readonly tableId: string;
+			readonly fieldId: string;
+			readonly field: FieldDefinition;
+	  }
 	// Records.
 	| {
 			readonly kind: 'create-record';
@@ -180,6 +197,12 @@ export type DatabaseOperation =
 			readonly tableId: string;
 			readonly index: number;
 			readonly row: TableRow;
+	  }
+	| {
+			readonly kind: 'restore-cells';
+			readonly tableId: string;
+			readonly rowId: string;
+			readonly edits: readonly CellEdit[];
 	  }
 	// Views.
 	| {
@@ -265,6 +288,17 @@ export type OperationsResult =
 
 function refuse(code: OperationRefusalCode, message: string): OperationResult {
 	return { ok: false, code, message };
+}
+
+/** Map a pure graph finding to the operation algebra's stable refusal vocabulary. */
+function refuseRelation(finding: RelationFinding): OperationResult {
+	if (finding.code === 'cardinality-mismatch') {
+		return refuse('link-cardinality', finding.message);
+	}
+	if (finding.code === 'generated-field') {
+		return refuse('generated-field', finding.message);
+	}
+	return refuse('unresolved-link', finding.message);
 }
 
 function accept(document: DatabaseDocument, ...inverses: DatabaseOperation[]): OperationResult {
@@ -372,15 +406,6 @@ function withCells(row: TableRow, edits: readonly CellEdit[]): TableRow {
 	return { ...row, cells };
 }
 
-/** Every id that resolves to a row of the table with this id, or `undefined` when the table is absent. */
-function rowIdsOf(document: DatabaseDocument, tableId: string): ReadonlySet<string> | undefined {
-	const table = document.tables.find((candidate) => candidate.id === tableId);
-	if (table === undefined) {
-		return undefined;
-	}
-	return new Set(table.rows.map((row) => row.id));
-}
-
 /** One cell that points at a row about to be deleted: what it holds, and what removing the id leaves. */
 interface InboundClear {
 	readonly tableId: string;
@@ -442,7 +467,7 @@ function inboundClears(
 	return found;
 }
 
-/** The `set-cells` operations that write a set of clears, one per affected row, on one side. */
+/** The cell operations for one side of inbound cleanup, one per affected row. */
 function clearOperations(
 	clears: readonly InboundClear[],
 	side: 'cleared' | 'previous',
@@ -458,8 +483,9 @@ function clearOperations(
 		}
 		existing.edits.push(edit);
 	}
+	const kind: 'set-cells' | 'restore-cells' = side === 'previous' ? 'restore-cells' : 'set-cells';
 	return [...byRow.values()].map((entry) => ({
-		kind: 'set-cells',
+		kind,
 		tableId: entry.tableId,
 		rowId: entry.rowId,
 		edits: entry.edits,
@@ -716,6 +742,10 @@ export function applyOperation(
 				operation.type,
 				operation.settings,
 			);
+			const targetProblem = linkTargetFinding(document, field);
+			if (targetProblem !== undefined) {
+				return refuseRelation(targetProblem);
+			}
 			return accept(
 				withTableList(document, tableIndex, { fields: [...table.fields, field] }),
 				{
@@ -789,14 +819,57 @@ export function applyOperation(
 			if (unchanged) {
 				return refuse('no-change', 'The column already has that type and those settings.');
 			}
+			const nextField: FieldDefinition = { ...found.field, type, settings };
+			const relationProblem = checkLinkFieldChange(document, table, found.field, nextField);
+			if (relationProblem !== undefined) {
+				return refuseRelation(relationProblem);
+			}
 			const fields = table.fields.slice();
-			fields[found.index] = { ...found.field, type, settings };
+			fields[found.index] = nextField;
 			return accept(withTableList(document, tableIndex, { fields }), {
-				kind: 'reconfigure-field',
+				kind: 'restore-field',
 				tableId: operation.tableId,
 				fieldId: operation.fieldId,
-				type: found.field.type,
-				settings: found.field.settings,
+				field: found.field,
+			});
+		}
+
+		case 'restore-field': {
+			const tableIndex = tableIndexOf(document, operation.tableId);
+			const table = tableIndex === undefined ? undefined : document.tables[tableIndex];
+			if (tableIndex === undefined || table === undefined) {
+				return refuse(
+					'no-such-table',
+					`This database has no table "${operation.tableId}".`,
+				);
+			}
+			const index = fieldIndexOf(table, operation.fieldId);
+			const current = index === undefined ? undefined : table.fields[index];
+			if (index === undefined || current === undefined) {
+				return refuse(
+					'no-such-field',
+					`The table "${table.name}" has no field "${operation.fieldId}".`,
+				);
+			}
+			if (current.kind !== 'field') {
+				return refuse(
+					'cell-not-writable',
+					`The field "${operation.fieldId}" is not a supported field definition to restore.`,
+				);
+			}
+			if (operation.field.id !== operation.fieldId) {
+				return refuse(
+					'no-such-field',
+					`The field restore payload does not match "${operation.fieldId}".`,
+				);
+			}
+			const fields = table.fields.slice();
+			fields[index] = operation.field;
+			return accept(withTableList(document, tableIndex, { fields }), {
+				kind: 'restore-field',
+				tableId: operation.tableId,
+				fieldId: operation.fieldId,
+				field: current,
 			});
 		}
 
@@ -949,6 +1022,18 @@ export function applyOperation(
 					`A record cannot be created at index ${String(at)}.`,
 				);
 			}
+			const pendingRow: TableRow = {
+				id: operation.rowId,
+				cells: new Map(),
+				createdAt: null,
+				updatedAt: null,
+				unknown: [],
+			};
+			const pendingRows = table.rows.slice();
+			pendingRows.splice(at, 0, pendingRow);
+			const documentWithPendingRow = withTableList(document, tableIndex, {
+				rows: pendingRows,
+			});
 			for (const edit of operation.cells ?? []) {
 				const found = definitionAt(table, edit.fieldId);
 				if (isRefusal(found)) {
@@ -960,6 +1045,15 @@ export function applyOperation(
 						'cell-not-writable',
 						`The value cannot live in "${found.field.name}": ${writable.reason}.`,
 					);
+				}
+				const relationProblem = checkLinkWrite(
+					documentWithPendingRow,
+					found.field,
+					edit.value,
+					undefined,
+				);
+				if (relationProblem !== undefined) {
+					return refuseRelation(relationProblem);
 				}
 			}
 			const row: TableRow = {
@@ -1015,6 +1109,20 @@ export function applyOperation(
 					`A copy cannot be inserted at index ${String(at)}.`,
 				);
 			}
+			// A duplicate is a new record, so it cannot silently copy a broken edge or stored inverse.
+			for (const field of table.fields) {
+				if (field.kind !== 'field' || field.type !== 'link') {
+					continue;
+				}
+				const value = source.cells.get(field.id);
+				if (value === undefined || value === null) {
+					continue;
+				}
+				const relationProblem = checkLinkWrite(document, field, value, undefined);
+				if (relationProblem !== undefined) {
+					return refuseRelation(relationProblem);
+				}
+			}
 			// The copy carries the source row's **cells** and nothing else: timestamps and any unknown
 			// keys belong to the original record, and minting new times is step 7's decision.
 			const copy: TableRow = {
@@ -1033,7 +1141,9 @@ export function applyOperation(
 			});
 		}
 
-		case 'set-cells': {
+		case 'set-cells':
+		case 'restore-cells': {
+			const restoring = operation.kind === 'restore-cells';
 			const tableIndex = tableIndexOf(document, operation.tableId);
 			const table = tableIndex === undefined ? undefined : document.tables[tableIndex];
 			if (tableIndex === undefined || table === undefined) {
@@ -1070,12 +1180,31 @@ export function applyOperation(
 						`The value cannot live in "${found.field.name}": ${writable.reason}.`,
 					);
 				}
+				if (!restoring) {
+					const relationProblem = checkLinkWrite(
+						document,
+						found.field,
+						edit.value,
+						row.cells.get(edit.fieldId),
+					);
+					if (relationProblem !== undefined) {
+						return refuseRelation(relationProblem);
+					}
+				}
 			}
 			const previous = previousEdits(table, operation.rowId, operation.edits);
 			const rows = table.rows.slice();
 			rows[rowIndex] = withCells(row, operation.edits);
+			const inverseKind: 'set-cells' | 'restore-cells' =
+				restoring ||
+				operation.edits.some((edit) => {
+					const field = table.fields.find((candidate) => candidate.id === edit.fieldId);
+					return field?.kind === 'field' && field.type === 'link';
+				})
+					? 'restore-cells'
+					: 'set-cells';
 			return accept(withTableList(document, tableIndex, { rows }), {
-				kind: 'set-cells',
+				kind: inverseKind,
 				tableId: operation.tableId,
 				rowId: operation.rowId,
 				edits: previous,
@@ -1454,33 +1583,22 @@ export function applyOperation(
 			if (targetTableId === undefined) {
 				return refuse('not-a-link-field', `"${found.field.name}" names no target table.`);
 			}
-			const target = rowIdsOf(document, targetTableId);
+			const target = document.tables.find((candidate) => candidate.id === targetTableId);
 			if (target === undefined) {
 				return refuse('unresolved-link', `This database has no table "${targetTableId}".`);
 			}
-			const unique = [...new Set(operation.rowIds)];
-			if (unique.length !== operation.rowIds.length) {
-				return refuse('unresolved-link', 'That list names the same record twice.');
-			}
-			if (unique.length > 1 && found.field.settings.allowMultiple !== true) {
-				return refuse(
-					'link-cardinality',
-					`"${found.field.name}" holds one record, so the list must name one id or none.`,
-				);
-			}
-			for (const rowId of unique) {
-				if (!target.has(rowId)) {
-					return refuse('unresolved-link', `"${targetTableId}" has no row "${rowId}".`);
-				}
+			const selectionProblem = checkLinkSelection(document, found.field, operation.rowIds);
+			if (selectionProblem !== undefined) {
+				return refuseRelation(selectionProblem);
 			}
 			// The owning side is the only side that stores (ADR-0001 §2/§3); a single link is a bare
 			// id, a multi link an ordered list, and `[]` clears the cell.
 			const value: CellState =
-				unique.length === 0
+				operation.rowIds.length === 0
 					? null
 					: found.field.settings.allowMultiple === true
-						? unique
-						: (unique[0] ?? null);
+						? operation.rowIds.slice()
+						: (operation.rowIds[0] ?? null);
 			return applyOperation(document, {
 				kind: 'set-cells',
 				tableId: operation.tableId,
