@@ -145,6 +145,8 @@ export type TargetDescription = {
 		readonly id: string;
 		readonly name: string;
 		readonly type: string;
+		/** For a link field: the remote table it points to. Absent for every other field. */
+		readonly linkedTableId?: string;
 	}[];
 };
 

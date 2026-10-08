@@ -385,7 +385,7 @@ export function createAirtableClient(options: AirtableClientOptions): AirtableCl
 			if (table === null || table['id'] !== options.tableId) {
 				continue;
 			}
-			const fields: { id: string; name: string; type: string }[] = [];
+			const fields: { id: string; name: string; type: string; linkedTableId?: string }[] = [];
 			const rawFields = table['fields'];
 			if (Array.isArray(rawFields)) {
 				for (const raw of rawFields) {
@@ -394,10 +394,17 @@ export function createAirtableClient(options: AirtableClientOptions): AirtableCl
 					const name = field === null ? undefined : field['name'];
 					const type = field === null ? undefined : field['type'];
 					if (typeof id === 'string' && typeof name === 'string') {
+						// A link field names the table it points to. Read only for link fields, so every other
+						// field's description is exactly what it was before.
+						const options = field === null ? null : objectOf(field['options']);
+						const linked = options === null ? undefined : options['linkedTableId'];
 						fields.push({
 							id,
 							name,
 							type: typeof type === 'string' ? type : 'unknown',
+							...(type === 'multipleRecordLinks' && typeof linked === 'string'
+								? { linkedTableId: linked }
+								: {}),
 						});
 					}
 				}

@@ -604,6 +604,40 @@ describe('`describe`', () => {
 		]);
 	});
 
+	it('names the linked table of a link field, and of no other field', async () => {
+		const { transport, client, clock } = setup();
+		transport.queue({
+			status: 200,
+			text: JSON.stringify({
+				tables: [
+					{
+						id: TABLE,
+						name: 'Projects',
+						fields: [
+							{ id: 'fldName', name: 'Name', type: 'singleLineText' },
+							{
+								id: 'fldClient',
+								name: 'Client',
+								type: 'multipleRecordLinks',
+								options: { linkedTableId: 'tblClients', isReversed: false },
+							},
+						],
+					},
+				],
+			}),
+		});
+		const description = await run(client.describe(), clock);
+		expect(description.fields).toEqual([
+			{ id: 'fldName', name: 'Name', type: 'singleLineText' },
+			{
+				id: 'fldClient',
+				name: 'Client',
+				type: 'multipleRecordLinks',
+				linkedTableId: 'tblClients',
+			},
+		]);
+	});
+
 	it('resolves a field map that reports both directions of "no counterpart"', async () => {
 		const { transport, client, clock } = setup();
 		const meta = (): { status: number; text: string } => ({
