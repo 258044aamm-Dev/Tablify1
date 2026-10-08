@@ -126,6 +126,11 @@ export class TablifyFileView extends FileView {
 		return this.currentHandle;
 	}
 
+	/** The pane's derived store, or `null` before the file has loaded. Read by the sync command; nothing writes through it. */
+	activeStore(): DatabaseStore | null {
+		return this.databaseStore;
+	}
+
 	getDisplayText(): string {
 		// Obsidian assigns `this.file` when it hands the view a file; the loaded path is the fallback
 		// for the first render and for the tests, which drive the hook directly.

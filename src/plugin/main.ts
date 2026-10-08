@@ -390,6 +390,38 @@ export default class TablifyPlugin extends Plugin {
 				})();
 			},
 		});
+
+		// The native table's sync (R5 Part C). Loaded only when invoked, like the panel above, so startup does not
+		// evaluate it. It acts on the table this pane shows and on nothing else.
+		this.addCommand({
+			id: 'sync-native-table',
+			name: 'Sync this table',
+			callback: () => {
+				void (async () => {
+					const store =
+						this.app.workspace.getActiveViewOfType(TablifyFileView)?.activeStore() ??
+						null;
+					if (store === null) {
+						new Notice('Tablify: open a Tablify table first.');
+						return;
+					}
+					try {
+						const { syncActiveNativeTable } = await import('./sync/nativeCommand');
+						await syncActiveNativeTable({
+							app: this.app,
+							store,
+							notify: (message) => {
+								new Notice(`Tablify: ${message}`);
+							},
+						});
+					} catch (error) {
+						new Notice(
+							`Tablify: ${error instanceof Error ? error.message : 'the table could not be synced'}`,
+						);
+					}
+				})();
+			},
+		});
 	}
 
 	onunload(): void {

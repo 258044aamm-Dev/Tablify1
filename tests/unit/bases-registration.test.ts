@@ -67,8 +67,8 @@ describe('Bases view registration', () => {
 	it('unload leaves no registered view, no commands and no status bar item', () => {
 		const plugin = loadPlugin();
 		expect(plugin.registeredViews).toHaveLength(1);
-		// Four since R2 step 6 added the create-database command (see `plugin-smoke.test.ts`).
-		expect(plugin.commands).toHaveLength(4);
+		// Five since R5 Part C added the native table's sync command (see `plugin-smoke.test.ts`).
+		expect(plugin.commands).toHaveLength(5);
 		expect(plugin.statusBarItems).toHaveLength(1);
 
 		Reflect.apply(TablifyPlugin.prototype.onunload, plugin, []);

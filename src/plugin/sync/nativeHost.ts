@@ -16,6 +16,8 @@
  */
 import { nativeLinkPath, parseNativeLink, serialiseNativeLink } from '../../sync/nativeLink';
 import type { LinkTarget } from '../../sync/LinkStore';
+import type { DatabaseStore } from '../../adapters/tablifyFile/databaseStore';
+import { createNativeSyncPort } from '../../sync/nativePort';
 import type { NativeSyncPort, ExcludedField } from '../../sync/nativePort';
 import { runNativeSync } from '../../sync/nativeRun';
 import type { SyncDirection, SyncReport } from '../../sync/pullPush';
@@ -29,7 +31,15 @@ export type NativeFilePort = {
 	readonly write: (path: string, text: string) => Promise<void>;
 };
 
+/** The clock, zone and locale the port formats with. Injected so a test is not at the mercy of the machine. */
+export type NativeEnvironment = {
+	readonly now: () => number;
+	readonly timezone: string;
+	readonly locale: string;
+};
+
 export type NativeSyncOptions = {
+	readonly environment: NativeEnvironment;
 	readonly files: NativeFilePort;
 	/** The stored token, or `null`. Read at the moment of the run, never cached here. */
 	readonly token: () => string | null;
@@ -104,6 +114,37 @@ export async function syncNativeTable(
 		excluded: result.excluded,
 		report: result.report,
 	};
+}
+
+/**
+ * The sync for the table a store is showing. The port is built from the store here, so the caller never names a
+ * table: the active one is the only one a person can see and mean.
+ */
+export async function syncActiveStore(
+	options: NativeSyncOptions,
+	input: {
+		readonly store: DatabaseStore;
+		readonly direction: SyncDirection;
+		readonly choices?: ResolutionBook | undefined;
+	},
+): Promise<NativeSyncOutcome> {
+	const snapshot = input.store.getSnapshot();
+	const tableId = snapshot.activeTableId;
+	if (tableId === null) {
+		return refused('Select a table first.');
+	}
+	const port = createNativeSyncPort({
+		store: input.store,
+		tableId,
+		environment: options.environment,
+	});
+	return syncNativeTable(options, {
+		databaseId: snapshot.document.databaseId,
+		tableId,
+		port,
+		direction: input.direction,
+		...(input.choices === undefined ? {} : { choices: input.choices }),
+	});
 }
 
 function refused(message: string): NativeSyncOutcome {

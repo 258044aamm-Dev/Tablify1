@@ -308,8 +308,12 @@ describe('the startup path', () => {
 
 	it(`keeps every sync module off the static import graph (${String(STARTUP.bundle.staticSyncEdges.length)} static, ${String(STARTUP.bundle.dynamicSyncEdges.length)} dynamic)`, () => {
 		expect(STARTUP.bundle.staticSyncEdges).toEqual([]);
-		// And the one dynamic edge is the entry point, named: a second one would mean a second lazy feature.
-		expect(STARTUP.bundle.dynamicSyncEdges).toEqual(['src/plugin/sync/host.ts']);
+		// The dynamic edges are the entry points, named: the panel's host, and the native table's command (R5 Part C).
+		// Each is loaded only inside its own command handler; a third one would need a deliberate decision here.
+		expect(STARTUP.bundle.dynamicSyncEdges).toEqual([
+			'src/plugin/sync/host.ts',
+			'src/plugin/sync/nativeCommand.ts',
+		]);
 	});
 
 	it(`measures the cjs inlining honestly (${String(STARTUP.bundle.rawBytes)} B raw, ${String(STARTUP.bundle.gzipBytes)} B gzip, client inlined: ${String(STARTUP.bundle.clientInlined)})`, () => {
