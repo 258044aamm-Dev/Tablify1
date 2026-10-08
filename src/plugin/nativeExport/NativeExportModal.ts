@@ -33,8 +33,13 @@ export class NativeExportModal extends Modal {
 				createFolder: async (path) => {
 					await vault.createFolder(path);
 				},
-				create: async (path, text) => {
-					await vault.create(path, text);
+				create: async (path, data) => {
+					// Text goes through `create`, bytes through `createBinary`: the vault API has one call for each.
+					if (typeof data === 'string') {
+						await vault.create(path, data);
+					} else {
+						await vault.createBinary(path, data);
+					}
 				},
 			},
 			now: () => new Date(),

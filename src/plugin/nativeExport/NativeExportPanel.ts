@@ -10,6 +10,9 @@ import type { DatabaseStore } from '../../adapters/tablifyFile';
 import { toCsv } from '../../core/export/csv';
 import type { CsvNewline } from '../../core/export/csv';
 import { toTsv } from '../../core/selection/clipboard';
+import { toXlsxData } from '../../core/export/serialize';
+import type { ExportColumn, XlsxRow } from '../../core/export/serialize';
+import type { XlsxResult } from '../export/xlsx';
 import { nativeTableMatrix } from '../../core/database/export/nativeMatrix';
 import type {
 	NativeExportMode,
@@ -21,7 +24,8 @@ import { EXPORT_FOLDER, EXPORT_PREFIX, freePath, stamp } from '../export/runExpo
 export interface NativeExportVault {
 	readonly exists: (path: string) => boolean;
 	readonly createFolder: (path: string) => Promise<void>;
-	readonly create: (path: string, text: string) => Promise<void>;
+	/** Text for CSV and TSV, bytes for XLSX: the two shapes a vault writes. */
+	readonly create: (path: string, data: string | ArrayBuffer) => Promise<void>;
 }
 
 export interface NativeExportPanelOptions {
@@ -31,6 +35,9 @@ export interface NativeExportPanelOptions {
 	readonly now: () => Date;
 	readonly close: () => void;
 	readonly announce: (message: string) => void;
+	/** Injected by the tests; the real writer is the dynamic import in `../export/xlsx`, so the workbook code loads only on export. */
+	readonly writeXlsx?:
+		((rows: readonly XlsxRow[], name: string) => Promise<XlsxResult>) | undefined;
 }
 
 export type ExportOutcome =
@@ -38,7 +45,7 @@ export type ExportOutcome =
 	| { readonly kind: 'failed'; readonly message: string };
 
 /** The file formats this panel writes. CSV and TSV only; XLSX from native tables is a later step. */
-export type NativeExportFormat = 'csv' | 'tsv';
+export type NativeExportFormat = 'csv' | 'tsv' | 'xlsx';
 
 /** Characters a file name cannot carry on the platforms Obsidian runs on. */
 function safeStem(name: string): string {
@@ -119,12 +126,21 @@ export class NativeExportPanel {
 			}
 			const base = `${EXPORT_PREFIX} ${safeStem(plan.tableName)} ${stamp(this.options.now())}`;
 			const target = freePath(base, this.format, (path) => this.options.vault.exists(path));
-			// TSV is the clipboard's own writer, so a file and a copy of the same table cannot disagree.
-			const text =
-				this.format === 'tsv'
-					? toTsv(plan.matrix)
-					: toCsv(plan.matrix, { newline: this.newline });
-			await this.options.vault.create(target.path, text);
+			if (this.format === 'xlsx') {
+				// The same typed-cell writer the existing export uses: a number column is numbers, and text that
+				// does not parse stays text. The workbook bytes go to the vault, never to a download.
+				const write =
+					this.options.writeXlsx ?? (await import('../export/xlsx')).writeXlsxSheet;
+				const workbook = await write(toXlsxData(plan.matrix, plan.columns), target.name);
+				await this.options.vault.create(target.path, workbook.bytes);
+			} else {
+				// TSV is the clipboard's own writer, so a file and a copy of the same table cannot disagree.
+				const text =
+					this.format === 'tsv'
+						? toTsv(plan.matrix)
+						: toCsv(plan.matrix, { newline: this.newline });
+				await this.options.vault.create(target.path, text);
+			}
 			this.outcome = { kind: 'written', path: target.path, rows: plan.rowCount };
 			this.options.announce(`Exported ${String(plan.rowCount)} row(s) to ${target.path}.`);
 		} catch (error: unknown) {
@@ -149,6 +165,7 @@ export class NativeExportPanel {
 		readonly omittedLinks: number;
 		readonly omittedUnsupported: number;
 		readonly matrix: readonly (readonly string[])[];
+		readonly columns: readonly ExportColumn[];
 		readonly exportable: boolean;
 	} | null {
 		const document = this.options.store.getSnapshot().document;
@@ -168,6 +185,7 @@ export class NativeExportPanel {
 			omittedLinks: result.omittedLinks,
 			omittedUnsupported: result.omittedUnsupported,
 			matrix: result.matrix,
+			columns: result.columns,
 			exportable: result.matrix.length > 0,
 		};
 	}
@@ -234,6 +252,11 @@ export class NativeExportPanel {
 				id: 'tsv',
 				label: 'TSV file',
 				help: 'Tab-separated, the same text the clipboard copies.',
+			},
+			{
+				id: 'xlsx',
+				label: 'Excel workbook (XLSX)',
+				help: 'One sheet. Number and date columns are typed; text that does not parse stays text.',
 			},
 		];
 		for (const choice of formatChoices) {

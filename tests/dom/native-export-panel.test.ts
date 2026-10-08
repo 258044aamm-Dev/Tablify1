@@ -14,6 +14,9 @@ import { createWriteQueue } from '../../src/adapters/tablifyFile/queue';
 import { openDatabase } from '../../src/adapters/tablifyFile/session';
 import type { DatabaseStore } from '../../src/adapters/tablifyFile/databaseStore';
 import { toCsv } from '../../src/core/export/csv';
+import { toXlsxData } from '../../src/core/export/serialize';
+import type { XlsxRow } from '../../src/core/export/serialize';
+import type { XlsxResult } from '../../src/plugin/export/xlsx';
 import { fromTsv } from '../../src/core/selection/clipboard';
 import { serializeDocument } from '../../src/core/database';
 import type { DatabaseDocument, DatabaseTable } from '../../src/core/database';
@@ -104,7 +107,7 @@ async function rig(): Promise<Rig> {
 }
 
 interface RecordingVault extends NativeExportVault {
-	readonly writes: { readonly path: string; readonly text: string }[];
+	readonly writes: { readonly path: string; readonly text: string | ArrayBuffer }[];
 	readonly folders: string[];
 }
 
@@ -112,7 +115,7 @@ function vault(
 	options: { readonly existing?: readonly string[]; readonly failCreate?: boolean } = {},
 ): RecordingVault {
 	const existing = new Set(options.existing ?? []);
-	const writes: { path: string; text: string }[] = [];
+	const writes: { path: string; text: string | ArrayBuffer }[] = [];
 	const folders: string[] = [];
 	return {
 		writes,
@@ -134,7 +137,11 @@ function vault(
 const mounted: HTMLElement[] = [];
 const NOW = new Date(2026, 9, 8, 12, 30);
 
-function mount(store: DatabaseStore, recorder: RecordingVault) {
+function mount(
+	store: DatabaseStore,
+	recorder: RecordingVault,
+	writeXlsx?: (rows: readonly XlsxRow[], name: string) => Promise<XlsxResult>,
+) {
 	const root = augment(document.createElement('div'));
 	document.body.append(root);
 	mounted.push(root);
@@ -144,6 +151,7 @@ function mount(store: DatabaseStore, recorder: RecordingVault) {
 		environment: { now: () => NOW.getTime(), timezone: 'UTC', locale: 'en-GB' },
 		vault: recorder,
 		now: () => NOW,
+		writeXlsx,
 		close: () => undefined,
 		announce: (message) => {
 			announced.push(message);
@@ -215,7 +223,8 @@ describe('native CSV export panel', () => {
 		await panel.exportNow();
 
 		expect(recorder.writes[0]?.text).not.toContain('\r');
-		expect(recorder.writes[0]?.text.endsWith('\n')).toBe(true);
+		const written = recorder.writes[0]?.text;
+		expect(typeof written === 'string' && written.endsWith('\n')).toBe(true);
 		await fixture.close();
 	});
 
@@ -254,10 +263,61 @@ describe('native CSV export panel', () => {
 			'Tablify exports/Tablify export Main 2026-10-08 1230.tsv',
 		);
 		expect(recorder.writes[0]?.text).toBe('Name\tDone\nAda, Countess\tYes\n"=SUM(A1:A9)"\tNo');
-		expect(fromTsv(recorder.writes[0]?.text ?? '')).toEqual([
+		const written = recorder.writes[0]?.text;
+		if (typeof written !== 'string') {
+			throw new Error('a TSV export writes text');
+		}
+		expect(fromTsv(written)).toEqual([
 			['Name', 'Done'],
 			['Ada, Countess', 'Yes'],
 			['=SUM(A1:A9)', 'No'],
+		]);
+		await fixture.close();
+	});
+
+	it('writes an XLSX workbook through the existing typed-cell writer, as bytes, to a .xlsx path', async () => {
+		const fixture = await rig();
+		const recorder = vault();
+		const received: { rows: readonly XlsxRow[]; name: string }[] = [];
+		const bytes = new ArrayBuffer(8);
+		const fakeWriter = async (rows: readonly XlsxRow[], name: string): Promise<XlsxResult> => {
+			received.push({ rows, name });
+			return { bytes, name, writer: 'fake' };
+		};
+		const { root, panel, announced } = mount(fixture.store, recorder, fakeWriter);
+
+		const xlsx = root.querySelector<HTMLInputElement>(
+			'input[name="tablify-export-format"][value="xlsx"]',
+		);
+		if (xlsx === null) {
+			throw new Error('the XLSX format must be offered');
+		}
+		xlsx.checked = true;
+		xlsx.dispatchEvent(new Event('change'));
+		expect(root.querySelector('select[aria-label="Line endings"]')).toBeNull();
+
+		await panel.exportNow();
+
+		expect(received).toHaveLength(1);
+		expect(received[0]?.name).toBe('Tablify export Main 2026-10-08 1230.xlsx');
+		expect(received[0]?.rows).toEqual(
+			toXlsxData(
+				[
+					['Name', 'Done'],
+					['Ada, Countess', 'Yes'],
+					['=SUM(A1:A9)', 'No'],
+				],
+				[
+					{ name: 'Name', type: 'text' },
+					{ name: 'Done', type: 'checkbox' },
+				],
+			),
+		);
+		expect(recorder.writes).toEqual([
+			{ path: 'Tablify exports/Tablify export Main 2026-10-08 1230.xlsx', text: bytes },
+		]);
+		expect(announced).toEqual([
+			'Exported 2 row(s) to Tablify exports/Tablify export Main 2026-10-08 1230.xlsx.',
 		]);
 		await fixture.close();
 	});

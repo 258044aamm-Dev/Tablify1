@@ -13,9 +13,10 @@
  *    native grid's own rules for selects and invalid values; raw uses each descriptor's `formatPlain`.
  */
 import { resolveField } from '../../schema/propertySchema';
+import type { ExportColumn } from '../../export/serialize';
 import type { PropertyDefinition, ResolvedField } from '../../schema/propertySchema';
 import type { Matrix } from '../../selection/clipboard';
-import type { CellValue, FieldContext, FieldOption, FieldOptions } from '../../types';
+import type { CellValue, FieldContext, FieldOption, FieldOptions, FieldTypeId } from '../../types';
 import { isFieldTypeId } from '../../types';
 import type { ActiveTableSnapshot } from '../projection';
 import { viewCellOf } from '../projection';
@@ -35,15 +36,17 @@ export interface NativeExportResult {
 	/** Header row followed by one row per table row, in manual order. Empty when no field is exportable. */
 	readonly matrix: Matrix;
 	readonly exportedFields: readonly string[];
+	/** One entry per exported column, in matrix order: the typed view a spreadsheet writer needs. */
+	readonly columns: readonly ExportColumn[];
 	readonly omittedUnsupported: number;
 	readonly omittedLinks: number;
 	readonly rowCount: number;
 }
 
-interface ExportColumn {
+interface NativeColumn {
 	readonly id: string;
 	readonly name: string;
-	readonly type: string;
+	readonly type: FieldTypeId;
 	readonly field: ResolvedField;
 }
 
@@ -74,7 +77,7 @@ function isStringList(value: CellValue): value is readonly string[] {
 
 /** The text one stored cell exports as, under the mode. Mirrors the grid's display rules; see the header. */
 export function nativeCellText(
-	column: ExportColumn,
+	column: NativeColumn,
 	stored: CellState | undefined,
 	mode: NativeExportMode,
 ): string {
@@ -116,14 +119,14 @@ export function nativeTableMatrix(
 ): NativeExportResult {
 	let omittedUnsupported = 0;
 	let omittedLinks = 0;
-	const columns: ExportColumn[] = [];
+	const columns: NativeColumn[] = [];
 	for (const stored of snapshot.fields) {
 		if (stored.kind !== 'field' || stored.id === null || stored.name === null) {
 			omittedUnsupported += 1;
 		} else if (stored.type === 'link') {
 			omittedLinks += 1;
 		} else if (isFieldTypeId(stored.type)) {
-			columns.push(exportColumn(stored, environment));
+			columns.push(exportColumn(stored, stored.type, environment));
 		} else {
 			omittedUnsupported += 1;
 		}
@@ -137,13 +140,18 @@ export function nativeTableMatrix(
 	return {
 		matrix: columns.length === 0 ? [] : [header, ...body],
 		exportedFields: header,
+		columns: columns.map((column) => ({ name: column.name, type: column.type })),
 		omittedUnsupported,
 		omittedLinks,
 		rowCount: snapshot.rows.length,
 	};
 }
 
-function exportColumn(stored: FieldDefinition, environment: NativeExportEnvironment): ExportColumn {
+function exportColumn(
+	stored: FieldDefinition,
+	type: FieldTypeId,
+	environment: NativeExportEnvironment,
+): NativeColumn {
 	const fieldOptions = optionsOf(stored);
 	const definition: PropertyDefinition = {
 		id: stored.id,
@@ -161,7 +169,7 @@ function exportColumn(stored: FieldDefinition, environment: NativeExportEnvironm
 	return {
 		id: stored.id,
 		name: stored.name,
-		type: stored.type,
+		type,
 		field: resolveField(definition, context),
 	};
 }
