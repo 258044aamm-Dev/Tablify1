@@ -7,11 +7,11 @@
  *
  * ## What is stored, and why it is keyed by remote IDs
  *
- * The document keeps `rowId → remoteRecordId` and `fieldId → remoteFieldId` as the mappings, and the agreed snapshot
- * **by remote record and remote field ID** (Step 2). A local rename of a field or row therefore cannot make a stored
- * hash point at the wrong remote cell. The sync engine works in local IDs, so {@link engineSnapshotOf} and
- * {@link remoteSnapshotOf} translate at that one boundary, and drop any entry whose mapping is gone rather than guess.
- *
+ * The document keeps `rowId → remoteRecordId` and `fieldId → remoteFieldId` as the mappings. The agreed snapshot is
+ * stored **exactly as the engine produces it**: remote record ID → remote field ID → hash. The engine already keys its
+ * snapshot by remote identity, so nothing is translated, and a local rename or reorder cannot make a stored hash point
+ * at the wrong remote cell.
+
  * ## Step 3: old links are not read here
  *
  * Nothing in this module reads or writes a legacy `.base` link. A legacy file stays on disk, untouched, and the user
@@ -240,62 +240,4 @@ export function serialiseNativeLink(document: NativeLinkDocument): string {
 		...document.unknown,
 	};
 	return `${JSON.stringify(body, null, 2)}\n`;
-}
-
-/**
- * The agreed snapshot in the engine's vocabulary: local row ID → local field ID → hash. An entry whose remote record
- * or remote field is no longer mapped is dropped, so a stale hash can never be compared against the wrong cell.
- */
-export function engineSnapshotOf(document: NativeLinkDocument): Snapshot {
-	const rowByRecord = new Map<string, string>();
-	for (const [rowId, recordId] of Object.entries(document.rowMap)) {
-		rowByRecord.set(recordId, rowId);
-	}
-	const fieldByRemote = new Map<string, string>();
-	for (const [fieldId, remoteId] of Object.entries(document.fieldMap)) {
-		fieldByRemote.set(remoteId, fieldId);
-	}
-	const out: Record<string, Record<string, string>> = {};
-	for (const [recordId, fields] of Object.entries(document.snapshot)) {
-		const rowId = rowByRecord.get(recordId);
-		if (rowId === undefined) {
-			continue;
-		}
-		const local: Record<string, string> = {};
-		for (const [remoteField, hash] of Object.entries(fields)) {
-			const fieldId = fieldByRemote.get(remoteField);
-			if (fieldId !== undefined) {
-				local[fieldId] = hash;
-			}
-		}
-		out[rowId] = local;
-	}
-	return out;
-}
-
-/**
- * The inverse of {@link engineSnapshotOf}: the engine's local snapshot, stored under remote IDs. A local row or field
- * with no mapping has nowhere to be stored, and is dropped.
- */
-export function remoteSnapshotOf(
-	local: Snapshot,
-	rowMap: Readonly<Record<string, string>>,
-	fieldMap: Readonly<Record<string, string>>,
-): Snapshot {
-	const out: Record<string, Record<string, string>> = {};
-	for (const [rowId, fields] of Object.entries(local)) {
-		const recordId = rowMap[rowId];
-		if (recordId === undefined) {
-			continue;
-		}
-		const remote: Record<string, string> = {};
-		for (const [fieldId, hash] of Object.entries(fields)) {
-			const remoteField = fieldMap[fieldId];
-			if (remoteField !== undefined) {
-				remote[remoteField] = hash;
-			}
-		}
-		out[recordId] = remote;
-	}
-	return out;
 }

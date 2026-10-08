@@ -2,12 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import { linkPath } from '../../src/sync/LinkStore';
 import {
-	engineSnapshotOf,
 	newNativeLink,
 	nativeLinkKey,
 	nativeLinkPath,
 	parseNativeLink,
-	remoteSnapshotOf,
 	serialiseNativeLink,
 } from '../../src/sync/nativeLink';
 import type { NativeLinkDocument } from '../../src/sync/nativeLink';
@@ -88,28 +86,11 @@ describe('native link file', () => {
 	});
 });
 
-describe('snapshot boundary (remote IDs at rest, local IDs in the engine)', () => {
-	it('translates a stored snapshot into the engine’s local vocabulary', () => {
-		const document = linked();
-		expect(engineSnapshotOf(document)).toEqual({ row_ada: { fld_name: 'sha256:aa' } });
-	});
-
-	it('drops an entry whose remote record or field is no longer mapped, instead of comparing it', () => {
-		const document: NativeLinkDocument = {
-			...linked(),
-			fieldMap: {},
-		};
-		expect(engineSnapshotOf(document)).toEqual({ row_ada: {} });
-		const withoutRow: NativeLinkDocument = { ...linked(), rowMap: {} };
-		expect(engineSnapshotOf(withoutRow)).toEqual({});
-	});
-
-	it('writes the engine’s snapshot back under remote IDs, and drops what has no mapping', () => {
-		const stored = remoteSnapshotOf(
-			{ row_ada: { fld_name: 'sha256:bb' }, row_gone: { fld_name: 'sha256:cc' } },
-			{ row_ada: 'recADA' },
-			{ fld_name: 'fldREMOTE1' },
-		);
-		expect(stored).toEqual({ recADA: { fldREMOTE1: 'sha256:bb' } });
+describe('snapshot', () => {
+	it('is stored as the engine keeps it, under remote record and field IDs', () => {
+		const loaded = parseNativeLink(serialiseNativeLink(linked()), 'links/x.json');
+		expect(loaded.ok && loaded.document.snapshot).toEqual({
+			recADA: { fldREMOTE1: 'sha256:aa' },
+		});
 	});
 });

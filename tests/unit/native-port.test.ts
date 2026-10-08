@@ -116,6 +116,11 @@ describe('native sync port: reads', () => {
 		expect(values).not.toHaveProperty(CLIENT);
 	});
 
+	it('treats an empty text cell as no value at the sync boundary, while the cell itself is unchanged', async () => {
+		const { port } = await rig();
+		expect(await port.values(ROW_TWO)).toEqual({});
+	});
+
 	it('reports a deleted row as absent, not as an error', async () => {
 		const { port } = await rig();
 		expect(await port.has(ROW_ONE)).toBe(true);

@@ -131,6 +131,15 @@ function classify(
 	return { fields, excluded };
 }
 
+/**
+ * An empty string or an empty list is **no value** at the sync boundary. The core keeps `""` as a real value
+ * (ADR-0004), but a provider cannot hold an empty text: a cleared field is simply absent there. Treating both the
+ * same way keeps a cleared cell from showing up as a difference on every sync. The stored cell is not changed.
+ */
+function isSyncEmpty(cell: CellValue): boolean {
+	return cell === '' || (Array.isArray(cell) && cell.length === 0);
+}
+
 /** The label a row carries in the engine's messages: the first text value, or the row ID when there is none. */
 function labelOf(snapshot: ActiveTableSnapshot, rowId: string): string {
 	for (const field of snapshot.fields) {
@@ -180,7 +189,7 @@ export function createNativeSyncPort(options: NativePortOptions): NativeSyncPort
 			const { fields } = classify(snapshot, environment);
 			for (const field of fields) {
 				const cell = viewCellOf(snapshot, path, field.definition.name);
-				if (cell !== undefined && !isInvalidCell(cell)) {
+				if (cell !== undefined && !isInvalidCell(cell) && !isSyncEmpty(cell)) {
 					out[field.definition.name] = cell;
 				}
 			}
