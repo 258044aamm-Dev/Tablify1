@@ -558,3 +558,41 @@ textarea.tablify-native-cell-editor {
 		min-height: var(--tablify-tap);
 	}
 }
+
+/* Native import wizard (R5). Layout only; colours and spacing come from the shared tokens. */
+.tablify-native-import {
+	display: flex;
+	flex-direction: column;
+	gap: var(--tablify-sp-2);
+}
+
+.tablify-native-import-body {
+	display: flex;
+	flex-direction: column;
+	gap: var(--tablify-sp-2);
+}
+
+.tablify-native-import-label {
+	display: flex;
+	flex-direction: column;
+	gap: var(--tablify-sp-1);
+	color: var(--tablify-text);
+}
+
+.tablify-native-import-text {
+	width: 100%;
+	min-height: 6em;
+	font-family: var(--font-monospace);
+}
+
+.tablify-native-import-columns,
+.tablify-native-import-modes {
+	display: flex;
+	flex-direction: column;
+	gap: var(--tablify-sp-2);
+}
+
+.tablify-native-import-reasons {
+	margin: 0;
+	padding-left: var(--tablify-sp-3);
+}

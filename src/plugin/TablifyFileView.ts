@@ -25,6 +25,7 @@ import type {
 import { createDatabaseStore } from '../adapters/tablifyFile';
 import type { IdKind } from '../core/database';
 import { NativeDatabaseGrid } from './NativeDatabaseGrid';
+import { NativeImportModal } from './nativeImport/NativeImportModal';
 import type { NativeGridEnvironment } from './NativeDatabaseGrid';
 import type { TablifyLeafState } from './viewState';
 import { EMPTY_LEAF_STATE, leafStateOf, readLeafState } from './viewState';
@@ -93,6 +94,7 @@ export class TablifyFileView extends FileView {
 	private databaseStore: DatabaseStore | null = null;
 	private unsubscribe: (() => void) | null = null;
 	private unsubscribeStore: (() => void) | null = null;
+	private importModal: NativeImportModal | null = null;
 	private failure: RegistryResult | null = null;
 	private selection: TablifyFileViewState = EMPTY_LEAF_STATE;
 	private nameEditor: NameEditorState | null = null;
@@ -320,6 +322,7 @@ export class TablifyFileView extends FileView {
 		if (unsubscribeStore !== null) {
 			unsubscribeStore();
 		}
+		this.closeImportModal();
 		const store = this.databaseStore;
 		this.databaseStore = null;
 		store?.dispose();
@@ -565,6 +568,9 @@ export class TablifyFileView extends FileView {
 			},
 			!snapshot.history.canRedo,
 		);
+		this.makeButton(toolbar, 'Import rows', 'import-rows', () => {
+			this.openImport(store);
+		});
 		const currentSummary = toolbar.createSpan({
 			cls: 'tablify-native-current-table',
 			text:
@@ -618,6 +624,32 @@ export class TablifyFileView extends FileView {
 		button.setAttribute('data-focus-key', focusKey);
 		button.onclick = onClick;
 		return button;
+	}
+
+	/** Open the native import wizard over this pane's store. A pending grid edit is committed first, as for navigation. */
+	private openImport(store: DatabaseStore): void {
+		if (!this.commitGridEditBeforeNavigation()) {
+			return;
+		}
+		this.closeImportModal();
+		const modal = new NativeImportModal(this.app, {
+			store,
+			environment: {
+				createId: this.host.createId,
+				now: this.host.environment.now,
+				timezone: this.host.environment.timezone,
+				locale: this.host.environment.locale,
+			},
+			sourceName: 'pasted table',
+		});
+		this.importModal = modal;
+		modal.open();
+	}
+
+	private closeImportModal(): void {
+		const modal = this.importModal;
+		this.importModal = null;
+		modal?.close();
 	}
 
 	private commitGridEditBeforeNavigation(): boolean {

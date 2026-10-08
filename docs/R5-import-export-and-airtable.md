@@ -2,7 +2,7 @@
 
 **Mode:** active implementation guide under the authorized R1–R5 scope; proceed one gated step at a time. **Dependencies:** stable R1 schema, R2 repository, R3 IDs/ops, and R4 field/table UI.
 
-**Status (2026-10-08):** Part A Steps 1–3 have verified source-preview, destination-contract, and exact-plan checkpoints. Part A Step 4 now has a verified transactional-runner checkpoint but remains open for the native wizard and user-facing progress/cancellation surface; Parts B–C remain open. XLSX workbook reading/worksheet selection, R6, release metadata, and version tags remain untouched. Native Obsidian-host and physical-device checks remain **NOT RUN**.
+**Status (2026-10-08):** Part A Steps 1–4 have verified local checkpoints. Step 4 now includes the native wizard (paste or choose a TSV/CSV/HTML file, column and type review, explicit destination, exact plan review, one acknowledgement when the plan needs consent, and cancellable progress) over the transactional runner. Explicit link-value mapping is **not** offered yet; link fields are shown with the reason they cannot take values. Parts B–C remain open. XLSX workbook reading/worksheet selection, R6, release metadata, and version tags remain untouched. Native Obsidian-host and physical-device checks remain **NOT RUN**.
 
 ## Objective
 
@@ -58,7 +58,7 @@ Prefer one database command, one undo entry, and one repository write. If a 400�
 
 **VERIFIED gates:** runner + database-store + session + write-queue targeted suites passed 44/44. `npx --yes bun run check` passed in a clean copy with the unrelated uncommitted BOM fixture restored to HEAD: 91 test files / 1,992 tests and all repository gates. `npx --yes bun run test:layout` passed 115/115 after installing Chromium system libraries.
 
-**OPEN:** the native CSV/TSV source chooser/wizard, destination and explicit link-mapping controls, confirmation UI, and visible progress/cancel behavior remain unimplemented. The runner checkpoint does not complete Part A Step 4.
+**VERIFIED (local, 2026-10-08):** the panel and model are covered by `tests/unit/native-import-model.test.ts` (7) and `tests/dom/native-import-panel.test.ts` (3): Next stays disabled for an empty source; a create import applies one undo step, saves once, and reports one sentence; a cancel before the commit point leaves the document and history unchanged. The toolbar button **Import rows** opens the modal over the pane's store; a pending grid edit is committed first, and releasing the pane closes the modal and aborts any apply that has not committed. The clean copy at `HEAD` plus this change passed `bun run check` (93 files / 2,002 tests, exit 0) and `bun run test:layout` (115/115). **OPEN:** explicit link-value mapping (link fields are shown as unavailable with a reason); the Obsidian `Modal` and toolbar in a real host, and physical-device checks, are **NOT RUN**.
 
 ## Part B — CSV/TSV/XLSX export
 
