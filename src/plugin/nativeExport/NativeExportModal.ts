@@ -23,7 +23,7 @@ export class NativeExportModal extends Modal {
 	}
 
 	onOpen(): void {
-		this.setTitle('Export CSV');
+		this.setTitle('Export table');
 		const vault = this.app.vault;
 		this.panel = new NativeExportPanel(this.contentEl, {
 			store: this.modalOptions.store,

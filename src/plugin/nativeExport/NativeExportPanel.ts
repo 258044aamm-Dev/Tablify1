@@ -9,6 +9,7 @@
 import type { DatabaseStore } from '../../adapters/tablifyFile';
 import { toCsv } from '../../core/export/csv';
 import type { CsvNewline } from '../../core/export/csv';
+import { toTsv } from '../../core/selection/clipboard';
 import { nativeTableMatrix } from '../../core/database/export/nativeMatrix';
 import type {
 	NativeExportMode,
@@ -36,6 +37,9 @@ export type ExportOutcome =
 	| { readonly kind: 'written'; readonly path: string; readonly rows: number }
 	| { readonly kind: 'failed'; readonly message: string };
 
+/** The file formats this panel writes. CSV and TSV only; XLSX from native tables is a later step. */
+export type NativeExportFormat = 'csv' | 'tsv';
+
 /** Characters a file name cannot carry on the platforms Obsidian runs on. */
 function safeStem(name: string): string {
 	const cleaned = name
@@ -62,6 +66,7 @@ export class NativeExportPanel {
 	private readonly options: NativeExportPanelOptions;
 	private mode: NativeExportMode = 'display';
 	private newline: CsvNewline = 'crlf';
+	private format: NativeExportFormat = 'csv';
 	private outcome: ExportOutcome | null = null;
 	private busy = false;
 	private disposed = false;
@@ -113,11 +118,13 @@ export class NativeExportPanel {
 				await this.options.vault.createFolder(EXPORT_FOLDER);
 			}
 			const base = `${EXPORT_PREFIX} ${safeStem(plan.tableName)} ${stamp(this.options.now())}`;
-			const target = freePath(base, 'csv', (path) => this.options.vault.exists(path));
-			await this.options.vault.create(
-				target.path,
-				toCsv(plan.matrix, { newline: this.newline }),
-			);
+			const target = freePath(base, this.format, (path) => this.options.vault.exists(path));
+			// TSV is the clipboard's own writer, so a file and a copy of the same table cannot disagree.
+			const text =
+				this.format === 'tsv'
+					? toTsv(plan.matrix)
+					: toCsv(plan.matrix, { newline: this.newline });
+			await this.options.vault.create(target.path, text);
 			this.outcome = { kind: 'written', path: target.path, rows: plan.rowCount };
 			this.options.announce(`Exported ${String(plan.rowCount)} row(s) to ${target.path}.`);
 		} catch (error: unknown) {
@@ -171,7 +178,7 @@ export class NativeExportPanel {
 		}
 		this.root.replaceChildren();
 		this.root.addClass('tablify-native-export');
-		el(this.root, 'div', 'tablify-dlg-sub', 'Export table as CSV');
+		el(this.root, 'div', 'tablify-dlg-sub', 'Export table');
 		const body = el(this.root, 'div', 'tablify-native-import-body');
 
 		for (const line of this.scopeLines()) {
@@ -214,20 +221,54 @@ export class NativeExportPanel {
 			el(modes, 'div', 'tablify-dlg-hint', choice.help);
 		}
 
-		const newlineLabel = el(body, 'label', 'tablify-native-import-label', 'Line endings');
-		const newline = el(newlineLabel, 'select', 'tablify-native-select');
-		newline.setAttribute('aria-label', 'Line endings');
-		for (const [value, text] of [
-			['crlf', 'Windows (CRLF), the RFC 4180 default'],
-			['lf', 'Unix (LF)'],
-		] as const) {
-			const option = el(newline, 'option', undefined, text);
-			option.value = value;
+		const formats = el(body, 'div', 'tablify-native-import-modes');
+		formats.setAttribute('role', 'radiogroup');
+		formats.setAttribute('aria-label', 'File format');
+		const formatChoices: readonly {
+			readonly id: NativeExportFormat;
+			readonly label: string;
+			readonly help: string;
+		}[] = [
+			{ id: 'csv', label: 'CSV file', help: 'Comma-separated, quoted per RFC 4180.' },
+			{
+				id: 'tsv',
+				label: 'TSV file',
+				help: 'Tab-separated, the same text the clipboard copies.',
+			},
+		];
+		for (const choice of formatChoices) {
+			const label = el(formats, 'label', 'tablify-native-import-label');
+			const radio = el(label, 'input');
+			radio.type = 'radio';
+			radio.name = 'tablify-export-format';
+			radio.value = choice.id;
+			radio.checked = this.format === choice.id;
+			radio.addEventListener('change', () => {
+				if (radio.checked) {
+					this.format = choice.id;
+					this.render();
+				}
+			});
+			label.appendChild(this.root.ownerDocument.createTextNode(choice.label));
+			el(formats, 'div', 'tablify-dlg-hint', choice.help);
 		}
-		newline.value = this.newline;
-		newline.addEventListener('change', () => {
-			this.newline = newline.value === 'lf' ? 'lf' : 'crlf';
-		});
+
+		if (this.format === 'csv') {
+			const newlineLabel = el(body, 'label', 'tablify-native-import-label', 'Line endings');
+			const newline = el(newlineLabel, 'select', 'tablify-native-select');
+			newline.setAttribute('aria-label', 'Line endings');
+			for (const [value, text] of [
+				['crlf', 'Windows (CRLF), the RFC 4180 default'],
+				['lf', 'Unix (LF)'],
+			] as const) {
+				const option = el(newline, 'option', undefined, text);
+				option.value = value;
+			}
+			newline.value = this.newline;
+			newline.addEventListener('change', () => {
+				this.newline = newline.value === 'lf' ? 'lf' : 'crlf';
+			});
+		}
 
 		if (this.outcome !== null) {
 			const line =
@@ -249,7 +290,7 @@ export class NativeExportPanel {
 			foot,
 			'button',
 			'tablify-native-button is-primary',
-			this.busy ? 'Exporting…' : 'Export CSV',
+			this.busy ? 'Exporting…' : `Export ${this.format.toUpperCase()}`,
 		);
 		exportButton.type = 'button';
 		exportButton.disabled = this.busy || plan === null || !plan.exportable;

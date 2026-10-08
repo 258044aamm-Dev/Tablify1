@@ -14,6 +14,7 @@ import { createWriteQueue } from '../../src/adapters/tablifyFile/queue';
 import { openDatabase } from '../../src/adapters/tablifyFile/session';
 import type { DatabaseStore } from '../../src/adapters/tablifyFile/databaseStore';
 import { toCsv } from '../../src/core/export/csv';
+import { fromTsv } from '../../src/core/selection/clipboard';
 import { serializeDocument } from '../../src/core/database';
 import type { DatabaseDocument, DatabaseTable } from '../../src/core/database';
 import type { TableField } from '../../src/core/database/fields';
@@ -229,6 +230,35 @@ describe('native CSV export panel', () => {
 		expect(panel.lastOutcome()).toEqual({ kind: 'failed', message: 'disk is read-only' });
 		expect(announced).toEqual(['Export failed: disk is read-only']);
 		expect(root.textContent).toContain('Export failed: disk is read-only');
+		await fixture.close();
+	});
+
+	it('writes a TSV file with the clipboard writer, and hides the CSV-only line endings', async () => {
+		const fixture = await rig();
+		const recorder = vault();
+		const { root, panel } = mount(fixture.store, recorder);
+
+		const tsv = root.querySelector<HTMLInputElement>(
+			'input[name="tablify-export-format"][value="tsv"]',
+		);
+		if (tsv === null) {
+			throw new Error('the TSV format must be offered');
+		}
+		tsv.checked = true;
+		tsv.dispatchEvent(new Event('change'));
+
+		expect(root.querySelector('select[aria-label="Line endings"]')).toBeNull();
+		await panel.exportNow();
+
+		expect(recorder.writes[0]?.path).toBe(
+			'Tablify exports/Tablify export Main 2026-10-08 1230.tsv',
+		);
+		expect(recorder.writes[0]?.text).toBe('Name\tDone\nAda, Countess\tYes\n"=SUM(A1:A9)"\tNo');
+		expect(fromTsv(recorder.writes[0]?.text ?? '')).toEqual([
+			['Name', 'Done'],
+			['Ada, Countess', 'Yes'],
+			['=SUM(A1:A9)', 'No'],
+		]);
 		await fixture.close();
 	});
 
