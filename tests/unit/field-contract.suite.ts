@@ -45,9 +45,9 @@ export const DOCS_03_TYPES: readonly FieldTypeId[] = [
 ];
 
 /**
- * Ids that exist in the type vocabulary but must never be registered: neither is stored in a note.
- * `createdTime`/`lastModifiedTime` are read from `file.ctime`/`file.mtime` (P11) and built as read-only
- * descriptors by `schema/propertySchema.ts`, so a descriptor for them here would be a bug.
+ * Ids that exist in the legacy type vocabulary but must never be registered as ordinary cell types.
+ * `createdTime`/`lastModifiedTime` are read-only metadata: the Bases adapter supplies file times (P11),
+ * while a native `.tablify` view derives them from each row's `createdAt`/`updatedAt` metadata (R3 step 7).
  */
 export const NEVER_STORED_FIELD_IDS: readonly FieldTypeId[] = ['createdTime', 'lastModifiedTime'];
 

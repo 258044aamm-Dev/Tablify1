@@ -8,8 +8,8 @@
  *
  * It also states, as a test, the thing the step is really about: **the registered set equals the list in
  * `docs/03`**, in that order. A missing type is then a failing test rather than a discovery made in
- * production, and two ids that are deliberately absent (`createdTime`, `lastModifiedTime` — read from the
- * file, never stored, P11) are asserted absent so nobody adds them by accident.
+ * production. `createdTime` and `lastModifiedTime` are absent as ordinary cell descriptors: legacy Bases
+ * reads file timestamps (P11), while native tables derive them from row metadata (R3 step 7).
  */
 import { describe, expect, it } from 'vitest';
 import type { CellValue, FieldContext, FieldTypeId } from '../../src/core/types';
@@ -22,7 +22,7 @@ import {
 } from './field-contract.suite';
 import type { FieldFixture } from './field-contract.suite';
 
-/** The ids that exist in the type vocabulary but must never be registered: neither is stored in a note. */
+/** Timestamp ids handled as metadata by each adapter, not registered as ordinary cell types. */
 const NEVER_STORED: readonly FieldTypeId[] = [...NEVER_STORED_FIELD_IDS];
 
 const base = makeContext();

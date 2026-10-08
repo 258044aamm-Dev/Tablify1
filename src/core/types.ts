@@ -30,9 +30,10 @@ export type CellValue = string | number | boolean | null | readonly string[];
 export type PropertyId = string;
 
 /**
- * The plugin's field types, closed on purpose: every `switch`/`if` over a type id is exhaustively
+ * The legacy grid's field types, closed on purpose: every `switch`/`if` over a type id is exhaustively
  * checked, and `isFieldTypeId` is the only way a name from a hand-edited `.base` file enters this union.
- * The two trailing ids are never registered — they are read-only columns backed by file metadata (P11).
+ * The two trailing ids are never registered. The Bases adapter resolves them from file metadata (P11);
+ * a native `.tablify` table resolves them from that row's `createdAt`/`updatedAt` metadata (R3 step 7).
  */
 export type FieldTypeId =
 	| 'text'

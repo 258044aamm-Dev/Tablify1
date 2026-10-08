@@ -228,7 +228,7 @@ describe('the read-only time columns', () => {
 			expect(refused.raw).toBe('2025-01-01T00:00:00Z');
 			expect(encodeCell(type, '2025-01-01T00:00:00Z')).toEqual({
 				kind: 'unwritable',
-				reason: 'a read-only time column is never written',
+				reason: 'row timestamp fields are never written as cells',
 			});
 			// A preserved invalid value still writes its raw JSON back, whatever the type.
 			const preserved = invalidOf(type, 'anything');

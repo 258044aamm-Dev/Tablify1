@@ -22,7 +22,12 @@ import type {
 	LoadWarning,
 	TableField,
 } from '../../src/core/database/index';
-import { DOCUMENT_FIELD_TYPE_IDS, optionsOf, serializeField } from '../../src/core/database/index';
+import {
+	DOCUMENT_FIELD_TYPE_IDS,
+	isDocumentFieldTypeId,
+	optionsOf,
+	serializeField,
+} from '../../src/core/database/index';
 import type { DocumentFieldTypeId } from '../../src/core/database/schema';
 
 const DATABASE_ID = 'db_test0000000000000000000z';
@@ -413,6 +418,21 @@ describe('field identity and shape', () => {
 			'missing-views',
 		]);
 		expect(result.errors[0]?.path).toBe('$.tables[0].fields');
+	});
+});
+
+describe('native fields do not expose legacy property sources', () => {
+	it('keeps a source-looking key only as unknown JSON, with no formula escape hatch', () => {
+		const raw = { id: fieldId(0), name: 'Computed', type: 'text', source: 'formula' };
+		const [field] = fieldsOf([raw]);
+		expect(field?.kind).toBe('field');
+		if (field?.kind !== 'field') {
+			return;
+		}
+		expect('source' in field).toBe(false);
+		expect(field.unknown).toEqual([{ key: 'source', value: 'formula' }]);
+		expect(serializeField(field)).toEqual(raw);
+		expect(isDocumentFieldTypeId('formula')).toBe(false);
 	});
 });
 

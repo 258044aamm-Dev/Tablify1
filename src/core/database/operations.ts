@@ -1,5 +1,5 @@
 /**
- * The database-scoped operation algebra — R3 steps 4–5.
+ * The database-scoped operation algebra — R3 steps 4–5 and 7.
  *
  * One document, addressed by identity, changed by plain-data operations that each name their own
  * inverse. This module is the *only* place a `DatabaseDocument` changes: the session (`R2`) applies
@@ -63,8 +63,10 @@
  *
  * `validateLinks(document)` remains the separate document-wide warning scan; targeted relation
  * checks here do not duplicate it. The database session owns operation history and validated dispatch
- * (step 6); row timestamp semantics are step 7.
+ * (step 6). Row timestamps stay in row metadata: operation payloads may carry ISO instants supplied by
+ * the host, while this pure module never reads a clock or file-level host timestamps (step 7).
  */
+import { hasOffset, instantOf } from '../format/iso';
 import { decodeQueryDocument } from '../query/ast';
 import type { JsonValue } from './json';
 import { isJsonObject } from './json';
@@ -169,6 +171,9 @@ export type DatabaseOperation =
 			readonly tableId: string;
 			readonly rowId: string;
 			readonly cells?: readonly CellEdit[];
+			/** Row-owned timestamps supplied by the host; absent means no timestamp is known. */
+			readonly createdAt?: string | null;
+			readonly updatedAt?: string | null;
 			/** Where the new row lands in the explicit order (ADR-0003). Absent appends. */
 			readonly toIndex?: number;
 	  }
@@ -177,6 +182,9 @@ export type DatabaseOperation =
 			readonly tableId: string;
 			readonly rowId: string;
 			readonly newRowId: string;
+			/** Timestamps for the new record, never copied from the source row. */
+			readonly createdAt?: string | null;
+			readonly updatedAt?: string | null;
 			readonly toIndex?: number;
 	  }
 	| {
@@ -184,6 +192,8 @@ export type DatabaseOperation =
 			readonly tableId: string;
 			readonly rowId: string;
 			readonly edits: readonly CellEdit[];
+			/** Host-supplied row modification instant; omitted means leave row metadata unchanged. */
+			readonly updatedAt?: string | null;
 	  }
 	| {
 			readonly kind: 'move-record';
@@ -203,6 +213,8 @@ export type DatabaseOperation =
 			readonly tableId: string;
 			readonly rowId: string;
 			readonly edits: readonly CellEdit[];
+			/** Exact row timestamp to restore alongside these cell values. */
+			readonly updatedAt?: string | null;
 	  }
 	// Views.
 	| {
@@ -250,6 +262,7 @@ export type DatabaseOperation =
 /** Why an operation was refused. A closed set, so a caller branches without reading messages. */
 export type OperationRefusalCode =
 	| 'invalid-name'
+	| 'invalid-row-timestamp'
 	| 'no-change'
 	| 'no-such-table'
 	| 'no-such-row'
@@ -308,6 +321,20 @@ function accept(document: DatabaseDocument, ...inverses: DatabaseOperation[]): O
 /** A name a document, table, field or view may carry: non-empty after trimming, and nothing else. */
 function isUsableName(name: unknown): name is string {
 	return typeof name === 'string' && name.trim() !== '';
+}
+
+/** A nullable row timestamp is valid only when its ISO instant carries an explicit offset. */
+function timestampProblem(value: string | null | undefined, key: string): string | undefined {
+	if (value === undefined || value === null) {
+		return undefined;
+	}
+	return hasOffset(value) && instantOf(value) !== undefined
+		? undefined
+		: `${key} must be an ISO 8601 instant with an explicit offset or Z.`;
+}
+
+function isRowTimestampType(type: FieldDefinition['type']): boolean {
+	return type === 'createdTime' || type === 'lastModifiedTime';
 }
 
 /** Where a table sits, or `undefined`. One lookup, so every branch agrees on what "resolves" means. */
@@ -1015,6 +1042,14 @@ export function applyOperation(
 					`The table "${table.name}" already has a row "${operation.rowId}".`,
 				);
 			}
+			const createdAtProblem = timestampProblem(operation.createdAt, 'createdAt');
+			const updatedAtProblem = timestampProblem(operation.updatedAt, 'updatedAt');
+			if (createdAtProblem !== undefined || updatedAtProblem !== undefined) {
+				return refuse(
+					'invalid-row-timestamp',
+					createdAtProblem ?? updatedAtProblem ?? 'The row timestamp is invalid.',
+				);
+			}
 			const at = operation.toIndex ?? table.rows.length;
 			if (!isInsertableIndex(at, table.rows.length)) {
 				return refuse(
@@ -1025,8 +1060,8 @@ export function applyOperation(
 			const pendingRow: TableRow = {
 				id: operation.rowId,
 				cells: new Map(),
-				createdAt: null,
-				updatedAt: null,
+				createdAt: operation.createdAt ?? null,
+				updatedAt: operation.updatedAt ?? null,
 				unknown: [],
 			};
 			const pendingRows = table.rows.slice();
@@ -1038,6 +1073,12 @@ export function applyOperation(
 				const found = definitionAt(table, edit.fieldId);
 				if (isRefusal(found)) {
 					return found;
+				}
+				if (isRowTimestampType(found.field.type) && edit.value !== null) {
+					return refuse(
+						'cell-not-writable',
+						`The value of "${found.field.name}" comes from row metadata, not a cell.`,
+					);
 				}
 				const writable = encodeCell(found.field.type, edit.value);
 				if (writable.kind === 'unwritable') {
@@ -1063,8 +1104,8 @@ export function applyOperation(
 						.filter((edit) => edit.value !== null)
 						.map((edit) => [edit.fieldId, edit.value]),
 				),
-				createdAt: null,
-				updatedAt: null,
+				createdAt: operation.createdAt ?? null,
+				updatedAt: operation.updatedAt ?? null,
 				unknown: [],
 			};
 			const rows = table.rows.slice();
@@ -1102,6 +1143,14 @@ export function applyOperation(
 					`The table "${table.name}" already has a row "${operation.newRowId}".`,
 				);
 			}
+			const createdAtProblem = timestampProblem(operation.createdAt, 'createdAt');
+			const updatedAtProblem = timestampProblem(operation.updatedAt, 'updatedAt');
+			if (createdAtProblem !== undefined || updatedAtProblem !== undefined) {
+				return refuse(
+					'invalid-row-timestamp',
+					createdAtProblem ?? updatedAtProblem ?? 'The row timestamp is invalid.',
+				);
+			}
 			const at = operation.toIndex ?? index + 1;
 			if (!isInsertableIndex(at, table.rows.length)) {
 				return refuse(
@@ -1123,13 +1172,13 @@ export function applyOperation(
 					return refuseRelation(relationProblem);
 				}
 			}
-			// The copy carries the source row's **cells** and nothing else: timestamps and any unknown
-			// keys belong to the original record, and minting new times is step 7's decision.
+			// The copy carries the source row's cells, but its identity and timestamps are new. The
+			// host supplies any known instants explicitly; the pure operation never reads a clock.
 			const copy: TableRow = {
 				id: operation.newRowId,
 				cells: new Map(source.cells),
-				createdAt: null,
-				updatedAt: null,
+				createdAt: operation.createdAt ?? null,
+				updatedAt: operation.updatedAt ?? null,
 				unknown: [],
 			};
 			const rows = table.rows.slice();
@@ -1160,6 +1209,10 @@ export function applyOperation(
 					`The table "${table.name}" has no row "${operation.rowId}".`,
 				);
 			}
+			const updatedAtIssue = timestampProblem(operation.updatedAt, 'updatedAt');
+			if (updatedAtIssue !== undefined) {
+				return refuse('invalid-row-timestamp', updatedAtIssue);
+			}
 			if (operation.edits.length === 0) {
 				return refuse('no-change', 'A cell write names at least one field.');
 			}
@@ -1172,6 +1225,12 @@ export function applyOperation(
 				const found = definitionAt(table, edit.fieldId);
 				if (isRefusal(found)) {
 					return found;
+				}
+				if (!restoring && isRowTimestampType(found.field.type) && edit.value !== null) {
+					return refuse(
+						'cell-not-writable',
+						`The value of "${found.field.name}" comes from row metadata, not a cell.`,
+					);
 				}
 				const writable = encodeCell(found.field.type, edit.value);
 				if (writable.kind === 'unwritable') {
@@ -1194,12 +1253,19 @@ export function applyOperation(
 			}
 			const previous = previousEdits(table, operation.rowId, operation.edits);
 			const rows = table.rows.slice();
-			rows[rowIndex] = withCells(row, operation.edits);
+			const updatedRow = withCells(row, operation.edits);
+			rows[rowIndex] =
+				operation.updatedAt === undefined
+					? updatedRow
+					: { ...updatedRow, updatedAt: operation.updatedAt };
 			const inverseKind: 'set-cells' | 'restore-cells' =
 				restoring ||
 				operation.edits.some((edit) => {
 					const field = table.fields.find((candidate) => candidate.id === edit.fieldId);
-					return field?.kind === 'field' && field.type === 'link';
+					return (
+						field?.kind === 'field' &&
+						(field.type === 'link' || isRowTimestampType(field.type))
+					);
 				})
 					? 'restore-cells'
 					: 'set-cells';
@@ -1208,6 +1274,7 @@ export function applyOperation(
 				tableId: operation.tableId,
 				rowId: operation.rowId,
 				edits: previous,
+				...(operation.updatedAt === undefined ? {} : { updatedAt: row.updatedAt }),
 			});
 		}
 

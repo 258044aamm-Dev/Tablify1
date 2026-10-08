@@ -11,9 +11,9 @@
  * Three derived facts live here because they are questions about *order and presentation*, not about
  * storage:
  *
- *   - **A row's number** is its 1-based position in the table's rows array. It is derived, never
- *     stored (R3 step 7: "a derived row number can be shown from current view order if retained; it
- *     is not a stored auto-number identity"), and it follows the manual order, not a sort.
+ *   - **A row's display number** is its 1-based position in the selected view's visible row-id order
+ *     (the manual array order for the no-view default). It is derived, never stored as an auto-number
+ *     identity, and filtered/collapsed rows have no display number (R3 step 7).
  *   - **A display sequence** for a saved view's sort stack: stable, multi-key, and tie-broken by the
  *     explicit row order and then the row id (ADR-0003 §4). Evaluating a view never writes anything
  *     back: the sequence is a list of row ids in memory, and that is all it ever is.
@@ -122,10 +122,62 @@ export function cellOf(
 	return snapshot.rowById.get(rowId)?.cells.get(fieldId);
 }
 
-/** A row's 1-based number in the manual order, or `null` when this table has no such row. */
-export function rowNumber(snapshot: ActiveTableSnapshot, rowId: string): number | null {
-	const index = snapshot.rowIndexById.get(rowId);
-	return index === undefined ? null : index + 1;
+/**
+ * The value a native view should read for one field.
+ *
+ * Ordinary fields return their stored cell state (including a preserved invalid value). The two
+ * read-only time fields are different: `createdTime` derives from `row.createdAt`, and
+ * `lastModifiedTime` derives from `row.updatedAt`. An erroneous raw cell for either field remains
+ * available through {@link cellOf} for lossless repair, but can never override row metadata.
+ */
+export function viewCellOf(
+	snapshot: ActiveTableSnapshot,
+	rowId: string,
+	fieldId: string,
+): CellState | undefined {
+	const row = snapshot.rowById.get(rowId);
+	const field = snapshot.fieldById.get(fieldId);
+	if (row === undefined || field === undefined) {
+		return undefined;
+	}
+	if (field.kind === 'field') {
+		if (field.type === 'createdTime') {
+			return row.createdAt;
+		}
+		if (field.type === 'lastModifiedTime') {
+			return row.updatedAt;
+		}
+	}
+	return row.cells.get(fieldId);
+}
+
+/**
+ * A row's 1-based number in the current output order, or `null` when it is not in that order.
+ *
+ * Pass the visible row ids from the selected view result to number filtered/sorted output. Without that
+ * argument, the default view uses the document's manual row order. The value is always derived; no
+ * auto-number identity is stored in a row.
+ */
+export function rowNumber(
+	snapshot: ActiveTableSnapshot,
+	rowId: string,
+	visibleRowIds?: readonly string[],
+): number | null {
+	if (visibleRowIds === undefined) {
+		const index = snapshot.rowIndexById.get(rowId);
+		return index === undefined ? null : index + 1;
+	}
+	let position = 0;
+	for (const visibleRowId of visibleRowIds) {
+		if (!snapshot.rowById.has(visibleRowId)) {
+			continue;
+		}
+		position += 1;
+		if (visibleRowId === rowId) {
+			return position;
+		}
+	}
+	return null;
 }
 
 /**

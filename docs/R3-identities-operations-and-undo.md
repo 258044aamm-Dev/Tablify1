@@ -71,7 +71,8 @@ path the inventory holds clean:
   a projection is *frozen* so a consumer cannot start a second store by accident. Lookups
   (`rowAt`/`fieldAt`/`viewAt`) answer `undefined` for anything of another table; `cellOf` returns the
   stored state or `undefined` for "no value" and is deliberately not the query layer's falsy-normalized
-  read; `rowNumber` is 1-based and derived from the manual order (ADR-0003), never stored; and
+  read; `rowNumber` derives a 1-based display position from the current visible row-id order when one is
+  supplied (manual order for the no-view default), never a stored auto-number identity; and
   `sortRowIds`/`displayOrder` produce a view's row sequence — sort stack, then manual order, then
   `RowId` — with an injectable `FieldComparison` for the descriptor comparison a field type owns, and
   `compareCanonical` as the pure-data fallback (absent/`[]`/`null` at the far end of the ordering, so
@@ -105,11 +106,12 @@ else; the YAML vocabulary is gone from `src/**`; and a descriptor can no longer 
 - **`toYaml` → `toJson`.** The contract method on `FieldDescriptor` (`src/core/types.ts`) now returns
   `CellValue` — the canonical value — instead of a YAML shape, and the three YAML value aliases
   (`YamlScalar`, `YamlList`, `YamlValue`) are deleted. All sixteen registered descriptors and the
-  read-only file-time column in `core/schema/propertySchema.ts` were renamed with it; the call sites
+  shared read-only timestamp descriptors in `core/schema/propertySchema.ts` were renamed with it; the call sites
   (`core/import/plan.ts`, `adapters/notes/createNote.ts`, `adapters/bases/BasesSource.ts`,
   `sync/values.ts`) hand the value to the host's frontmatter writer, which serializes it as YAML at
   that boundary. Where the conversion was already the identity it is now *literally* the identity:
-  most descriptors return their value unchanged.
+  most descriptors return their value unchanged. Native `createdTime`/`lastModifiedTime` values are
+  supplied from row metadata by the R3 step-7 projection and never pass through a stored cell.
 - **One vocabulary, asserted.** `tests/unit/value-vocabulary.test.ts` proves `CellValue` and
   `CanonicalCell` (`core/database/values.ts`) are mutually assignable, so the descriptor layer and the
   document codec cannot drift; and for every registered type it feeds a sample of canonical values
@@ -313,18 +315,59 @@ CSS gate, and bundle-size gate (**544,153 raw / 166,299 gzip bytes**, within 900
 phone-closed, phone-keyboard, and tablet. Existing React `act(...)` warnings during the full test run
 were non-fatal.
 
-### Step 7 — Preserve read-only metadata semantics
+### Step 7 — Preserve read-only metadata semantics ✅ landed
 
-- `createdTime` and `lastModifiedTime` must refer to row timestamps stored in row metadata, or be deliberately removed from the new field set before R4. They cannot use the `.tablify` file `TFile.stat` for every row.
-- A derived row number can be shown from current view order if retained; it is not a stored auto-number identity.
-- Formula/file/note `PropertySource` variants are not part of the native schema. Do not keep a generic “formula” escape hatch after formulas have been deferred.
+**Decision:** keep the two read-only timestamp field types in the native document schema and derive them
+from each row's own metadata. The `.tablify` file's `TFile.stat` is not a row timestamp source.
+
+- **Timestamp reads and writes have one source.** `viewCellOf(snapshot, rowId, fieldId)` returns
+  `row.createdAt` for `createdTime`, `row.updatedAt` for `lastModifiedTime`, and the stored cell for an
+  ordinary field. A stale cell entry for a read-only timestamp field remains a warned, lossless invalid
+  passthrough in `cellOf`/serialization, but never overrides the row metadata in a view.
+- **The core stays clock-free.** `create-record` / `duplicate-record` may carry host-supplied `createdAt`
+  and `updatedAt`; `set-cells` may carry host-supplied `updatedAt`. Supplied values must be ISO instants
+  with an explicit offset or `Z`, and the exact prior timestamp is included in inverses. Omitted values
+  remain `null` on a new row or unchanged on an edit: no `Date`, filesystem stat, or implicit clock is
+  introduced into core operations/history. R4's action creator must supply the host clock when the UI
+  creates or modifies a row and needs these metadata columns to advance.
+- **Read-only means no cell value can be written.** Normal operations refuse non-null writes to either
+  timestamp field, including a cell initialized with a date-looking string. An explicit `null` may clear
+  a stale raw cell entry as a repair; that cleanup is reversible through `restore-cells` and does not
+  modify `createdAt`/`updatedAt`.
+- **Row numbering is presentation, not identity.** `rowNumber` accepts the selected view's visible row-id
+  order and derives the 1-based position from it (the manual order is the no-view default); filtered or
+  collapsed-out rows have no displayed number. No auto-number field is stored.
+- **No persisted native property-source escape hatch.** `FieldDefinition` remains `{id, name, type,
+  settings}` plus unknown JSON preservation; `formula` is not a `DocumentFieldTypeId`. A hand-edited
+  `source: "formula"` key is preserved as unknown data, never interpreted as schema. The shared query
+  resolver takes the native stable field id as a generic string key and a transient `source: "database"`
+  tag from the adapter so read-only timestamp descriptors can be selected by declared type; neither the
+  tag nor a legacy `PropertyId` is read from or serialized into the document. The legacy Bases adapter
+  continues to supply its own source tags until R6 removes that path.
+
+**Tests:** `tests/unit/core-projection.test.ts` verifies metadata-derived cells, invalid-cell preservation,
+manual and selected-view row numbering; `tests/unit/core-operations.test.ts` verifies explicit timestamp
+validation, create/duplicate, reversible `updatedAt`, read-only writes, and repair-clear undo;
+`tests/unit/core-fields.test.ts` verifies no native `source`/formula schema; and
+`tests/unit/core-database-view-output.test.ts` composes two native table projections with the pure query
+pipeline to prove saved-view filter/sort/group/hidden-column output stays table-local.
+
+**Step-7 verification (2026-10-08, VERIFIED):** focused typecheck, lint, formatting, and **159 tests
+across six targeted unit files** passed. The final `PATH="$HOME/.bun/bin:$PATH" bun run check` passed
+all gates: **87 test files / 1,951 tests**, production build, 32/32 gated contrast checks, CSS gate, and
+bundle-size gate (**545,932 raw / 166,816 gzip bytes**, within 900 / 300 KB limits). The identity
+inventory `--check` reported current; `test:layout` passed **115/115** across desktop, desktop-dark,
+phone-closed, phone-keyboard, and tablet. Full-test React `act(...)` warnings were non-fatal. The first
+full attempt exposed an inverse-shape regression for ordinary cell edits (an unnecessary `updatedAt: null`);
+the inverse now includes timestamp metadata only when the original operation changed it, preserving prior
+operation shapes, and the complete gate was rerun successfully.
 
 ## Future file map
 
 - `src/core/database/**`: database/table/schema/row/view IDs and state, validators, relational helpers.
-- `src/core/ops/**`: database/table/record/field/view/link ops and inverses.
-- `src/core/query/**`, `selection/**`, `view/**`: stable ID-based inputs and output.
-- `src/grid/store/**`: database-level state store plus stable active-table selectors.
+- `src/core/database/operations.ts` and `history.ts`: database/table/record/field/view/link ops, inverses and bounded history.
+- `src/core/query/**`, `selection/**`, `view/**`: stable ID-based inputs and output; the pure pipeline consumes the selected table/view projection.
+- `src/adapters/tablifyFile/databaseStore.ts`: native per-pane store and stable active-table selector; `src/grid/store/**` remains the legacy Bases store and is not modified by R3 step 6.
 - `src/sync/**`: receives row/field IDs only at a later phase; avoid coupling R3 to Airtable implementation.
 
 ## R3 test matrix and exit criteria
@@ -338,7 +381,16 @@ were non-fatal.
   reused name but different ID. *(Proven at step 4 by construction — every operation is id-addressed, and
   a vanished id refuses — with the file-level revision guard staying R2's, as the step-4 section says.)*
 - Multi-table query/filter/sort/group output is isolated to its selected table and saved view.
-  *(Proven for the projection at step 2 — `tests/unit/core-projection.test.ts` §"view output is isolated
-  to its own table"; the query/filter/group half arrives with steps 3–6.)*
-- No `filePath` or `PropertyId` is used as a local row/cell identity; remaining paths are explicitly host file/attachment addresses or remote Airtable values.
+  *(Proven by `tests/unit/core-database-view-output.test.ts`, which composes the selected native table's
+  saved filter/sort/group config with the pure pipeline and checks the second table stays unfiltered; view
+  identity isolation is also asserted in `tests/unit/core-projection.test.ts`.)*
+- The new `.tablify` path uses stable IDs, not `filePath` or `PropertyId`, for local row/cell identity.
+  Remaining legacy matches are explicitly tracked by `docs/audit/R3-identity-inventory.md`; host file/
+  attachment addresses and remote Airtable IDs stay at their boundaries.
 - Core remains import-clean: no Obsidian, React, filesystem, network, or DOM.
+
+**R3 phase status — COMPLETE (2026-10-08):** steps 0–7 are implemented, gated, and pushed individually.
+All exit criteria above are verified; the native-path identity inventory is current at 80 files / 1,204
+legacy marker occurrences, with 0 unclassified markers and 0 markers in the native path. The remaining legacy
+Bases identities are intentionally deferred to R6. Real-device R2 FileView probes are still **NOT RUN**
+and remain a separate user-run gate.

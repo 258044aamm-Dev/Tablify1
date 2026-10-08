@@ -106,6 +106,7 @@ export {
 	rowNumber,
 	sortRowIds,
 	viewAt,
+	viewCellOf,
 } from './projection';
 export type { DocumentMigration, MigratedDocument } from './migrate';
 export { DOCUMENT_MIGRATIONS, migrateDocument, parseAndMigrate } from './migrate';

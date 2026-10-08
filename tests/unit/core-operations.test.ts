@@ -59,6 +59,12 @@ const NEW_FIELD = 'fld_' + 'w'.repeat(26);
 const NEW_ROW = 'row_' + 'x'.repeat(26);
 const NEW_VIEW = 'viw_' + 'y'.repeat(26);
 const NOTES = 'tbl_' + '2'.repeat(26);
+const TIMED_TABLE = 'tbl_' + '9'.repeat(26);
+const TIMED_TITLE = 'fld_' + '3'.repeat(26);
+const TIMED_CREATED = 'fld_' + '4'.repeat(26);
+const TIMED_MODIFIED = 'fld_' + '6'.repeat(26);
+const TIMED_ROW = 'row_' + '9'.repeat(26);
+const TIMED_NEW_ROW = 'row_' + '8'.repeat(26);
 const NEW_FIELD_TWO = 'fld_' + '5'.repeat(26);
 const NEW_ROW_TWO = 'row_' + '6'.repeat(26);
 const NEW_ROW_THREE = 'row_' + '8'.repeat(26);
@@ -959,6 +965,158 @@ function seededRandom(seed: number): () => number {
 		return state / 2147483648;
 	};
 }
+
+describe('row timestamp metadata is read-only and reversible', () => {
+	function timestampDocument(): DatabaseDocument {
+		return load(
+			JSON.stringify({
+				format: 'tablify',
+				version: 1,
+				databaseId: 'db_' + '5'.repeat(26),
+				name: 'Timed rows',
+				tables: [
+					{
+						id: TIMED_TABLE,
+						name: 'Entries',
+						fields: [
+							{ id: TIMED_TITLE, name: 'Title', type: 'text' },
+							{ id: TIMED_CREATED, name: 'Created', type: 'createdTime' },
+							{ id: TIMED_MODIFIED, name: 'Modified', type: 'lastModifiedTime' },
+						],
+						rows: [
+							{
+								id: TIMED_ROW,
+								createdAt: '2026-01-02T09:00:00Z',
+								updatedAt: '2026-02-03T10:00:00+01:00',
+								cells: {
+									[TIMED_TITLE]: 'Before',
+									[TIMED_CREATED]: 'stale created cell',
+									[TIMED_MODIFIED]: 'stale modified cell',
+								},
+							},
+						],
+						views: [],
+					},
+				],
+			}),
+		);
+	}
+
+	it('accepts only host-supplied row instants and restores last-modified time on undo', () => {
+		const document = timestampDocument();
+		const before = serializeDocument(document);
+		const modifiedAt = '2026-06-07T08:09:10Z';
+		const result = applyOperation(document, {
+			kind: 'set-cells',
+			tableId: TIMED_TABLE,
+			rowId: TIMED_ROW,
+			edits: [{ fieldId: TIMED_TITLE, value: 'After' }],
+			updatedAt: modifiedAt,
+		});
+		expect(result.ok).toBe(true);
+		if (!result.ok) {
+			return;
+		}
+		expect(result.document.tables[0]?.rows[0]?.updatedAt).toBe(modifiedAt);
+		const undone = applyOperations(result.document, result.inverses);
+		expect(undone.ok).toBe(true);
+		if (undone.ok) {
+			expect(serializeDocument(undone.document)).toBe(before);
+		}
+
+		const invalid = applyOperation(document, {
+			kind: 'set-cells',
+			tableId: TIMED_TABLE,
+			rowId: TIMED_ROW,
+			edits: [{ fieldId: TIMED_TITLE, value: 'Rejected' }],
+			updatedAt: '2026-06-07T08:09:10',
+		});
+		expect(invalid).toMatchObject({ ok: false, code: 'invalid-row-timestamp' });
+	});
+
+	it('creates and duplicates rows with their own timestamps, never the source row timestamps', () => {
+		const document = timestampDocument();
+		const createdAt = '2026-04-05T12:00:00Z';
+		const updatedAt = '2026-04-05T12:00:00Z';
+		const create = applyOperation(document, {
+			kind: 'create-record',
+			tableId: TIMED_TABLE,
+			rowId: TIMED_NEW_ROW,
+			createdAt,
+			updatedAt,
+			cells: [{ fieldId: TIMED_TITLE, value: 'New' }],
+		});
+		expect(create.ok).toBe(true);
+		if (!create.ok) {
+			return;
+		}
+		expect(create.document.tables[0]?.rows[1]).toMatchObject({ createdAt, updatedAt });
+		const undoneCreate = applyOperations(create.document, create.inverses);
+		expect(undoneCreate.ok).toBe(true);
+		if (undoneCreate.ok) {
+			expect(serializeDocument(undoneCreate.document)).toBe(serializeDocument(document));
+		}
+
+		const duplicate = applyOperation(document, {
+			kind: 'duplicate-record',
+			tableId: TIMED_TABLE,
+			rowId: TIMED_ROW,
+			newRowId: TIMED_NEW_ROW,
+			createdAt,
+			updatedAt,
+		});
+		expect(duplicate.ok).toBe(true);
+		if (duplicate.ok) {
+			expect(duplicate.document.tables[0]?.rows[1]).toMatchObject({ createdAt, updatedAt });
+			expect(duplicate.document.tables[0]?.rows[1]?.createdAt).not.toBe(
+				document.tables[0]?.rows[0]?.createdAt,
+			);
+		}
+	});
+
+	it('refuses timestamp values but permits an explicit repair-clear of a stale raw cell', () => {
+		const document = timestampDocument();
+		for (const fieldId of [TIMED_CREATED, TIMED_MODIFIED]) {
+			const result = applyOperation(document, {
+				kind: 'set-cells',
+				tableId: TIMED_TABLE,
+				rowId: TIMED_ROW,
+				edits: [{ fieldId, value: '2026-06-07T08:09:10Z' }],
+			});
+			expect(result).toMatchObject({ ok: false, code: 'cell-not-writable' });
+		}
+
+		const clear = applyOperation(document, {
+			kind: 'set-cells',
+			tableId: TIMED_TABLE,
+			rowId: TIMED_ROW,
+			edits: [{ fieldId: TIMED_CREATED, value: null }],
+		});
+		expect(clear.ok).toBe(true);
+		if (clear.ok) {
+			expect(clear.document.tables[0]?.rows[0]?.createdAt).toBe('2026-01-02T09:00:00Z');
+			expect(clear.document.tables[0]?.rows[0]?.cells.has(TIMED_CREATED)).toBe(false);
+			const restored = applyOperations(clear.document, clear.inverses);
+			expect(restored.ok).toBe(true);
+			if (restored.ok) {
+				expect(serializeDocument(restored.document)).toBe(serializeDocument(document));
+			}
+		}
+
+		const createWithEmptyTimeCell = applyOperation(document, {
+			kind: 'create-record',
+			tableId: TIMED_TABLE,
+			rowId: TIMED_NEW_ROW,
+			cells: [{ fieldId: TIMED_CREATED, value: null }],
+		});
+		expect(createWithEmptyTimeCell.ok).toBe(true);
+		if (createWithEmptyTimeCell.ok) {
+			expect(
+				createWithEmptyTimeCell.document.tables[0]?.rows[1]?.cells.has(TIMED_CREATED),
+			).toBe(false);
+		}
+	});
+});
 
 describe('the property sweep', () => {
 	/** Every generator takes the document and a random source, and answers an operation. */

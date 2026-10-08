@@ -223,8 +223,15 @@ export function decodeCell(type: DocumentFieldTypeId, raw: JsonValue | undefined
 			return decodeIdList(raw, 'row', 'row ids', 'row id');
 		}
 		case 'createdTime':
+			return invalid(
+				raw,
+				'created time is read-only and derived from row.createdAt metadata, never stored in cells',
+			);
 		case 'lastModifiedTime':
-			return invalid(raw, 'a read-only time column; its value comes from the file');
+			return invalid(
+				raw,
+				'last modified time is read-only and derived from row.updatedAt metadata, never stored in cells',
+			);
 	}
 }
 
@@ -257,7 +264,7 @@ export function encodeCell(
 		return { kind: 'omit' };
 	}
 	if (type === 'createdTime' || type === 'lastModifiedTime') {
-		return { kind: 'unwritable', reason: 'a read-only time column is never written' };
+		return { kind: 'unwritable', reason: 'row timestamp fields are never written as cells' };
 	}
 	const decoded = decodeCell(type, cell);
 	if (decoded.kind !== 'value') {

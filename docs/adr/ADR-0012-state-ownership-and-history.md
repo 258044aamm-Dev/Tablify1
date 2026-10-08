@@ -88,6 +88,20 @@ be spelled that way is not an undoable operation; it is UI state, and it lives i
   identity-inventory gate, the full `bun run check`, and the 115-case layout gate. Step-by-step gate
   results are recorded in `/home/user/r1-r5-progress.md` (workspace tracker).
 
+## Implementation record — R3 step 7 (2026-10-08)
+
+- `createdTime` and `lastModifiedTime` remain native read-only metadata fields. The active-table
+  projection derives them from `TableRow.createdAt`/`updatedAt`; an invalid raw cell for either field is
+  still preserved and warned about, but is not authoritative for a view.
+- The operation algebra remains pure and clock-free. Record creation/duplication and cell edits may carry
+  explicit, offset-bearing timestamp strings from the host; validation and inverses preserve exact row
+  metadata. The native field schema has no `PropertySource` or formula type; a similarly named unknown
+  key is round-tripped without acquiring semantics.
+- A displayed row number is derived from the visible row-id order, never stored as identity or cell data.
+- Evidence: `tests/unit/core-projection.test.ts`, `tests/unit/core-operations.test.ts`,
+  `tests/unit/core-fields.test.ts`, and `tests/unit/core-database-view-output.test.ts`; complete R3
+  step-7 gate results are in the phase guide and `/home/user/r1-r5-progress.md`.
+
 ## Rejected alternatives
 
 - **A grid-owned writable store beside the document** (the pre-refactor shape). Rejected: this is the

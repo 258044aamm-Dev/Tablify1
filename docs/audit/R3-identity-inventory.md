@@ -36,7 +36,7 @@ Rule: `src/adapters/`, `src/core/fieldTypes/`, `src/core/`, `src/grid/`, `src/pl
 | `src/core/ops/types.ts` | filePath ×6, PropertyId ×13 |
 | `src/core/query/ast.ts` | PropertyId ×8 |
 | `src/core/query/evaluate.ts` | PropertyId ×6 |
-| `src/core/schema/propertySchema.ts` | PropertyId ×3 |
+| `src/core/schema/propertySchema.ts` | PropertyId ×2 |
 | `src/core/selection/range.ts` | filePath ×25, PropertyId ×4 |
 | `src/core/types.ts` | PropertyId ×1 |
 | `src/core/view/patch.ts` | PropertyId ×6 |
@@ -126,9 +126,9 @@ Rule: `tests/unit/view-state.test.ts`, `tests/unit/value-vocabulary.test.ts`
 
 ## Totals
 
-80 files carry 1205 marker occurrences.
+80 files carry 1204 marker occurrences.
 
-- `replace`: 48 file(s), 727 occurrence(s)
+- `replace`: 48 file(s), 726 occurrence(s)
 - `host-path`: 0 file(s), 0 occurrence(s)
 - `remote-record-id`: 2 file(s), 7 occurrence(s)
 - `historical`: 28 file(s), 463 occurrence(s)

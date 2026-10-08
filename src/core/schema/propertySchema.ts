@@ -5,9 +5,9 @@
  *
  *   1. `validateFieldOptions` turns the untrusted `fieldOptions` entry from a `.base` file into a typed
  *      object, dropping what it cannot use **and saying why**. Nothing here throws on bad user data.
- *   2. The two file-metadata columns (`created time`, `last modified time`) are read-only descriptors built
- *      in this file. P11 dropped the stored field types: the values come from `file.ctime`/`file.mtime`,
- *      so they are never written and never appear in frontmatter.
+ *   2. The two timestamp columns (`created time`, `last modified time`) are read-only descriptors built
+ *      in this file. The legacy Bases adapter supplies `file.ctime`/`file.mtime`; native `.tablify` views
+ *      supply each row's `createdAt`/`updatedAt` metadata. Neither source writes a cell or frontmatter.
  *   3. `resolveField` picks the descriptor: the declared type when the registry knows it, otherwise `text`
  *      with a recorded reason. A hand-edited `.base` can never make the grid fail to open.
  *
@@ -31,18 +31,21 @@ import { isFieldTypeId, parseFailed, parsed } from '../types';
 import { getField } from '../fieldTypes';
 import { textField } from '../fieldTypes/text';
 
-/** Where a Bases property comes from. Everything that is not a note property is read-only. */
-export type PropertySource = 'note' | 'file' | 'formula' | 'unknown';
+/**
+ * Where one transient query-layer property comes from. `database` is an adapter-only tag for native
+ * `.tablify` fields; the native schema itself has no source/property-source field.
+ */
+export type PropertySource = 'note' | 'file' | 'formula' | 'unknown' | 'database';
 
-/** One column, as the Bases view describes it, plus the raw `fieldOptions` entry if the `.base` has one. */
+/** A query-layer column projection, plus the raw options its adapter supplied. */
 export type PropertyDefinition = {
-	/** Prefixed Bases id: `note.Status`, `file.name`, `formula.Total`, or a bare name for note properties. */
-	readonly id: PropertyId;
-	/** The bare name after the prefix. */
+	/** The query key: a prefixed Bases id or a native stable field id. */
+	readonly id: string;
+	/** The column's visible name. */
 	readonly name: string;
-	/** The source the prefix implies. */
+	/** Transient source tag supplied by the adapter; never read from a native schema field. */
 	readonly source: PropertySource;
-	/** The raw `fieldOptions` entry for this property. Untrusted: it was hand-editable YAML. */
+	/** The raw options entry supplied by the adapter. Untrusted at a file boundary. */
 	readonly fieldOptions?: unknown;
 };
 
@@ -313,13 +316,14 @@ function localDay(ms: number, ctx: FieldContext): string {
 }
 
 /**
- * Builds one of the two read-only, file-metadata-backed descriptors.
+ * Builds one of the two read-only timestamp descriptors shared by the legacy Bases and native views.
  *
- * `toJson` always returns `null` — not "no value", but "nothing to write": the column is not stored, so the
- * write queue must never reach this branch (it refuses when `ResolvedField.readOnly` is set). The value
- * itself comes from the adapter, which passes `file.ctime`/`file.mtime` as epoch milliseconds.
+ * `toJson` always returns `null` — not "no value", but "nothing to write": the column is not stored in a
+ * cell, so a write queue must never reach this branch. The adapter supplies its authoritative metadata:
+ * the legacy Bases path passes `file.ctime`/`file.mtime`, while a native `.tablify` view passes the row's
+ * `createdAt`/`updatedAt` string from its document metadata.
  */
-function createFileTimeField(
+function createTimestampField(
 	id: 'createdTime' | 'lastModifiedTime',
 	label: string,
 	icon: string,
@@ -439,17 +443,17 @@ function createFileTimeField(
 	};
 }
 
-/** The read-only `created time` column, backed by `file.ctime` (P11: the stored field type is gone). */
-export const createdTimeField = createFileTimeField('createdTime', 'Created time', 'lucide-clock');
+/** The read-only `created time` descriptor; each adapter supplies the correct per-row source. */
+export const createdTimeField = createTimestampField('createdTime', 'Created time', 'lucide-clock');
 
-/** The read-only `last modified time` column, backed by `file.mtime` (P11). */
-export const lastModifiedTimeField = createFileTimeField(
+/** The read-only `last modified time` descriptor; each adapter supplies the correct per-row source. */
+export const lastModifiedTimeField = createTimestampField(
 	'lastModifiedTime',
 	'Last modified time',
 	'lucide-history',
 );
 
-/** The file-metadata descriptor a property means, if it means one. */
+/** The legacy file-metadata descriptor a property means, if it means one. */
 function fileTimeFieldFor(property: PropertyDefinition): FieldDescriptor | undefined {
 	const folded = normalizeName(property.name);
 	if (property.source === 'file') {
@@ -463,7 +467,7 @@ function fileTimeFieldFor(property: PropertyDefinition): FieldDescriptor | undef
 	}
 	// A note property is only ever file metadata under the exact names P11 retired: anything else keeps its
 	// own value, because a note property called "Created" is a value the user typed.
-	if (LEGACY_STORED_NAMES.some((name) => name === folded)) {
+	if (property.source === 'note' && LEGACY_STORED_NAMES.some((name) => name === folded)) {
 		return folded === 'createdtime' ? createdTimeField : lastModifiedTimeField;
 	}
 	return undefined;
@@ -472,8 +476,9 @@ function fileTimeFieldFor(property: PropertyDefinition): FieldDescriptor | undef
 /**
  * Resolves a column to the descriptor that renders and writes it.
  *
- * Order: file metadata (P11) → the declared `fieldOptions.type` when the registry knows it → `text` with a
- * reason. File and formula columns are always read-only; a descriptor can also declare `editable: false`.
+ * Order: legacy file metadata → native row timestamp metadata → a declared type from the registry → `text`
+ * with a reason. Legacy file/formula properties and a descriptor marked non-editable are read-only; ordinary
+ * native database fields remain eligible for writes.
  */
 export function resolveField(
 	property: PropertyDefinition,
@@ -499,12 +504,34 @@ export function resolveField(
 		};
 	}
 
-	const readOnlyBySource = property.source !== 'note';
+	const declared = validated.options.type;
+	const databaseTime =
+		property.source === 'database'
+			? declared === 'createdTime'
+				? createdTimeField
+				: declared === 'lastModifiedTime'
+					? lastModifiedTimeField
+					: undefined
+			: undefined;
+	if (databaseTime !== undefined) {
+		reasons.push(
+			'read-only: this value comes from row metadata and is never stored in cells (R3 step 7)',
+		);
+		return {
+			definition: property,
+			descriptor: databaseTime,
+			readOnly: true,
+			reasons,
+			options: validated.options,
+			context,
+		};
+	}
+
+	const readOnlyBySource = property.source !== 'note' && property.source !== 'database';
 	if (readOnlyBySource) {
 		reasons.push(`read-only: ${property.source} properties are not writable from the grid`);
 	}
 
-	const declared = validated.options.type;
 	if (declared !== undefined && isFieldTypeId(declared)) {
 		const found = lookup(declared);
 		if (found !== undefined) {

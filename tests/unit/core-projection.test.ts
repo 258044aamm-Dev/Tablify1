@@ -37,6 +37,7 @@ import {
 	rowNumber,
 	sortRowIds,
 	viewAt,
+	viewCellOf,
 } from '../../src/core/database/projection';
 import type { ActiveTableSnapshot } from '../../src/core/database/projection';
 
@@ -200,15 +201,83 @@ describe('a cell lookup separates “no value” from “no such row”', () => 
 	});
 });
 
-describe('a row number is derived from the manual order', () => {
-	it('numbers rows from one, in document order', () => {
+describe('native time fields read row metadata, not cells or file stats', () => {
+	it('derives both values from the selected row and preserves a bad stored cell separately', () => {
+		const tableId = 'tbl_' + 'm'.repeat(26);
+		const createdFieldId = 'fld_' + 'c'.repeat(26);
+		const modifiedFieldId = 'fld_' + 'd'.repeat(26);
+		const titleFieldId = 'fld_' + 't'.repeat(26);
+		const rowId = 'row_' + 'r'.repeat(26);
+		const emptyRowId = 'row_' + 'e'.repeat(26);
+		const createdAt = '2026-01-02T09:00:00Z';
+		const updatedAt = '2026-03-04T12:30:00+01:00';
+		const loaded = parseDocument(
+			JSON.stringify({
+				format: 'tablify',
+				version: 1,
+				databaseId: 'db_' + 'm'.repeat(26),
+				name: 'Metadata',
+				tables: [
+					{
+						id: tableId,
+						name: 'Rows',
+						fields: [
+							{ id: createdFieldId, name: 'Created', type: 'createdTime' },
+							{ id: modifiedFieldId, name: 'Modified', type: 'lastModifiedTime' },
+							{ id: titleFieldId, name: 'Title', type: 'text' },
+						],
+						rows: [
+							{
+								id: rowId,
+								createdAt,
+								updatedAt,
+								cells: {
+									[createdFieldId]: 'stale cell value',
+									[titleFieldId]: 'A row',
+								},
+							},
+							{ id: emptyRowId },
+						],
+						views: [],
+					},
+				],
+			}),
+		);
+		if (!loaded.ok) {
+			throw new Error('the row-metadata document must load with its invalid cell preserved');
+		}
+		const snapshot = snapshotOf(loaded.document, tableId);
+
+		expect(viewCellOf(snapshot, rowId, createdFieldId)).toBe(createdAt);
+		expect(viewCellOf(snapshot, rowId, modifiedFieldId)).toBe(updatedAt);
+		expect(viewCellOf(snapshot, emptyRowId, createdFieldId)).toBeNull();
+		expect(viewCellOf(snapshot, rowId, titleFieldId)).toBe('A row');
+		expect(viewCellOf(snapshot, 'row_' + 'x'.repeat(26), createdFieldId)).toBeUndefined();
+		expect(cellOf(snapshot, rowId, createdFieldId)).toEqual({
+			invalid: true,
+			raw: 'stale cell value',
+			reason: 'created time is read-only and derived from row.createdAt metadata, never stored in cells',
+		});
+	});
+});
+
+describe('a row number is derived from the current output order', () => {
+	it('uses the manual document order for the default view', () => {
 		const snapshot = snapshotOf(fixture(), T_SHOOTS);
 		expect(rowNumber(snapshot, R_ONE)).toBe(1);
 		expect(rowNumber(snapshot, R_TWO)).toBe(2);
 		expect(rowNumber(snapshot, R_THREE)).toBe(3);
 	});
 
-	it('answers null for a row that is not here, rather than inventing a number', () => {
+	it('numbers the visible sorted/filtered rows, ignoring foreign table ids', () => {
+		const snapshot = snapshotOf(fixture(), T_SHOOTS);
+		const currentViewOrder = [CLIENT_ROW, R_THREE, R_ONE];
+		expect(rowNumber(snapshot, R_THREE, currentViewOrder)).toBe(1);
+		expect(rowNumber(snapshot, R_ONE, currentViewOrder)).toBe(2);
+		expect(rowNumber(snapshot, R_TWO, currentViewOrder)).toBeNull();
+	});
+
+	it('answers null for a row that is not in this table', () => {
 		expect(rowNumber(snapshotOf(fixture(), T_SHOOTS), 'row_' + 'x'.repeat(26))).toBeNull();
 	});
 });

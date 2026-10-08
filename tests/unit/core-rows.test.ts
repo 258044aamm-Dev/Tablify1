@@ -220,7 +220,7 @@ describe('cells the reader cannot place are preserved', () => {
 		expect(row?.cells.get(F_CREATED)).toEqual({
 			invalid: true,
 			raw: '2025-01-01T00:00:00Z',
-			reason: 'a read-only time column; its value comes from the file',
+			reason: 'created time is read-only and derived from row.createdAt metadata, never stored in cells',
 		});
 		expect(warningsOf(rows).map((warning) => warning.code)).toEqual(['invalid-cell-value']);
 	});

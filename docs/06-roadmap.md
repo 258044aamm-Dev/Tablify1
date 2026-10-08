@@ -59,16 +59,26 @@ R3 and parts of R2 may be explored in parallel only after their public state/rep
 
 **Exit:** edit multiple tables, close/reopen, and preserve data; external/newer document state is never clobbered silently; no Bases plugin dependency.
 
-## R3 — Multi-table identities and operations
+## R3 — Multi-table identities and operations ✅ complete
 
-**Goal:** replace `filePath`/`PropertyId`/single `TableState` assumptions.
+**Goal:** give the native `.tablify` path stable table/row/field/view/cell identity and one reversible
+multi-table state owner. R3's implementation boundary is the native database path; it does not cut over
+or delete the still-running Bases grid.
 
-- [ ] Convert operations, inverses, selection, query tie-breaks, grid store, exports, and sync ports to stable table/row/field IDs.
-- [ ] Add table/field/row/view operations and undo; define transaction/write failure semantics.
-- [ ] Implement linked-record validation and approved referential-integrity/delete behavior.
-- [ ] Move schema/field options and record timestamps into the database model; remove YAML/frontmatter conversion.
+- [x] Establish stable IDs for native schema/projection/operations/inverses/query tie-breaks and the
+  per-pane database store. Existing Bases grid/selection remain tracked in the identity inventory and
+  are wired to the native projection in R4 or retired in R6.
+- [x] Add table/field/row/view/link operations, atomic batches, exact inverses, bounded history, and
+  document write-failure/conflict behavior.
+- [x] Validate links and implement the approved referential-integrity/delete behavior.
+- [x] Store row-owned `createdAt`/`updatedAt` timestamps; metadata fields remain read-only and never use
+  the `.tablify` file's Obsidian timestamps. R5 owns import/sync boundary rewiring.
 
-**Exit:** pure multi-table state can apply/undo every supported operation; no note path is a local row identity.
+**Exit:** the native multi-table state can apply/undo every supported operation; selected-table saved
+query/filter/sort/group output is isolated; native rows/cells use document IDs, not note paths. Remaining
+legacy markers and the exact R4/R5/R6 boundaries are recorded in `docs/R3-identities-operations-and-undo.md`
+and `docs/audit/R3-identity-inventory.md`. The R2 desktop/phone host probes remain **NOT RUN**; they are
+not represented as passing by this R3 completion.
 
 ## R4 — Grid parity and links
 
