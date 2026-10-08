@@ -99,20 +99,74 @@ export async function mappingFor(
 	const description = await target.describe();
 	const resolved = resolveFieldMap([...idByName.keys()], description.fields, existingByName);
 
+	// A link is mapped only to a remote link field that points at the table the local link file names. A remote
+	// link field is never mapped to a plain local field, because a plain field would write its record IDs as text.
+	const remoteById = new Map(description.fields.map((field) => [field.id, field] as const));
 	const fieldMap: Record<string, string> = {};
+	const refusedLinks: UnmappedField[] = [];
 	for (const [name, remoteId] of Object.entries(resolved.map)) {
 		const fieldId = idByName.get(name);
-		if (fieldId !== undefined) {
-			fieldMap[fieldId] = remoteId;
+		if (fieldId === undefined) {
+			continue;
+		}
+		const remote = remoteById.get(remoteId);
+		const expected = port.linkedRemoteTableOf(fieldId);
+		const remoteIsLink = remote?.type === 'multipleRecordLinks';
+		const linkMatches =
+			expected !== null &&
+			remote !== undefined &&
+			remoteIsLink &&
+			remote.linkedTableId === expected;
+		if ((expected !== null || remoteIsLink) && !linkMatches) {
+			refusedLinks.push({ side: 'local', name });
+			continue;
+		}
+		fieldMap[fieldId] = remoteId;
+	}
+	return {
+		fieldMap,
+		unmapped: [...resolved.unmapped, ...ambiguous, ...refusedLinks],
+		fields,
+	};
+}
+
+/**
+ * Every synced link cell that cannot be translated, checked by the same conversion a write uses. A write never
+ * reaches such a cell, because the run refuses first. The message names the field and counts the rows.
+ */
+async function assertLinksTranslate(port: NativeSyncPort, mapping: NativeMapping): Promise<void> {
+	const linked = mapping.fields.filter(
+		(field) =>
+			Object.prototype.hasOwnProperty.call(mapping.fieldMap, field.definition.name) &&
+			port.linkedRemoteTableOf(field.definition.name) !== null,
+	);
+	for (const field of linked) {
+		const name = field.definition.name;
+		let bad = 0;
+		for (const row of await port.rows()) {
+			const values = await port.values(row.path);
+			try {
+				field.descriptor.toJson(values[name] ?? null, field.context);
+			} catch {
+				bad += 1;
+			}
+		}
+		if (bad > 0) {
+			const column = port.columnNameOf(name) ?? name;
+			throw new Error(
+				`Link field “${column}” has ${String(bad)} row(s) that do not link to a current record, so nothing is written. Link or clear those rows, then sync again.`,
+			);
 		}
 	}
-	return { fieldMap, unmapped: [...resolved.unmapped, ...ambiguous], fields };
 }
 
 /** One run: map, pull and/or push through the engine, then return the link to save. Nothing is saved here. */
 export async function runNativeSync(input: NativeRunInput): Promise<NativeRunResult> {
 	const { target, port, document, direction } = input;
 	const mapping = await mappingFor(target, port, document);
+	if (direction !== 'pull') {
+		await assertLinksTranslate(port, mapping);
+	}
 	const since = direction === 'push' ? null : document.lastPulledAt;
 
 	const report = await runSync({

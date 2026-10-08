@@ -20,6 +20,7 @@
  * No provider names appear here. The remote mapping lives in the link file, not in this port.
  */
 import { resolveField } from '../core/schema/propertySchema';
+import { getField } from '../core/fieldTypes/registry';
 import type { PropertyDefinition, ResolvedField } from '../core/schema/propertySchema';
 import type { DatabaseOperation } from '../core/database/operations';
 import type { NativeExportEnvironment } from '../core/database/export/nativeMatrix';
@@ -34,6 +35,8 @@ import type { ApplyError, Refusal } from '../adapters/RowSource';
 import type { CellWrite, Op } from '../core/ops/types';
 import type { CellValue } from '../core/types';
 import type { SyncLocalPort } from './pullPush';
+import { linkDescriptorOf } from './nativeLinkField';
+import type { LinkBoundary } from './nativeLinkField';
 
 /** A field this port will not sync, and why. The reason is one sentence the UI can show. */
 export type ExcludedField = {
@@ -49,12 +52,19 @@ export type NativeSyncPort = SyncLocalPort & {
 	excludedFields(): readonly ExcludedField[];
 	/** The visible column name for a field ID, for messages. Never used as a key. */
 	columnNameOf(fieldId: string): string | null;
+	/** For a link field that is synced this run: the remote table it points to. `null` for every other field. */
+	linkedRemoteTableOf(fieldId: string): string | null;
 };
 
 export type NativePortOptions = {
 	readonly store: DatabaseStore;
 	readonly tableId: string;
 	readonly environment: NativeExportEnvironment;
+	/**
+	 * The link fields that may sync this run, each with its boundary. A link field without an entry stays excluded, as
+	 * it always was. Built by the host from the target tables' link files, so the port itself reads no file.
+	 */
+	readonly linkFields?: ReadonlyMap<string, LinkBoundary> | undefined;
 };
 
 function isSetCellsOp(op: Op): op is Extract<Op, { kind: 'setCells' }> {
@@ -71,9 +81,40 @@ function currentTable(store: DatabaseStore, tableId: string): ActiveTableSnapsho
 }
 
 /** The fields the engine may sync, and the ones it may not, computed from one snapshot. */
+/** A link field resolved with the text base and the link descriptor. Only built when its boundary exists. */
+function linkFieldOf(
+	fieldId: string,
+	name: string,
+	boundary: LinkBoundary,
+	environment: NativeExportEnvironment,
+): ResolvedField {
+	const base = getField('text');
+	if (base === undefined) {
+		throw new Error(
+			'The text field type is not registered, so a link field cannot be resolved.',
+		);
+	}
+	const definition: PropertyDefinition = {
+		id: fieldId,
+		name: fieldId,
+		source: 'database',
+		fieldOptions: {},
+	};
+	const context: FieldContext = {
+		now: environment.now,
+		timezone: environment.timezone,
+		locale: environment.locale,
+		fieldOptions: {},
+		columnName: name,
+	};
+	const resolved = resolveField(definition, context, () => base);
+	return { ...resolved, descriptor: linkDescriptorOf(base, boundary), readOnly: false };
+}
+
 function classify(
 	snapshot: ActiveTableSnapshot,
 	environment: NativeExportEnvironment,
+	linkFields: ReadonlyMap<string, LinkBoundary> | undefined,
 ): { readonly fields: readonly ResolvedField[]; readonly excluded: readonly ExcludedField[] } {
 	const fields: ResolvedField[] = [];
 	const excluded: ExcludedField[] = [];
@@ -87,6 +128,11 @@ function classify(
 			continue;
 		}
 		if (stored.type === 'link') {
+			const boundary = linkFields?.get(stored.id);
+			if (boundary !== undefined) {
+				fields.push(linkFieldOf(stored.id, stored.name, boundary, environment));
+				continue;
+			}
 			excluded.push({
 				fieldId: stored.id,
 				name: stored.name,
@@ -164,7 +210,9 @@ function labelOf(snapshot: ActiveTableSnapshot, rowId: string): string {
  * reads as empty rather than throwing.
  */
 export function createNativeSyncPort(options: NativePortOptions): NativeSyncPort {
-	const { store, tableId, environment } = options;
+	const { store, tableId, environment, linkFields } = options;
+	const classifyNow = (snapshot: ActiveTableSnapshot): ReturnType<typeof classify> =>
+		classify(snapshot, environment, linkFields);
 
 	const port: NativeSyncPort = {
 		async rows() {
@@ -186,7 +234,7 @@ export function createNativeSyncPort(options: NativePortOptions): NativeSyncPort
 			if (snapshot === null) {
 				return out;
 			}
-			const { fields } = classify(snapshot, environment);
+			const { fields } = classifyNow(snapshot);
 			for (const field of fields) {
 				const cell = viewCellOf(snapshot, path, field.definition.name);
 				if (cell !== undefined && !isInvalidCell(cell) && !isSyncEmpty(cell)) {
@@ -208,7 +256,7 @@ export function createNativeSyncPort(options: NativePortOptions): NativeSyncPort
 				errors.push({ path: tableId, message: 'The table is no longer in this database.' });
 				return { ok: false, written: 0, files: [], refused, errors };
 			}
-			const { fields } = classify(snapshot, environment);
+			const { fields } = classifyNow(snapshot);
 			const writable = new Set(fields.map((field) => field.definition.name));
 
 			const writes: CellWrite[] = [];
@@ -272,12 +320,16 @@ export function createNativeSyncPort(options: NativePortOptions): NativeSyncPort
 
 		syncFields() {
 			const snapshot = currentTable(store, tableId);
-			return snapshot === null ? [] : classify(snapshot, environment).fields;
+			return snapshot === null ? [] : classifyNow(snapshot).fields;
 		},
 
 		excludedFields() {
 			const snapshot = currentTable(store, tableId);
-			return snapshot === null ? [] : classify(snapshot, environment).excluded;
+			return snapshot === null ? [] : classifyNow(snapshot).excluded;
+		},
+
+		linkedRemoteTableOf(fieldId: string) {
+			return linkFields?.get(fieldId)?.remoteTableId ?? null;
 		},
 
 		columnNameOf(fieldId: string) {

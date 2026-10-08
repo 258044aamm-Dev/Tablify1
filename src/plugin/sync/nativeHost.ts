@@ -27,6 +27,9 @@ import { linkRowsByKey } from '../../sync/nativeLinking';
 import type { LinkTarget } from '../../sync/LinkStore';
 import type { DatabaseStore } from '../../adapters/tablifyFile/databaseStore';
 import { createNativeSyncPort } from '../../sync/nativePort';
+import { projectTable } from '../../core/database/projection';
+import { invertRowMap } from '../../sync/nativeLinks';
+import type { LinkBoundary } from '../../sync/nativeLinkField';
 import type { NativeSyncPort, ExcludedField } from '../../sync/nativePort';
 import { mappingFor, runNativeSync } from '../../sync/nativeRun';
 import type { SyncDirection, SyncReport } from '../../sync/pullPush';
@@ -141,6 +144,61 @@ export async function syncNativeTable(
  * The sync for the table a store is showing. The port is built from the store here, so the caller never names a
  * table: the active one is the only one a person can see and mean.
  */
+/**
+ * The link fields of one table that may sync this run, each with its boundary: the target table's link file, filtered
+ * to rows that still exist. A link field with no usable boundary (no target link file, a damaged file, or two rows
+ * on one record) is left out, so it stays excluded, exactly as it was before linked sync existed.
+ */
+export async function linkFieldsFor(
+	read: (path: string) => Promise<string | null>,
+	store: DatabaseStore,
+	databaseId: string,
+	tableId: string,
+): Promise<Map<string, LinkBoundary>> {
+	const out = new Map<string, LinkBoundary>();
+	const document = store.getSnapshot().document;
+	const table = projectTable(document, tableId);
+	if (table === null) {
+		return out;
+	}
+	for (const field of table.fields) {
+		if (field.kind !== 'field' || field.id === null || field.type !== 'link') {
+			continue;
+		}
+		const target = field.settings['targetTableId'];
+		if (typeof target !== 'string') {
+			continue;
+		}
+		const path = nativeLinkPath(databaseId, target);
+		const text = await read(path);
+		if (text === null) {
+			continue;
+		}
+		const loaded = parseNativeLink(text, path);
+		const live = projectTable(document, target);
+		if (!loaded.ok || live === null) {
+			continue;
+		}
+		const liveIds = new Set(live.rows.map((row) => row.id));
+		const rowToRecord: Record<string, string> = {};
+		for (const [rowId, recordId] of Object.entries(loaded.document.rowMap)) {
+			if (liveIds.has(rowId)) {
+				rowToRecord[rowId] = recordId;
+			}
+		}
+		const inverse = invertRowMap(rowToRecord);
+		if (!inverse.ok) {
+			continue;
+		}
+		out.set(field.id, {
+			remoteTableId: loaded.document.target.tableId,
+			rowToRecord,
+			recordToRow: inverse.byRecord,
+		});
+	}
+	return out;
+}
+
 export async function syncActiveStore(
 	options: NativeSyncOptions,
 	input: {
@@ -154,13 +212,21 @@ export async function syncActiveStore(
 	if (tableId === null) {
 		return refused('other', 'Select a table first.');
 	}
+	const databaseId = snapshot.document.databaseId;
+	const linkFields = await linkFieldsFor(
+		(path) => options.files.read(path),
+		input.store,
+		databaseId,
+		tableId,
+	);
 	const port = createNativeSyncPort({
 		store: input.store,
 		tableId,
 		environment: options.environment,
+		linkFields,
 	});
 	return syncNativeTable(options, {
-		databaseId: snapshot.document.databaseId,
+		databaseId,
 		tableId,
 		port,
 		direction: input.direction,
