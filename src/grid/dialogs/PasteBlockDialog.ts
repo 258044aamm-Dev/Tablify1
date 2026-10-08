@@ -71,7 +71,7 @@ export function choiceCounts(plan: PastePlan): string {
 
 /** The sentence the warning adds above the threshold. One wording, used by the test and the dialog. */
 export function largeWarning(rows: number, threshold: number): string {
-	return `${rows.toLocaleString('en-GB')} rows is above the large-import threshold (${threshold.toLocaleString('en-GB')}). This will create ${rows.toLocaleString('en-GB')} notes — one file each. Keep it as a .tabula file instead if it should stay a single file.`;
+	return `${rows.toLocaleString('en-GB')} rows is above the large-import threshold (${threshold.toLocaleString('en-GB')}). This will create ${rows.toLocaleString('en-GB')} notes — one file each.`;
 }
 
 export function pasteBlockSpec(input: PasteBlockInput): DialogSpec {

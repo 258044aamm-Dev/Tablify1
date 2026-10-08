@@ -16,7 +16,7 @@ of the script, not a footnote — classifying it is the decision R3 step 1 exist
 
 ## Files, with the markers they carry
 
-### `replace` — 48 file(s)
+### `replace` — 45 file(s)
 
 Rule: `src/adapters/`, `src/core/fieldTypes/`, `src/core/`, `src/grid/`, `src/plugin/`
 
@@ -25,10 +25,7 @@ Rule: `src/adapters/`, `src/core/fieldTypes/`, `src/core/`, `src/grid/`, `src/pl
 | `src/adapters/RowSource.ts` | filePath ×1, PropertyId ×4, propertyId ×3, RowSource ×2 |
 | `src/adapters/bases/BasesSource.ts` | filePath ×27, PropertyId ×14, propertyId ×17, RowSource ×5, processFrontMatter ×1 |
 | `src/adapters/optimistic.ts` | filePath ×15, PropertyId ×5, propertyId ×11, RowSource ×1 |
-| `src/adapters/tabulaFile/model.ts` | PropertyId ×2 |
 | `src/adapters/writeQueue.ts` | filePath ×4, PropertyId ×3, propertyId ×4, RowSource ×2, processFrontMatter ×6 |
-| `src/core/migrate/apply.ts` | filePath ×1, PropertyId ×6, propertyId ×8 |
-| `src/core/migrate/dryRun.ts` | PropertyId ×7 |
 | `src/core/ops/apply.ts` | filePath ×34, PropertyId ×14 |
 | `src/core/ops/build.ts` | filePath ×9, PropertyId ×2 |
 | `src/core/ops/history.ts` | filePath ×8 |
@@ -81,7 +78,7 @@ Rule: `src/sync/`
 | `src/sync/nativePort.ts` | filePath ×4, propertyId ×1, RowSource ×1 |
 | `src/sync/pullPush.ts` | filePath ×2, PropertyId ×3, RowSource ×1 |
 
-### `historical` — 29 file(s)
+### `historical` — 28 file(s)
 
 Rule: `tests/`
 
@@ -114,7 +111,6 @@ Rule: `tests/`
 | `tests/unit/ops.test.ts` | filePath ×40 |
 | `tests/unit/r3-inventory.test.ts` | YamlValue ×1, toYaml ×1 |
 | `tests/unit/selection.test.ts` | filePath ×24 |
-| `tests/unit/tabula-migrate.test.ts` | processFrontMatter ×2 |
 | `tests/unit/write-queue.test.ts` | filePath ×4, propertyId ×4, RowSource ×1, processFrontMatter ×10 |
 
 ### `guard` — 2 file(s)
@@ -128,12 +124,12 @@ Rule: `tests/unit/view-state.test.ts`, `tests/unit/value-vocabulary.test.ts`
 
 ## Totals
 
-82 files carry 1216 marker occurrences.
+78 files carry 1190 marker occurrences.
 
-- `replace`: 48 file(s), 726 occurrence(s)
+- `replace`: 45 file(s), 702 occurrence(s)
 - `host-path`: 0 file(s), 0 occurrence(s)
 - `remote-record-id`: 3 file(s), 13 occurrence(s)
-- `historical`: 29 file(s), 469 occurrence(s)
+- `historical`: 28 file(s), 467 occurrence(s)
 - `guard`: 2 file(s), 8 occurrence(s)
 - `native`: 0 file(s), 0 occurrence(s)
 

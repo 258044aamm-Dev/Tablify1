@@ -84,3 +84,10 @@ A non-run check remains `NOT RUN`; do not infer pass from the browser harness.
 - Active docs and product metadata match the code; historical records are labelled and factually accurate.
 - Automated checks and real-device/vault test log are complete, with assumptions/known limits stated.
 - A distinct release is prepared without rewriting history or claiming old-data migration.
+
+## Progress log (executed, 2026-10-08)
+
+- **Step 1 (readiness), automated part VERIFIED** by the existing suite: multi-table `.tablify` create/open/reopen, edit and undo, CSV/TSV/XLSX import and export, and the Airtable pull/push with conflict review, all green at `8043719`. **NOT RUN:** the scratch-vault and desktop/phone run-throughs in Obsidian (Step 1 and Step 7).
+- **Step 3, slice 1 (`.tabula`), LANDED.** Removed: `src/adapters/tabulaFile/**`, `src/core/migrate/**`, the `.tabula` reader and migration tests, the wizard's “Keep as .tabula file” action and its disabled reason, the `.tabula` sentences in the paste and empty-state copy, the `legacy.showMigrationEntryPoints` setting and its section, and the `legacy` key from the settings validator. An old settings file that still has `legacy` loads with defaults, keeps the key, and says so once (the existing passthrough warning, unchanged). The R3 inventory report was regenerated from the tree (`scripts/r3-inventory.ts --write`). Assertions that expected `.tabula` text or the escape-hatch action now assert that they are gone.
+- **Gates for slice 1:** `check` 104 files / 2088 tests, bundle 247398 bytes gzip; layout 115/115.
+- **Still open:** Step 2 (Bases view, `TablifyView` Bases inheritance, `src/adapters/bases`, the legacy note-row import, the legacy sync path); the grid store's note-row shape; Steps 4–8.

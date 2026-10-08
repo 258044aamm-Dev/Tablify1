@@ -58,7 +58,7 @@ export type WizardLine = {
 };
 
 export type WizardAction = {
-	readonly id: 'back' | 'continue' | 'create' | 'tabula' | 'cancel';
+	readonly id: 'back' | 'continue' | 'create' | 'cancel';
 	readonly label: string;
 	readonly primary: boolean;
 	readonly disabledReason?: string | undefined;
@@ -120,10 +120,6 @@ export type WizardState = {
 	/** The plan the target step shows and the runner consumes. Built by {@link planFor}. */
 	readonly plan: ImportPlan | null;
 };
-
-/** Where the `.tabula` alternative stands, and why — stated once, on the option itself. */
-export const TABULA_REASON =
-	'writing a .tabula file is not in this build: the format is read-only here, so this option cancels the import rather than pretending';
 
 /**
  * One sentence naming the work: *"3 columns × 412 rows"*. The row count is `matrix.length` or `matrix.length - 1`
@@ -217,11 +213,10 @@ export function previewLines(input: {
 		text: `Adds ${String(estimate.cells)} value${estimate.cells === 1 ? '' : 's'} across ${String(named.length)} propert${named.length === 1 ? 'y' : 'ies'}${named.length === 0 ? '' : `: ${named.map((column) => `${column.name} (${column.type})`).join(', ')}`}`,
 	});
 	if (input.warnOnLargeImport && notes > input.largeImportThreshold) {
-		// `docs/01`: the warning is explicit. The escape hatch is not built (see TABULA_REASON), so the honest
-		// version of that sentence says both things.
+		// `docs/01`: the warning is explicit about the count it is warning about.
 		lines.push({
 			kind: 'warning',
-			text: `${String(notes)} notes is above the ${String(input.largeImportThreshold)}-row warning level. Consider keeping this as a .tabula file instead — ${TABULA_REASON}.`,
+			text: `${String(notes)} notes is above the ${String(input.largeImportThreshold)}-row warning level.`,
 		});
 	}
 	for (const collision of estimate.collisions) {
@@ -454,12 +449,6 @@ function previewStep(state: WizardState): WizardStep {
 		options: [],
 		actions: [
 			{ id: 'back', label: '‹ Back', primary: false },
-			{
-				id: 'tabula',
-				label: 'Keep as .tabula file instead',
-				primary: false,
-				disabledReason: TABULA_REASON,
-			},
 			{
 				id: 'continue',
 				label: 'Continue ›',

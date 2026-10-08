@@ -134,7 +134,6 @@ const KNOWN_TOP_LEVEL_KEYS: readonly string[] = [
 	'rows',
 	'import',
 	'appearance',
-	'legacy',
 	'advanced',
 ];
 

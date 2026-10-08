@@ -209,15 +209,6 @@ export class ImportWizard extends Modal {
 				this.render();
 				return;
 			}
-			case 'tabula': {
-				// The escape hatch is not built (see `TABULA_REASON`): refusing in one sentence beats a button that
-				// appears to write a file and does not.
-				this.host.announce(
-					'Keeping a sheet as a .tabula file is not built yet — no file was written.',
-				);
-				this.close();
-				return;
-			}
 			case 'create': {
 				void this.create();
 				return;

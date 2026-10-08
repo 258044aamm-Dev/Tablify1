@@ -45,9 +45,6 @@ export type TablifySettings = {
 		readonly defaultRowHeight: RowHeightId;
 		readonly motionPreference: MotionPreferenceId;
 	};
-	readonly legacy: {
-		readonly showMigrationEntryPoints: boolean;
-	};
 	readonly advanced: {
 		readonly logLevel: LogLevelId;
 		readonly experimental: Readonly<Record<string, boolean>>;
@@ -63,7 +60,7 @@ export type RowHeightId = 'short' | 'medium' | 'tall';
 export type MotionPreferenceId = 'system' | 'reduce' | 'full';
 export type LogLevelId = 'off' | 'error' | 'warn' | 'info' | 'debug';
 
-export type SettingsSectionId = 'rows' | 'import' | 'appearance' | 'legacy' | 'advanced';
+export type SettingsSectionId = 'rows' | 'import' | 'appearance' | 'advanced';
 
 /** One settings section, in the order the tab renders it. */
 export type SettingsSection = {
@@ -78,8 +75,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
 	{
 		id: 'rows',
 		heading: 'Rows and files',
-		description:
-			'Where a new note goes and what it is called. Applies to paste, import and the legacy migration.',
+		description: 'Where a new note goes and what it is called. Applies to paste and import.',
 	},
 	{
 		id: 'import',
@@ -91,11 +87,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
 		heading: 'Appearance',
 		description:
 			'How the grid looks and moves. These are starting values; a view can override them.',
-	},
-	{
-		id: 'legacy',
-		heading: 'Legacy files',
-		description: 'The read-only import path for the older single-file format.',
 	},
 	{
 		id: 'advanced',
@@ -140,7 +131,6 @@ export type SettingPath =
 	| 'appearance.followObsidianTheme'
 	| 'appearance.defaultRowHeight'
 	| 'appearance.motionPreference'
-	| 'legacy.showMigrationEntryPoints'
 	| 'advanced.logLevel'
 	| 'advanced.experimental';
 
@@ -170,9 +160,6 @@ export const DEFAULT_SETTINGS: TablifySettings = Object.freeze({
 		followObsidianTheme: false,
 		defaultRowHeight: 'medium',
 		motionPreference: 'system',
-	}),
-	legacy: Object.freeze({
-		showMigrationEntryPoints: true,
 	}),
 	advanced: Object.freeze({
 		logLevel: 'off',
@@ -250,7 +237,7 @@ export const SETTING_ROWS: readonly SettingRow[] = [
 		path: 'import.warnOnLargeImport',
 		section: 'import',
 		name: 'Warn before a large import',
-		desc: 'Show the row count and the legacy-file alternative before creating a lot of notes. Off means the preview dialog still appears, without the warning.',
+		desc: 'Show the row count before creating a lot of notes. Off means the preview dialog still appears, without the warning.',
 		control: { kind: 'toggle' },
 		aliases: ['threshold', 'bulk', 'big'],
 	},
@@ -258,7 +245,7 @@ export const SETTING_ROWS: readonly SettingRow[] = [
 		path: 'import.largeImportThreshold',
 		section: 'import',
 		name: 'Large import threshold',
-		desc: 'The row count, from 10 to 5000, above which an import is treated as large and the legacy-file option is offered first.',
+		desc: 'The row count, from 10 to 5000, above which an import is treated as large.',
 		control: { kind: 'slider', min: 10, max: 5000, step: 10, unit: 'rows' },
 		aliases: ['limit', 'size'],
 		// Hidden while the warning is off: a threshold that triggers nothing is a disabled control in
@@ -325,14 +312,6 @@ export const SETTING_ROWS: readonly SettingRow[] = [
 			},
 		},
 		aliases: ['animation', 'accessibility', 'reduced'],
-	},
-	{
-		path: 'legacy.showMigrationEntryPoints',
-		section: 'legacy',
-		name: 'Show import entries for the legacy format',
-		desc: 'Offer the old single-file format in the commands and menus. The file is only ever read, and nothing is written until you confirm the dry run.',
-		control: { kind: 'toggle' },
-		aliases: ['tabula', 'migration', 'old files'],
 	},
 	{
 		path: 'advanced.logLevel',
@@ -454,7 +433,6 @@ export function cloneSettings(settings: TablifySettings): {
 		defaultRowHeight: RowHeightId;
 		motionPreference: MotionPreferenceId;
 	};
-	legacy: { showMigrationEntryPoints: boolean };
 	advanced: { logLevel: LogLevelId; experimental: Record<string, boolean> };
 } {
 	return {
@@ -475,7 +453,6 @@ export function cloneSettings(settings: TablifySettings): {
 			defaultRowHeight: settings.appearance.defaultRowHeight,
 			motionPreference: settings.appearance.motionPreference,
 		},
-		legacy: { showMigrationEntryPoints: settings.legacy.showMigrationEntryPoints },
 		advanced: {
 			logLevel: settings.advanced.logLevel,
 			experimental: { ...settings.advanced.experimental },

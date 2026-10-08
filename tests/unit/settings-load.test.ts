@@ -350,11 +350,29 @@ describe('the payload', () => {
 				defaultRowHeight: 'tall',
 				motionPreference: 'reduce',
 			},
-			legacy: { showMigrationEntryPoints: false },
 			advanced: { logLevel: 'debug', experimental: { betaImport: true } },
 		};
 		const round = loadSettings(JSON.parse(JSON.stringify(payloadFor(customised, {}))));
 		expect(round.settings).toEqual(customised);
 		expect(round.warnings).toEqual([]);
+	});
+});
+
+describe('the removed legacy settings key (R6 Step 3)', () => {
+	it('an older settings file that still has it loads with defaults, keeps the key, and says so once', () => {
+		const loaded = loadSettings({
+			version: SETTINGS_VERSION,
+			legacy: { showMigrationEntryPoints: false },
+		});
+		expect(loaded.settings).toEqual(DEFAULT_SETTINGS);
+		expect(loaded.passthrough).toEqual({ legacy: { showMigrationEntryPoints: false } });
+		expect(loaded.warnings).toEqual([
+			{
+				path: 'legacy',
+				kind: 'unknown',
+				message:
+					'“legacy” is not a setting this version knows; it is kept exactly as it is and written back on the next save.',
+			},
+		]);
 	});
 });

@@ -382,7 +382,7 @@ describe('cancel', () => {
 });
 
 describe('the large-import warning', () => {
-	it('names the .tabula alternative above the threshold', async () => {
+	it('states the count above the threshold, and no legacy-file alternative', async () => {
 		const ui = await mountPaste({ largeImportThreshold: 10 });
 		await ui.paste(block(12, 3));
 		const warning = textsOf(
@@ -390,7 +390,7 @@ describe('the large-import warning', () => {
 			'tablify-dlg-warning-text',
 		)[0];
 		expect(warning).toContain('12 rows is above the large-import threshold (10)');
-		expect(warning).toContain('.tabula');
+		expect(warning).not.toContain('.tabula');
 		expect(warning).toContain('12 notes');
 	});
 

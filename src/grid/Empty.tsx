@@ -35,7 +35,7 @@ export function Empty(props: EmptyProps): ReactElement {
 			<div className="tablify-empty-body">
 				{filtered
 					? `Nothing survives the current filter, query or search — ${rows(totalRows)} are in the table.`
-					: `${rows(totalRows)} in this view · rows are notes in your vault. Create one here, or import a CSV, XLSX or .tabula file.`}
+					: `${rows(totalRows)} in this view · rows are notes in your vault. Create one here, or import a CSV or XLSX file.`}
 			</div>
 			<div className="tablify-empty-actions">
 				{onNewRow === undefined ? null : (

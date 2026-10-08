@@ -572,14 +572,15 @@ describe('the wizard’s own copy', () => {
 		});
 		const warning = lines.find((line) => line.text.includes('warning level'));
 		expect(warning?.text).toContain('300 notes is above the 250-row warning level');
-		expect(warning?.text).toContain('.tabula');
+		expect(warning?.text).not.toContain('.tabula');
 		const step = stepFor('preview', {
 			...stateWith(),
 			result: readSource({ kind: 'matrix', matrix: big, name: 'big sheet' }),
 			columns: inferColumns(big, true).columns,
 		});
-		const tabula = step.actions.find((action) => action.id === 'tabula');
-		expect(tabula?.disabledReason).toContain('not in this build');
+		// The legacy-file escape hatch is removed (R6 Step 3): no action offers it, enabled or disabled.
+		const ids: readonly string[] = step.actions.map((action) => action.id);
+		expect(ids).not.toContain('tabula');
 		// Above the threshold the primary action is not the cursor: `docs/01` puts it on the escape hatch.
 		expect(step.actions.find((action) => action.id === 'continue')?.primary).toBe(false);
 	});

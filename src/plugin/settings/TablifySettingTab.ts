@@ -143,13 +143,7 @@ export function isSettings(value: unknown): value is TablifySettings {
 	if (typeof value !== 'object' || value === null) {
 		return false;
 	}
-	return (
-		'rows' in value &&
-		'import' in value &&
-		'appearance' in value &&
-		'legacy' in value &&
-		'advanced' in value
-	);
+	return 'rows' in value && 'import' in value && 'appearance' in value && 'advanced' in value;
 }
 
 /** Writes one setting through the host's store, using the path guard to turn a string into a `SettingPath`. */
