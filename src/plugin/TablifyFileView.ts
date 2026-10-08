@@ -26,6 +26,7 @@ import { createDatabaseStore } from '../adapters/tablifyFile';
 import type { IdKind } from '../core/database';
 import { NativeDatabaseGrid } from './NativeDatabaseGrid';
 import { NativeImportModal } from './nativeImport/NativeImportModal';
+import { NativeExportModal } from './nativeExport/NativeExportModal';
 import type { NativeGridEnvironment } from './NativeDatabaseGrid';
 import type { TablifyLeafState } from './viewState';
 import { EMPTY_LEAF_STATE, leafStateOf, readLeafState } from './viewState';
@@ -95,6 +96,7 @@ export class TablifyFileView extends FileView {
 	private unsubscribe: (() => void) | null = null;
 	private unsubscribeStore: (() => void) | null = null;
 	private importModal: NativeImportModal | null = null;
+	private exportModal: NativeExportModal | null = null;
 	private failure: RegistryResult | null = null;
 	private selection: TablifyFileViewState = EMPTY_LEAF_STATE;
 	private nameEditor: NameEditorState | null = null;
@@ -323,6 +325,7 @@ export class TablifyFileView extends FileView {
 			unsubscribeStore();
 		}
 		this.closeImportModal();
+		this.closeExportModal();
 		const store = this.databaseStore;
 		this.databaseStore = null;
 		store?.dispose();
@@ -571,6 +574,9 @@ export class TablifyFileView extends FileView {
 		this.makeButton(toolbar, 'Import rows', 'import-rows', () => {
 			this.openImport(store);
 		});
+		this.makeButton(toolbar, 'Export CSV', 'export-csv', () => {
+			this.openExport(store);
+		});
 		const currentSummary = toolbar.createSpan({
 			cls: 'tablify-native-current-table',
 			text:
@@ -649,6 +655,30 @@ export class TablifyFileView extends FileView {
 	private closeImportModal(): void {
 		const modal = this.importModal;
 		this.importModal = null;
+		modal?.close();
+	}
+
+	/** Open the native CSV export over this pane's active table. The modal states the scope before it writes. */
+	private openExport(store: DatabaseStore): void {
+		if (!this.commitGridEditBeforeNavigation()) {
+			return;
+		}
+		this.closeExportModal();
+		const modal = new NativeExportModal(this.app, {
+			store,
+			environment: {
+				now: this.host.environment.now,
+				timezone: this.host.environment.timezone,
+				locale: this.host.environment.locale,
+			},
+		});
+		this.exportModal = modal;
+		modal.open();
+	}
+
+	private closeExportModal(): void {
+		const modal = this.exportModal;
+		this.exportModal = null;
 		modal?.close();
 	}
 
