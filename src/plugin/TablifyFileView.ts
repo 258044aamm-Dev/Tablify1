@@ -98,6 +98,8 @@ export class TablifyFileView extends FileView {
 	private nameEditor: NameEditorState | null = null;
 	/** A preferred focus target for transitions that replace the focused control. */
 	private focusControl: string | null = null;
+	/** A linked-row jump temporarily uses Default view without overwriting a table's remembered view. */
+	private usingDefaultViewForLinkNavigation = false;
 	/** The path this pane was loaded with, so the title is right before `this.file` is assigned. */
 	private loadedPath: string | null = null;
 
@@ -155,6 +157,7 @@ export class TablifyFileView extends FileView {
 			this.viewSelectionByTable.set(this.selection.tableId, this.selection.viewId);
 		}
 		this.selection = readLeafState(state);
+		this.usingDefaultViewForLinkNavigation = false;
 		if (this.selection.tableId !== null) {
 			this.viewSelectionByTable.set(this.selection.tableId, this.selection.viewId);
 		}
@@ -267,7 +270,7 @@ export class TablifyFileView extends FileView {
 	/** Keep the workspace's view selection scoped to the table the per-pane store currently projects. */
 	private reconcileSelection(snapshot: DatabaseStoreSnapshot): void {
 		if (this.selection.tableId !== snapshot.activeTableId) {
-			if (this.selection.tableId !== null) {
+			if (this.selection.tableId !== null && !this.usingDefaultViewForLinkNavigation) {
 				this.viewSelectionByTable.set(this.selection.tableId, this.selection.viewId);
 			}
 			const table = snapshot.document.tables.find(
@@ -584,7 +587,9 @@ export class TablifyFileView extends FileView {
 		}
 
 		const grid = panel.createDiv({ cls: 'tablify-grid-area tablify-native-grid' });
-		this.nativeGrid.render(grid, store, snapshot, this.selection.viewId);
+		this.nativeGrid.render(grid, store, snapshot, this.selection.viewId, (tableId, rowId) => {
+			this.navigateToLinkedRow(tableId, rowId);
+		});
 
 		const status = panel.createDiv({ cls: 'tablify-statusbar tablify-native-status' });
 		status.setAttribute('role', 'status');
@@ -630,10 +635,11 @@ export class TablifyFileView extends FileView {
 			return;
 		}
 		const previousTableId = store.getSnapshot().activeTableId;
-		if (previousTableId !== null) {
+		if (previousTableId !== null && !this.usingDefaultViewForLinkNavigation) {
 			this.viewSelectionByTable.set(previousTableId, this.selection.viewId);
 		}
 		const selected = store.selectTable(tableId);
+		this.usingDefaultViewForLinkNavigation = false;
 		if (!selected.ok) {
 			new Notice(`Tablify: ${selected.message}`);
 			return;
@@ -643,6 +649,37 @@ export class TablifyFileView extends FileView {
 				tableId,
 				viewId: this.viewSelectionByTable.get(tableId) ?? null,
 			};
+			this.render();
+		}
+	}
+
+	private navigateToLinkedRow(tableId: string, rowId: string): void {
+		const store = this.databaseStore;
+		if (store === null || !this.commitGridEditBeforeNavigation()) {
+			return;
+		}
+		const snapshot = store.getSnapshot();
+		const targetTable = snapshot.document.tables.find((table) => table.id === tableId);
+		if (targetTable === undefined || !targetTable.rows.some((row) => row.id === rowId)) {
+			new Notice('Tablify: that linked record is no longer available.');
+			return;
+		}
+		const previousTableId = snapshot.activeTableId;
+		if (previousTableId !== null && previousTableId !== tableId) {
+			this.viewSelectionByTable.set(previousTableId, this.selection.viewId);
+		}
+		// A filtered or grouped saved view may hide the linked row. Use the transient Default view and
+		// keep the target table's remembered view untouched so ordinary table navigation can restore it.
+		this.selection = { tableId, viewId: null };
+		this.usingDefaultViewForLinkNavigation = true;
+		this.nativeGrid.navigateToRecord(tableId, rowId);
+		this.focusControl = 'native-grid';
+		const selected = store.selectTable(tableId);
+		if (!selected.ok) {
+			new Notice(`Tablify: ${selected.message}`);
+			return;
+		}
+		if (!selected.changed) {
 			this.render();
 		}
 	}
@@ -659,6 +696,7 @@ export class TablifyFileView extends FileView {
 			return;
 		}
 		this.selection = { tableId, viewId };
+		this.usingDefaultViewForLinkNavigation = false;
 		if (tableId !== null) {
 			this.viewSelectionByTable.set(tableId, viewId);
 		}

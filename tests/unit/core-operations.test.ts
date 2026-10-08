@@ -795,6 +795,48 @@ describe('ADR-0001: what a link write may store', () => {
 		expect(cleared.tables[0]?.rows[0]?.cells.has(F_TAGS)).toBe(false);
 	});
 
+	it('advances row metadata only when the host supplies a valid timestamp, and undo restores it', () => {
+		const document = load();
+		const before = serializeDocument(document);
+		const updatedAt = '2026-08-09T10:11:12Z';
+		const result = applyOperation(document, {
+			kind: 'set-link',
+			tableId: TASKS,
+			rowId: R_TWO,
+			fieldId: F_OWNER,
+			rowIds: [P_ADA],
+			updatedAt,
+		});
+		if (!result.ok) {
+			throw new Error(`the timestamped link write refused with ${result.code}`);
+		}
+		expect(result.document.tables[0]?.rows[1]?.updatedAt).toBe(updatedAt);
+		const undone = applyOperations(result.document, result.inverses);
+		if (!undone.ok) {
+			throw new Error(`undoing the timestamped link write refused with ${undone.code}`);
+		}
+		expect(serializeDocument(undone.document)).toBe(before);
+
+		const unchanged = applied(document, {
+			kind: 'set-link',
+			tableId: TASKS,
+			rowId: R_TWO,
+			fieldId: F_OWNER,
+			rowIds: [P_ADA],
+		});
+		expect(unchanged.tables[0]?.rows[1]?.updatedAt).toBeNull();
+		expect(
+			applyOperation(document, {
+				kind: 'set-link',
+				tableId: TASKS,
+				rowId: R_TWO,
+				fieldId: F_OWNER,
+				rowIds: [P_ADA],
+				updatedAt: '2026-08-09T10:11:12',
+			}),
+		).toMatchObject({ ok: false, code: 'invalid-row-timestamp' });
+	});
+
 	it('never writes the derived inverse side', () => {
 		const next = applied(load(), {
 			kind: 'set-link',

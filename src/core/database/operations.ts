@@ -257,6 +257,8 @@ export type DatabaseOperation =
 			readonly fieldId: string;
 			/** The complete new value: the ordered ids a user chose, or `[]` to clear the cell. */
 			readonly rowIds: readonly string[];
+			/** Host-supplied row modification instant; omitted means leave row metadata unchanged. */
+			readonly updatedAt?: string | null;
 	  };
 
 /** Why an operation was refused. A closed set, so a caller branches without reading messages. */
@@ -1671,6 +1673,7 @@ export function applyOperation(
 				tableId: operation.tableId,
 				rowId: operation.rowId,
 				edits: [{ fieldId: operation.fieldId, value }],
+				...(operation.updatedAt === undefined ? {} : { updatedAt: operation.updatedAt }),
 			});
 		}
 	}

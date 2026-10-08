@@ -14,6 +14,7 @@ import {
 	applyOperation,
 	applyOperations,
 	createIdFactory,
+	createRelationInspector,
 	inspectLinkCell,
 	parseDocument,
 	relationFindings,
@@ -422,6 +423,32 @@ describe('relation writes through database operations', () => {
 });
 
 describe('dangling links remain visible and lossless', () => {
+	it('reuses one read-only index for many cell inspections and stays scoped to its document revision', () => {
+		const document = fixture('rows-views');
+		const source = tableNamed(document, 'Shoots');
+		const field = linkNamed(source, 'Client');
+		const row = first(source.rows, 'source row');
+		const inspector = createRelationInspector(document);
+		const before = inspector.inspectLinkCell(source.id, row.id, field.id);
+		expect(before).toEqual(inspectLinkCell(document, source.id, row.id, field.id));
+
+		const changed = applyOperation(document, {
+			kind: 'set-link',
+			tableId: source.id,
+			rowId: row.id,
+			fieldId: field.id,
+			rowIds: [],
+		});
+		if (!changed.ok) {
+			throw new Error(`clearing the link refused with ${changed.code}`);
+		}
+		expect(inspector.inspectLinkCell(source.id, row.id, field.id)).toEqual(before);
+		expect(
+			createRelationInspector(changed.document).inspectLinkCell(source.id, row.id, field.id)
+				?.state,
+		).toBe('empty');
+	});
+
 	it('loads with a broken-reference state and round-trips the exact stored id', () => {
 		const loaded = parseDocument(fixtureText('dangling-refs'));
 		if (!loaded.ok) {

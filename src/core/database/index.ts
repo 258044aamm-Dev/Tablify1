@@ -87,8 +87,10 @@ export type {
 	LinkReferenceResolution,
 	RelationFinding,
 	RelationFindingCode,
+	RelationInspector,
 } from './relations';
 export {
+	createRelationInspector,
 	inspectLinkCell,
 	linkTargetFinding,
 	relationFindings,

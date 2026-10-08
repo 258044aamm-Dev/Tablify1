@@ -70,6 +70,12 @@ const ROW_FIRST = `row_${'e'.repeat(24)}00`;
 const ROW_SECOND = `row_${'e'.repeat(24)}01`;
 const OPTION_OPEN = `opt_${'o'.repeat(26)}1`;
 const OPTION_CLOSED = `opt_${'o'.repeat(26)}2`;
+const LINK_FIELD = `fld_${'l'.repeat(25)}1`;
+const MULTI_LINK_FIELD = `fld_${'m'.repeat(25)}1`;
+const INVERSE_FIELD = `fld_${'n'.repeat(25)}1`;
+const TARGET_ROW_ONE = `row_${'p'.repeat(24)}01`;
+const TARGET_ROW_TWO = `row_${'q'.repeat(24)}02`;
+const MISSING_TARGET_ROW = `row_${'r'.repeat(24)}99`;
 
 function databaseText(name = 'Studio'): string {
 	return JSON.stringify({
@@ -80,6 +86,94 @@ function databaseText(name = 'Studio'): string {
 		tables: [
 			table(`tbl_${'a'.repeat(25)}1`, 'Shoots', 2),
 			table(`tbl_${'a'.repeat(25)}2`, 'Clients', 1),
+		],
+	});
+}
+
+function linkedDatabaseText(): string {
+	return JSON.stringify({
+		format: 'tablify',
+		version: 1,
+		databaseId: `db_${'y'.repeat(26)}`,
+		name: 'Linked records',
+		tables: [
+			{
+				id: FIRST_TABLE,
+				name: 'Shoots',
+				fields: [
+					{ id: FIRST_FIELD, name: 'Title', type: 'text' },
+					{
+						id: LINK_FIELD,
+						name: 'Client',
+						type: 'link',
+						targetTableId: SECOND_TABLE,
+						allowMultiple: false,
+						inverseFieldId: INVERSE_FIELD,
+					},
+					{
+						id: MULTI_LINK_FIELD,
+						name: 'Contacts',
+						type: 'link',
+						targetTableId: SECOND_TABLE,
+						allowMultiple: true,
+					},
+				],
+				rows: [
+					{
+						id: ROW_FIRST,
+						cells: {
+							[FIRST_FIELD]: 'Shoot A',
+							[LINK_FIELD]: TARGET_ROW_ONE,
+							[MULTI_LINK_FIELD]: [TARGET_ROW_ONE, TARGET_ROW_TWO],
+						},
+					},
+					{
+						id: ROW_SECOND,
+						cells: {
+							[FIRST_FIELD]: 'Shoot B',
+							[LINK_FIELD]: MISSING_TARGET_ROW,
+						},
+					},
+				],
+				views: [
+					{
+						id: FILTERED_VIEW,
+						name: 'Only B',
+						filter: {
+							version: 1,
+							expr: {
+								kind: 'cmp',
+								fieldId: FIRST_FIELD,
+								op: 'contains',
+								operand: 'Shoot B',
+							},
+						},
+					},
+				],
+			},
+			{
+				id: SECOND_TABLE,
+				name: 'Clients',
+				fields: [
+					{ id: SECOND_FIELD, name: 'Name', type: 'text' },
+					{
+						id: INVERSE_FIELD,
+						name: 'Shoots',
+						type: 'link',
+						targetTableId: FIRST_TABLE,
+						allowMultiple: true,
+						generated: true,
+					},
+				],
+				rows: [
+					{
+						id: TARGET_ROW_ONE,
+						cells: { [SECOND_FIELD]: 'Ada', [INVERSE_FIELD]: [ROW_SECOND] },
+					},
+					{ id: TARGET_ROW_TWO, cells: { [SECOND_FIELD]: 'Grace' } },
+				],
+				views: [],
+			},
 		],
 	});
 }
@@ -383,6 +477,267 @@ describe('a readable document', () => {
 		grid = gridOf();
 		expect(rowIds(grid)).toEqual([ROW_SECOND]);
 		expect(rig.vault.writes).toEqual([]);
+	});
+
+	it('resolves link labels, surfaces broken IDs, derives read-only inverses, and navigates without losing saved views', async () => {
+		const rig = loadPlugin({ [PATH]: linkedDatabaseText() });
+		const view = await openPane(rig, PATH);
+		const gridOf = (): HTMLTableElement => {
+			const grid = view.containerEl.querySelector<HTMLTableElement>('[role="grid"]');
+			if (grid === null) {
+				throw new Error('the native link grid must be rendered');
+			}
+			return grid;
+		};
+		const linkedCell = view.containerEl.querySelector<HTMLElement>(
+			`[data-row-id="${ROW_FIRST}"][data-field-id="${LINK_FIELD}"]`,
+		);
+		const multiCell = view.containerEl.querySelector<HTMLElement>(
+			`[data-row-id="${ROW_FIRST}"][data-field-id="${MULTI_LINK_FIELD}"]`,
+		);
+		const brokenCell = view.containerEl.querySelector<HTMLElement>(
+			`[data-row-id="${ROW_SECOND}"][data-field-id="${LINK_FIELD}"]`,
+		);
+		if (linkedCell === null || multiCell === null || brokenCell === null) {
+			throw new Error('owning, multi-link and broken cells must all be rendered');
+		}
+		expect(linkedCell.textContent).toContain('Ada');
+		expect(linkedCell.querySelector('[data-link-navigation]')?.getAttribute('aria-label')).toBe(
+			'Open Ada in Clients',
+		);
+		expect(multiCell.textContent).toContain('Ada');
+		expect(multiCell.textContent).toContain('Grace');
+		expect(brokenCell.getAttribute('data-link-state')).toBe('broken');
+		expect(brokenCell.textContent).toContain('Missing row');
+		expect(brokenCell.getAttribute('aria-readonly')).toBe('false');
+		expect(text(view)).toContain('display convention only, not a primary-field setting');
+
+		const openTarget = linkedCell.querySelector<HTMLButtonElement>('[data-link-navigation]');
+		if (openTarget === null) {
+			throw new Error('an owning link must provide target-row navigation');
+		}
+		openTarget.click();
+		let grid = gridOf();
+		expect(grid.getAttribute('data-table-id')).toBe(SECOND_TABLE);
+		expect(
+			grid
+				.querySelector(`[data-row-id="${TARGET_ROW_ONE}"][data-field-id="${SECOND_FIELD}"]`)
+				?.getAttribute('aria-selected'),
+		).toBe('true');
+		let tables = selector(view, 'Table');
+		tables.value = FIRST_TABLE;
+		tables.dispatchEvent(new Event('change'));
+
+		const views = selector(view, 'Saved view');
+		views.value = FILTERED_VIEW;
+		views.dispatchEvent(new Event('change'));
+		expect(gridOf().querySelectorAll('tbody tr[data-row-id]')).toHaveLength(1);
+		expect(gridOf().querySelector('tbody tr[data-row-id]')?.getAttribute('data-row-id')).toBe(
+			ROW_SECOND,
+		);
+
+		tables = selector(view, 'Table');
+		tables.value = SECOND_TABLE;
+		tables.dispatchEvent(new Event('change'));
+		let inverseCell = view.containerEl.querySelector<HTMLElement>(
+			`[data-row-id="${TARGET_ROW_ONE}"][data-field-id="${INVERSE_FIELD}"]`,
+		);
+		if (inverseCell === null) {
+			throw new Error('the generated inverse cell must be rendered in the target table');
+		}
+		expect(inverseCell.textContent).toContain('Shoots: Shoot A');
+		expect(inverseCell.textContent).not.toContain('Shoot B');
+		expect(inverseCell.textContent).toContain('Stored inverse data ignored');
+		expect(inverseCell.getAttribute('aria-readonly')).toBe('true');
+		inverseCell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+		expect(view.containerEl.querySelector('.tablify-native-link-editor')).toBeNull();
+
+		const openSource = inverseCell.querySelector<HTMLButtonElement>('[data-link-navigation]');
+		if (openSource === null) {
+			throw new Error('a derived inverse must provide an accessible navigation button');
+		}
+		openSource.click();
+		grid = gridOf();
+		expect(grid.getAttribute('data-table-id')).toBe(FIRST_TABLE);
+		expect(grid.getAttribute('data-view-id')).toBe('');
+		expect(
+			Array.from(grid.querySelectorAll('tbody tr[data-row-id]')).map((row) =>
+				row.getAttribute('data-row-id'),
+			),
+		).toEqual([ROW_FIRST, ROW_SECOND]);
+		expect(
+			grid
+				.querySelector(`[data-row-id="${ROW_FIRST}"][data-field-id="${FIRST_FIELD}"]`)
+				?.getAttribute('aria-selected'),
+		).toBe('true');
+
+		// The linked-row jump uses Default view but must not overwrite the table's remembered filter.
+		tables = selector(view, 'Table');
+		tables.value = SECOND_TABLE;
+		tables.dispatchEvent(new Event('change'));
+		tables = selector(view, 'Table');
+		tables.value = FIRST_TABLE;
+		tables.dispatchEvent(new Event('change'));
+		expect(selector(view, 'Saved view').value).toBe(FILTERED_VIEW);
+		grid = gridOf();
+		expect(
+			Array.from(grid.querySelectorAll('tbody tr[data-row-id]')).map((row) =>
+				row.getAttribute('data-row-id'),
+			),
+		).toEqual([ROW_SECOND]);
+		expect(rig.vault.writes).toEqual([]);
+		await view.onClose();
+	});
+
+	it('edits link selections through set-link, timestamps only changed rows, and keeps multi-link order', async () => {
+		const rig = loadPlugin({ [PATH]: linkedDatabaseText() });
+		const view = await openPane(rig, PATH);
+		const handle = view.handle();
+		if (handle === null) {
+			throw new Error('the pane must hold a database handle');
+		}
+		const linkCell = view.containerEl.querySelector<HTMLElement>(
+			`[data-row-id="${ROW_FIRST}"][data-field-id="${LINK_FIELD}"]`,
+		);
+		if (linkCell === null) {
+			throw new Error('the single-link cell must be rendered');
+		}
+		linkCell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+		const firstSearch = view.containerEl.querySelector<HTMLInputElement>(
+			'input[type="search"][data-native-editor]',
+		);
+		if (firstSearch === null) {
+			throw new Error('the link editor must provide a search control');
+		}
+		expect(firstSearch.getAttribute('aria-label')).toBe('Search Clients records');
+		firstSearch.dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }),
+		);
+		expect(
+			view.containerEl.querySelector('input[type="search"][data-native-editor]'),
+		).toBeNull();
+		expect(rig.vault.writes).toEqual([]);
+
+		const cellAfterTab = view.containerEl.querySelector<HTMLElement>(
+			`[data-row-id="${ROW_FIRST}"][data-field-id="${LINK_FIELD}"]`,
+		);
+		cellAfterTab?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+		const search = view.containerEl.querySelector<HTMLInputElement>(
+			'input[type="search"][data-native-editor]',
+		);
+		const replacement = view.containerEl.querySelector<HTMLInputElement>(
+			`input[type="radio"][value="${TARGET_ROW_TWO}"][data-native-editor]`,
+		);
+		if (search === null || replacement === null) {
+			throw new Error('the link editor must provide search and radio choices');
+		}
+		const adaChoice = view.containerEl.querySelector<HTMLInputElement>(
+			`input[type="radio"][value="${TARGET_ROW_ONE}"][data-native-editor]`,
+		);
+		const noResults = view.containerEl.querySelector<HTMLElement>(
+			'.tablify-native-link-no-results',
+		);
+		if (adaChoice === null || noResults === null) {
+			throw new Error('the searchable choices and no-results status must be rendered');
+		}
+		search.value = 'Grace';
+		search.dispatchEvent(new Event('input', { bubbles: true }));
+		expect(adaChoice.parentElement?.hidden).toBe(true);
+		expect(replacement.parentElement?.hidden).toBe(false);
+		expect(noResults.hidden).toBe(true);
+		search.value = 'No matching client';
+		search.dispatchEvent(new Event('input', { bubbles: true }));
+		expect(noResults.hidden).toBe(false);
+		search.value = '';
+		search.dispatchEvent(new Event('input', { bubbles: true }));
+		expect(adaChoice.parentElement?.hidden).toBe(false);
+		expect(noResults.hidden).toBe(true);
+		replacement.checked = true;
+		replacement.dispatchEvent(new Event('change', { bubbles: true }));
+		replacement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+		expect(handle.session.getDocument().tables[0]?.rows[0]?.cells.get(LINK_FIELD)).toBe(
+			TARGET_ROW_TWO,
+		);
+		expect(handle.session.getDocument().tables[0]?.rows[0]?.updatedAt).toMatch(/^\d{4}-/);
+		expect(handle.session.getHistorySummary().depth).toBe(1);
+
+		handle.session.undo();
+		expect(handle.session.getDocument().tables[0]?.rows[0]?.cells.get(LINK_FIELD)).toBe(
+			TARGET_ROW_ONE,
+		);
+		expect(handle.session.getDocument().tables[0]?.rows[0]?.updatedAt).toBeNull();
+
+		const multiCell = view.containerEl.querySelector<HTMLElement>(
+			`[data-row-id="${ROW_FIRST}"][data-field-id="${MULTI_LINK_FIELD}"]`,
+		);
+		if (multiCell === null) {
+			throw new Error('the multi-link cell must be rendered');
+		}
+		multiCell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+		const removeGrace = view.containerEl.querySelector<HTMLInputElement>(
+			`input[type="checkbox"][value="${TARGET_ROW_TWO}"][data-native-editor]`,
+		);
+		if (removeGrace === null) {
+			throw new Error('the multi-link editor must use checkboxes');
+		}
+		expect(removeGrace.checked).toBe(true);
+		removeGrace.checked = false;
+		removeGrace.dispatchEvent(new Event('change', { bubbles: true }));
+		const multiSearch = view.containerEl.querySelector<HTMLInputElement>(
+			'input[type="search"][data-native-editor]',
+		);
+		multiSearch?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+		expect(
+			handle.session.getDocument().tables[0]?.rows[0]?.cells.get(MULTI_LINK_FIELD),
+		).toEqual([TARGET_ROW_ONE]);
+		expect(handle.session.getHistorySummary().depth).toBe(1);
+
+		const brokenCell = view.containerEl.querySelector<HTMLElement>(
+			`[data-row-id="${ROW_SECOND}"][data-field-id="${LINK_FIELD}"]`,
+		);
+		if (brokenCell === null) {
+			throw new Error('the broken link cell must remain addressable for repair');
+		}
+		brokenCell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+		let brokenChoice = view.containerEl.querySelector<HTMLInputElement>(
+			`input[type="radio"][value="${MISSING_TARGET_ROW}"][data-native-editor]`,
+		);
+		let brokenSearch = view.containerEl.querySelector<HTMLInputElement>(
+			'input[type="search"][data-native-editor]',
+		);
+		if (brokenChoice === null || brokenSearch === null) {
+			throw new Error('the editor must retain a broken ID as an explicit repair choice');
+		}
+		expect(brokenChoice.checked).toBe(true);
+		brokenSearch.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+		expect(handle.session.getDocument().tables[0]?.rows[1]?.cells.get(LINK_FIELD)).toBe(
+			MISSING_TARGET_ROW,
+		);
+		expect(handle.session.getDocument().tables[0]?.rows[1]?.updatedAt).toBeNull();
+		expect(handle.session.getHistorySummary().depth).toBe(1);
+
+		const brokenCellAfterNoop = view.containerEl.querySelector<HTMLElement>(
+			`[data-row-id="${ROW_SECOND}"][data-field-id="${LINK_FIELD}"]`,
+		);
+		brokenCellAfterNoop?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+		const repairedChoice = view.containerEl.querySelector<HTMLInputElement>(
+			`input[type="radio"][value="${TARGET_ROW_ONE}"][data-native-editor]`,
+		);
+		brokenSearch = view.containerEl.querySelector<HTMLInputElement>(
+			'input[type="search"][data-native-editor]',
+		);
+		if (repairedChoice === null || brokenSearch === null) {
+			throw new Error('the broken reference must be repairable with an existing target row');
+		}
+		repairedChoice.checked = true;
+		repairedChoice.dispatchEvent(new Event('change', { bubbles: true }));
+		brokenSearch.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+		expect(handle.session.getDocument().tables[0]?.rows[1]?.cells.get(LINK_FIELD)).toBe(
+			TARGET_ROW_ONE,
+		);
+		expect(handle.session.getDocument().tables[0]?.rows[1]?.updatedAt).toMatch(/^\d{4}-/);
+		expect(rig.vault.writes).toEqual([]);
+		await view.onClose();
 	});
 
 	it('edits a cell through its descriptor and shared history only when the edit is committed', async () => {

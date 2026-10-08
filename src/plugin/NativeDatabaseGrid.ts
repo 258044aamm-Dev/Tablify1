@@ -10,9 +10,12 @@ import type { DatabaseStore, DatabaseStoreSnapshot } from '../adapters/tablifyFi
 import { viewCellOf } from '../core/database/projection';
 import type { ActiveTableSnapshot } from '../core/database/projection';
 import type { FieldDefinition, TableField } from '../core/database/fields';
-import type { DatabaseTable } from '../core/database/schema';
+import { createRelationInspector } from '../core/database/relations';
+import type { RelationInspector } from '../core/database/relations';
+import type { DatabaseDocument, DatabaseTable } from '../core/database/schema';
 import { isInvalidCell } from '../core/database/values';
 import type { TableView } from '../core/database/views';
+import type { TableRow } from '../core/database/rows';
 import { resolveField } from '../core/schema/propertySchema';
 import type { PropertyDefinition, ResolvedField } from '../core/schema/propertySchema';
 import { isFieldTypeId } from '../core/types';
@@ -52,6 +55,7 @@ type NativeGridItem = NativeDataItem | NativeGroupItem;
 
 interface NativeGridModel {
 	readonly databaseId: string;
+	readonly document: DatabaseDocument;
 	readonly key: string;
 	readonly table: DatabaseTable;
 	readonly activeTable: ActiveTableSnapshot;
@@ -62,6 +66,10 @@ interface NativeGridModel {
 	readonly items: readonly NativeGridItem[];
 	readonly visibleRows: readonly RowView[];
 	readonly rowItemIndex: ReadonlyMap<string, number>;
+	readonly rowsByTableId: ReadonlyMap<string, ReadonlyMap<string, TableRow>>;
+	readonly labelColumnsByTableId: ReadonlyMap<string, readonly NativeColumn[]>;
+	readonly relationInspector: RelationInspector;
+	readonly generatedInverseRowsByCell: ReadonlyMap<string, readonly NativeInverseRow[]>;
 	readonly density: RowDensity;
 	readonly notes: readonly string[];
 }
@@ -78,6 +86,7 @@ type NativeEditDraft = string | boolean | readonly string[];
 interface NativeCellEditor extends NativeCellSelection {
 	readonly draft: NativeEditDraft;
 	readonly error: string | null;
+	readonly search: string;
 }
 
 interface NativeGridContext {
@@ -87,6 +96,23 @@ interface NativeGridContext {
 	readonly model: NativeGridModel;
 	readonly rowHeight: number;
 	readonly store: DatabaseStore;
+}
+
+interface NativeLinkChoice {
+	readonly id: string;
+	readonly label: string;
+	readonly broken: boolean;
+}
+
+interface NativeInverseRow {
+	readonly tableId: string;
+	readonly rowId: string;
+	readonly label: string;
+}
+
+interface NativeGridNavigationTarget {
+	readonly tableId: string;
+	readonly rowId: string;
 }
 
 let nextGridInstance = 0;
@@ -149,8 +175,8 @@ function resolveNativeColumn(
 		};
 	}
 	if (!isFieldTypeId(stored.type)) {
-		// `link` stores row IDs, but its ID-to-label lookup/editor is implemented in R4 step 3. Until then
-		// use the text descriptor to show the IDs, and never make a link cell look editable.
+		// `link` stays outside the scalar field descriptor contract. Its labels, relation state and
+		// selection editor use the canonical database model directly below, never the text descriptor.
 		return {
 			stored,
 			field: {
@@ -211,6 +237,201 @@ function editDraftOf(field: ResolvedField, value: CellState | undefined): Native
 		default:
 			return field.descriptor.formatPlain(current, field.context);
 	}
+}
+
+function isLinkColumn(column: NativeColumn): column is NativeColumn & {
+	readonly stored: FieldDefinition & { readonly type: 'link' };
+} {
+	return column.stored.kind === 'field' && column.stored.type === 'link';
+}
+
+const UNEDITABLE_LINK_FINDINGS = new Set([
+	'missing-target-table',
+	'generated-field',
+	'unreadable-value',
+	'duplicate-reference',
+	'cardinality-mismatch',
+]);
+
+function linkDraftOf(
+	model: NativeGridModel,
+	column: NativeColumn,
+	rowId: string,
+): readonly string[] | null {
+	if (!isLinkColumn(column) || column.stored.settings.generated === true) {
+		return null;
+	}
+	const targetTableId = column.stored.settings.targetTableId;
+	if (
+		targetTableId === undefined ||
+		!model.document.tables.some((table) => table.id === targetTableId)
+	) {
+		return null;
+	}
+	const inspection = model.relationInspector.inspectLinkCell(
+		model.table.id,
+		rowId,
+		column.stored.id,
+	);
+	if (
+		inspection === undefined ||
+		inspection.state === 'unreadable' ||
+		inspection.findings.some((finding) => UNEDITABLE_LINK_FINDINGS.has(finding.code))
+	) {
+		return null;
+	}
+	// Missing/foreign row IDs are deliberately retained in the draft so the user can remove them; a
+	// no-op commit does not rewrite them, and a new selection is validated by the core operation.
+	return inspection.references.map((reference) => reference.id);
+}
+
+function editDraftFor(
+	model: NativeGridModel,
+	column: NativeColumn,
+	rowId: string,
+	value: CellState | undefined,
+): NativeEditDraft | null {
+	return isLinkColumn(column)
+		? linkDraftOf(model, column, rowId)
+		: editDraftOf(column.field, value);
+}
+
+function sameLinkSelection(current: CellState | undefined, rowIds: readonly string[]): boolean {
+	if (current === undefined || current === null) {
+		return rowIds.length === 0;
+	}
+	const currentIds =
+		typeof current === 'string' ? [current] : isStringList(current) ? current : null;
+	return (
+		currentIds !== null &&
+		currentIds.length === rowIds.length &&
+		currentIds.every((id, index) => id === rowIds[index])
+	);
+}
+
+function linkCellValue(
+	column: NativeColumn & { readonly stored: FieldDefinition & { readonly type: 'link' } },
+	rowIds: readonly string[],
+): CellValue {
+	if (rowIds.length === 0) {
+		return null;
+	}
+	return column.stored.settings.allowMultiple === true ? [...rowIds] : (rowIds[0] ?? null);
+}
+
+function rowLabelFromMaps(
+	rowsByTableId: ReadonlyMap<string, ReadonlyMap<string, TableRow>>,
+	labelColumnsByTableId: ReadonlyMap<string, readonly NativeColumn[]>,
+	tableId: string,
+	rowId: string,
+): string {
+	const row = rowsByTableId.get(tableId)?.get(rowId);
+	if (row === undefined) {
+		return `Missing row · ${rowId}`;
+	}
+	for (const column of labelColumnsByTableId.get(tableId) ?? []) {
+		const value = row.cells.get(column.field.definition.id);
+		if (value === undefined || value === null || isInvalidCell(value)) {
+			continue;
+		}
+		const label = displayCellValue(column, value).trim();
+		if (label !== '') {
+			return label;
+		}
+	}
+	return `Row ${rowId}`;
+}
+
+function rowLabel(model: NativeGridModel, tableId: string, rowId: string): string {
+	return rowLabelFromMaps(model.rowsByTableId, model.labelColumnsByTableId, tableId, rowId);
+}
+
+function inverseRowsKey(tableId: string, fieldId: string, rowId: string): string {
+	return `${tableId}|${fieldId}|${rowId}`;
+}
+
+function generatedInverseRowsByCell(
+	document: DatabaseDocument,
+	rowsByTableId: ReadonlyMap<string, ReadonlyMap<string, TableRow>>,
+	labelColumnsByTableId: ReadonlyMap<string, readonly NativeColumn[]>,
+	relationInspector: RelationInspector,
+): ReadonlyMap<string, readonly NativeInverseRow[]> {
+	const rowsByKey = new Map<string, NativeInverseRow[]>();
+	const seenByKey = new Map<string, Set<string>>();
+	for (const sourceTable of document.tables) {
+		for (const owner of sourceTable.fields) {
+			if (
+				owner.kind !== 'field' ||
+				owner.type !== 'link' ||
+				owner.settings.generated === true ||
+				owner.settings.targetTableId === undefined ||
+				owner.settings.inverseFieldId === undefined
+			) {
+				continue;
+			}
+			const targetTable = document.tables.find(
+				(table) => table.id === owner.settings.targetTableId,
+			);
+			const inverse = targetTable?.fields.find(
+				(field) => field.id === owner.settings.inverseFieldId,
+			);
+			if (
+				targetTable === undefined ||
+				inverse?.kind !== 'field' ||
+				inverse.type !== 'link' ||
+				inverse.settings.generated !== true ||
+				inverse.settings.targetTableId !== sourceTable.id
+			) {
+				continue;
+			}
+			for (const sourceRow of sourceTable.rows) {
+				const inspection = relationInspector.inspectLinkCell(
+					sourceTable.id,
+					sourceRow.id,
+					owner.id,
+				);
+				for (const reference of inspection?.references ?? []) {
+					if (
+						reference.state !== 'resolved' ||
+						reference.ownerTableId !== targetTable.id
+					) {
+						continue;
+					}
+					const key = inverseRowsKey(targetTable.id, inverse.id, reference.id);
+					const sourceKey = `${sourceTable.id}|${sourceRow.id}`;
+					const seen = seenByKey.get(key) ?? new Set<string>();
+					if (seen.has(sourceKey)) {
+						continue;
+					}
+					seen.add(sourceKey);
+					seenByKey.set(key, seen);
+					const rows = rowsByKey.get(key) ?? [];
+					rows.push({
+						tableId: sourceTable.id,
+						rowId: sourceRow.id,
+						label: `${sourceTable.name}: ${rowLabelFromMaps(
+							rowsByTableId,
+							labelColumnsByTableId,
+							sourceTable.id,
+							sourceRow.id,
+						)}`,
+					});
+					rowsByKey.set(key, rows);
+				}
+			}
+		}
+	}
+	return rowsByKey;
+}
+
+function generatedInverseRows(
+	model: NativeGridModel,
+	rowId: string,
+	field: FieldDefinition & { readonly type: 'link' },
+): readonly NativeInverseRow[] {
+	return (
+		model.generatedInverseRowsByCell.get(inverseRowsKey(model.table.id, field.id, rowId)) ?? []
+	);
 }
 
 function sameCellValue(left: CellState | undefined, right: CellValue): boolean {
@@ -304,10 +525,40 @@ function modelOf(
 		selectedViewId === null
 			? null
 			: (table.views.find((candidate) => candidate.id === selectedViewId) ?? null);
-	const columns = table.fields.flatMap((stored) => {
-		const resolved = resolveNativeColumn(stored, environment);
-		return resolved === null ? [] : [resolved];
-	});
+	const columnsByTableId = new Map<string, readonly NativeColumn[]>();
+	for (const documentTable of snapshot.document.tables) {
+		const tableColumns = documentTable.fields.flatMap((stored) => {
+			const resolved = resolveNativeColumn(stored, environment);
+			return resolved === null ? [] : [resolved];
+		});
+		columnsByTableId.set(documentTable.id, tableColumns);
+	}
+	const columns = columnsByTableId.get(table.id) ?? [];
+	const labelColumnsByTableId = new Map<string, readonly NativeColumn[]>();
+	const rowsByTableId = new Map<string, ReadonlyMap<string, TableRow>>();
+	for (const documentTable of snapshot.document.tables) {
+		labelColumnsByTableId.set(
+			documentTable.id,
+			(columnsByTableId.get(documentTable.id) ?? []).filter(
+				(column) =>
+					column.stored.kind === 'field' &&
+					column.stored.type !== 'link' &&
+					column.stored.type !== 'createdTime' &&
+					column.stored.type !== 'lastModifiedTime',
+			),
+		);
+		rowsByTableId.set(
+			documentTable.id,
+			new Map(documentTable.rows.map((row) => [row.id, row])),
+		);
+	}
+	const relationInspector = createRelationInspector(snapshot.document);
+	const derivedRowsByCell = generatedInverseRowsByCell(
+		snapshot.document,
+		rowsByTableId,
+		labelColumnsByTableId,
+		relationInspector,
+	);
 	const rowViews = activeTable.rows.map((row) => rowViewOf(activeTable, row.id, columns));
 	const result = buildView({
 		fields: columns.map((column) => column.field),
@@ -370,9 +621,9 @@ function modelOf(
 	if (unsupportedCount > 0) {
 		notes.push('Unsupported field types are shown read-only where their IDs are available.');
 	}
-	if (columns.some((column) => column.stored.kind === 'field' && column.stored.type === 'link')) {
+	if (columns.some((column) => isLinkColumn(column))) {
 		notes.push(
-			'Link cells currently show stored row IDs read-only; linked-record labels and editing are next.',
+			'Linked-record labels use the first non-empty supported non-link, non-timestamp field in target-field order; if none is available, the row ID is shown. This is a display convention only, not a primary-field setting.',
 		);
 	}
 	if (view !== null && view.filterProblems.length > 0) {
@@ -382,6 +633,7 @@ function modelOf(
 	}
 	return {
 		databaseId: snapshot.document.databaseId,
+		document: snapshot.document,
 		key: `${snapshot.document.databaseId}\u0000${table.id}`,
 		table,
 		activeTable,
@@ -392,6 +644,10 @@ function modelOf(
 		items,
 		visibleRows,
 		rowItemIndex,
+		rowsByTableId,
+		labelColumnsByTableId,
+		relationInspector,
+		generatedInverseRowsByCell: derivedRowsByCell,
 		density: view?.density ?? 'medium',
 		notes,
 	};
@@ -414,8 +670,15 @@ export class NativeDatabaseGrid {
 	private editing: NativeCellEditor | null = null;
 	private context: NativeGridContext | null = null;
 	private readonly scrollTopByTable = new Map<string, number>();
+	private pendingNavigation: NativeGridNavigationTarget | null = null;
+	private onNavigateToRow: (tableId: string, rowId: string) => void = () => undefined;
 
 	constructor(private readonly environment: NativeGridEnvironment) {}
+
+	/** Queue selection/scroll for a linked row before the target table is rendered. */
+	navigateToRecord(tableId: string, rowId: string): void {
+		this.pendingNavigation = { tableId, rowId };
+	}
 
 	/** Commit a draft before pane-level navigation; return false without changing panes on validation failure. */
 	commitPending(): boolean {
@@ -462,14 +725,40 @@ export class NativeDatabaseGrid {
 		store: DatabaseStore,
 		snapshot: DatabaseStoreSnapshot,
 		selectedViewId: string | null,
+		onNavigateToRow: (tableId: string, rowId: string) => void = () => undefined,
 	): void {
 		this.context = null;
+		this.onNavigateToRow = onNavigateToRow;
+		let focusGridAfterRender = false;
 		const model = modelOf(snapshot, selectedViewId, this.environment);
 		const nextTableKey = model?.key ?? null;
 		if (this.tableKey !== nextTableKey) {
 			this.tableKey = nextTableKey;
 			this.selection = null;
 			this.editing = null;
+		}
+		const pendingNavigation = this.pendingNavigation;
+		if (model !== null && pendingNavigation?.tableId === model.table.id) {
+			this.pendingNavigation = null;
+			if (model.activeTable.rowById.has(pendingNavigation.rowId)) {
+				const firstColumn = model.visibleColumns[0];
+				if (firstColumn !== undefined) {
+					this.selection = {
+						databaseId: model.databaseId,
+						tableId: model.table.id,
+						rowId: pendingNavigation.rowId,
+						fieldId: firstColumn.field.definition.id,
+					};
+				}
+				const itemIndex = model.rowItemIndex.get(pendingNavigation.rowId);
+				if (itemIndex !== undefined) {
+					this.scrollTopByTable.set(
+						model.key,
+						Math.max(0, itemIndex * rowHeightOf(model.density)),
+					);
+				}
+				focusGridAfterRender = true;
+			}
 		}
 		if (
 			this.editing !== null &&
@@ -563,7 +852,10 @@ export class NativeDatabaseGrid {
 		});
 		grid.addEventListener('click', (event: MouseEvent) => {
 			const target = event.target;
-			if (!(target instanceof Element) || target.closest('[data-native-editor]') !== null) {
+			if (
+				!(target instanceof Element) ||
+				target.closest('[data-native-editor], [data-link-navigation]') !== null
+			) {
 				return;
 			}
 			const cell = target.closest<HTMLElement>('[data-row-id][data-field-id]');
@@ -591,7 +883,10 @@ export class NativeDatabaseGrid {
 		});
 		grid.addEventListener('dblclick', (event: MouseEvent) => {
 			const target = event.target;
-			if (!(target instanceof Element) || target.closest('[data-native-editor]') !== null) {
+			if (
+				!(target instanceof Element) ||
+				target.closest('[data-native-editor], [data-link-navigation]') !== null
+			) {
 				return;
 			}
 			const cell = target.closest<HTMLElement>('[data-row-id][data-field-id]');
@@ -618,6 +913,9 @@ export class NativeDatabaseGrid {
 			this.onKeyDown(event, scroll, grid, body, model, rowHeight, store);
 		});
 		renderRows();
+		if (focusGridAfterRender) {
+			grid.focus({ preventScroll: true });
+		}
 
 		const notes = [...model.notes];
 		if (model.visibleColumns.length === 0) {
@@ -750,7 +1048,7 @@ export class NativeDatabaseGrid {
 			const value = viewCellOf(model.activeTable, item.rowId, fieldId);
 			const invalidValue =
 				value !== undefined && value !== null && isInvalidCell(value) ? value : null;
-			const editable = editDraftOf(column.field, value) !== null;
+			const editable = editDraftFor(model, column, item.rowId, value) !== null;
 			cell.setAttribute('aria-readonly', String(!editable));
 			if (invalidValue !== null) {
 				const serialized = JSON.stringify(invalidValue.raw) ?? 'null';
@@ -775,6 +1073,8 @@ export class NativeDatabaseGrid {
 					rowHeight,
 					store,
 				);
+			} else if (isLinkColumn(column)) {
+				this.renderLinkCell(cell, column, item.rowId, model);
 			} else {
 				cell.setText(displayCellValue(column, value));
 			}
@@ -797,6 +1097,170 @@ export class NativeDatabaseGrid {
 		return element;
 	}
 
+	private renderLinkCell(
+		cell: HTMLTableCellElement,
+		column: NativeColumn & { readonly stored: FieldDefinition & { readonly type: 'link' } },
+		rowId: string,
+		model: NativeGridModel,
+	): void {
+		const field = column.stored;
+		const inspection = model.relationInspector.inspectLinkCell(model.table.id, rowId, field.id);
+		const ownerRow = model.rowsByTableId.get(model.table.id)?.get(rowId);
+		const storedValue = ownerRow?.cells.get(field.id);
+		const unexpectedInverseValue =
+			field.settings.generated === true && storedValue !== undefined && storedValue !== null;
+		const labels: string[] = [];
+		cell.addClass('tablify-native-link-cell');
+		const content = cell.createDiv({ cls: 'tablify-native-link-content' });
+		if (inspection !== undefined) {
+			cell.setAttribute('data-link-state', inspection.state);
+			const messages = inspection.findings.map((finding) => finding.message);
+			if (messages.length > 0) {
+				cell.setAttribute('title', messages.join(' '));
+			}
+		}
+
+		if (field.settings.generated === true) {
+			const derivedRows = generatedInverseRows(model, rowId, field);
+			const sourceTableAvailable = model.document.tables.some(
+				(table) => table.id === field.settings.targetTableId,
+			);
+			cell.setAttribute('data-link-state', derivedRows.length > 0 ? 'resolved' : 'empty');
+			for (const derived of derivedRows) {
+				const sourceTable = model.document.tables.find(
+					(table) => table.id === derived.tableId,
+				);
+				if (sourceTable === undefined) {
+					continue;
+				}
+				this.appendLinkNavigationButton(
+					content,
+					derived.tableId,
+					derived.rowId,
+					derived.label,
+					sourceTable.name,
+				);
+				labels.push(derived.label);
+			}
+			if (!sourceTableAvailable) {
+				cell.addClass('is-broken-link');
+				cell.setAttribute('data-link-state', 'broken');
+				const message = `Missing source table · ${field.settings.targetTableId ?? 'not configured'}`;
+				content.createSpan({ cls: 'tablify-native-link-broken', text: message });
+				labels.push(message);
+			}
+			if (unexpectedInverseValue) {
+				cell.addClass('is-broken-link');
+				cell.setAttribute('data-link-state', 'broken');
+				cell.setAttribute(
+					'title',
+					'Generated inverse values are derived and are never read from stored cell data.',
+				);
+				const warning = content.createSpan({
+					cls: 'tablify-native-link-warning',
+					text: 'Stored inverse data ignored',
+				});
+				warning.setAttribute('role', 'note');
+				labels.push('Stored inverse data ignored');
+			}
+			if (derivedRows.length === 0 && !unexpectedInverseValue && sourceTableAvailable) {
+				content.createSpan({
+					cls: 'tablify-native-link-empty',
+					text: 'No linked records',
+				});
+				labels.push('No linked records');
+			}
+			cell.setAttribute('aria-label', `${field.name}: ${labels.join('; ')}`);
+			return;
+		}
+
+		if (inspection === undefined) {
+			cell.addClass('is-broken-link');
+			cell.setAttribute('data-link-state', 'unreadable');
+			cell.setAttribute('aria-label', `${field.name}: link data unavailable`);
+			cell.setText('Link data unavailable');
+			return;
+		}
+		for (const reference of inspection.references) {
+			if (reference.state === 'resolved' && reference.ownerTableId !== null) {
+				const targetTable = model.document.tables.find(
+					(table) => table.id === reference.ownerTableId,
+				);
+				if (targetTable !== undefined) {
+					const label = rowLabel(model, targetTable.id, reference.id);
+					this.appendLinkNavigationButton(
+						content,
+						targetTable.id,
+						reference.id,
+						label,
+						targetTable.name,
+					);
+					labels.push(label);
+					continue;
+				}
+			}
+			const message =
+				reference.state === 'missing-row'
+					? `Missing row · ${reference.id}`
+					: reference.state === 'foreign-row'
+						? `Wrong table · ${model.document.tables.find((table) => table.id === reference.ownerTableId)?.name ?? 'unknown table'} · ${reference.id}`
+						: `Missing target table · ${inspection.targetTableId ?? field.settings.targetTableId ?? 'unknown'}`;
+			const broken = content.createSpan({
+				cls: 'tablify-native-link-broken',
+				text: message,
+			});
+			broken.setAttribute('role', 'note');
+			labels.push(message);
+		}
+		if (inspection.state === 'unreadable') {
+			cell.addClass('is-broken-link');
+			const status = content.createSpan({
+				cls: 'tablify-native-link-broken',
+				text: 'Unreadable link value',
+			});
+			status.setAttribute('role', 'note');
+			labels.push('Unreadable link value');
+		} else if (inspection.findings.length > 0 || inspection.state === 'broken') {
+			cell.addClass('is-broken-link');
+			if (inspection.references.length === 0 && labels.length === 0) {
+				const status = content.createSpan({
+					cls: 'tablify-native-link-broken',
+					text: 'Link target needs repair',
+				});
+				status.setAttribute('role', 'note');
+				labels.push('Link target needs repair');
+			}
+		}
+		if (labels.length === 0) {
+			content.createSpan({ cls: 'tablify-native-link-empty', text: 'No linked records' });
+			labels.push('No linked records');
+		}
+		cell.setAttribute('aria-label', `${field.name}: ${labels.join('; ')}`);
+	}
+
+	private appendLinkNavigationButton(
+		container: HTMLElement,
+		tableId: string,
+		rowId: string,
+		label: string,
+		tableName: string,
+	): void {
+		const button = container.createEl('button', {
+			cls: 'tablify-native-link-button',
+			text: label,
+		});
+		button.type = 'button';
+		button.setAttribute('data-link-navigation', 'true');
+		button.setAttribute('data-target-table-id', tableId);
+		button.setAttribute('data-target-row-id', rowId);
+		button.setAttribute('aria-label', `Open ${label} in ${tableName}`);
+		button.onclick = (event: MouseEvent): void => {
+			event.preventDefault();
+			event.stopPropagation();
+			this.onNavigateToRow(tableId, rowId);
+		};
+	}
+
 	private renderCellEditor(
 		cell: HTMLTableCellElement,
 		column: NativeColumn,
@@ -814,10 +1278,10 @@ export class NativeDatabaseGrid {
 		}
 		const editor = editorOf(column.field);
 		const label = `${column.field.definition.name}, row ${String(model.result.rows.findIndex((row) => row.rowId === rowId) + 1)}`;
-		const bind = (control: HTMLElement): void => {
+		const bind = (control: HTMLElement, accessibleLabel = label): void => {
 			control.setAttribute('data-native-editor', 'true');
 			control.setAttribute('data-focus-key', 'native-grid-editor');
-			control.setAttribute('aria-label', label);
+			control.setAttribute('aria-label', accessibleLabel);
 			control.addEventListener('keydown', (event: KeyboardEvent) => {
 				this.onEditorKeyDown(event, scroll, grid, body, model, rowHeight, store);
 			});
@@ -831,7 +1295,9 @@ export class NativeDatabaseGrid {
 			cell.querySelector('.tablify-native-cell-editor-error')?.remove();
 		};
 
-		if (editor === 'checkbox') {
+		if (isLinkColumn(column)) {
+			this.renderLinkCellEditor(cell, column, rowId, model, edit, bind, updateDraft);
+		} else if (editor === 'checkbox') {
 			const input = cell.createEl('input', {
 				cls: 'tablify-native-cell-editor tablify-native-checkbox-editor',
 				type: 'checkbox',
@@ -907,8 +1373,180 @@ export class NativeDatabaseGrid {
 				cls: 'tablify-native-cell-editor-error',
 				text: edit.error,
 			});
+			error.id = `${this.instanceId}-error-${rowId}-${column.stored.id ?? 'field'}`;
 			error.setAttribute('role', 'alert');
+			for (const control of Array.from(
+				cell.querySelectorAll<HTMLElement>('[data-native-editor]'),
+			)) {
+				control.setAttribute('aria-describedby', error.id);
+				control.setAttribute('aria-invalid', 'true');
+			}
 		}
+	}
+
+	private renderLinkCellEditor(
+		cell: HTMLTableCellElement,
+		column: NativeColumn & { readonly stored: FieldDefinition & { readonly type: 'link' } },
+		rowId: string,
+		model: NativeGridModel,
+		edit: NativeCellEditor,
+		bind: (control: HTMLElement, accessibleLabel?: string) => void,
+		updateDraft: (draft: NativeEditDraft, control: HTMLElement) => void,
+	): void {
+		const field = column.stored;
+		const wrapper = cell.createDiv({ cls: 'tablify-native-link-editor' });
+		wrapper.setAttribute('data-native-editor', 'true');
+		wrapper.setAttribute('role', 'group');
+		wrapper.setAttribute('aria-label', `${field.name} linked-record editor`);
+		const targetTableId = field.settings.targetTableId;
+		const targetTable = model.document.tables.find((table) => table.id === targetTableId);
+		if (targetTable === undefined) {
+			wrapper.createDiv({
+				cls: 'tablify-native-link-editor-empty',
+				text: 'The target table is unavailable. This link is read-only until it is restored.',
+			});
+			return;
+		}
+
+		const search = wrapper.createEl('input', {
+			cls: 'tablify-native-link-search',
+			type: 'search',
+		});
+		search.type = 'search';
+		search.placeholder = `Search ${targetTable.name}`;
+		search.value = edit.search;
+		bind(search, `Search ${targetTable.name} records`);
+
+		const choices: NativeLinkChoice[] = targetTable.rows.map((row) => ({
+			id: row.id,
+			label: rowLabel(model, targetTable.id, row.id),
+			broken: false,
+		}));
+		const knownIds = new Set(choices.map((choice) => choice.id));
+		const inspection = model.relationInspector.inspectLinkCell(model.table.id, rowId, field.id);
+		for (const reference of inspection?.references ?? []) {
+			if (knownIds.has(reference.id) && reference.state === 'resolved') {
+				continue;
+			}
+			const ownerName = model.document.tables.find(
+				(table) => table.id === reference.ownerTableId,
+			)?.name;
+			const label =
+				reference.state === 'missing-row'
+					? `Missing row · ${reference.id}`
+					: reference.state === 'foreign-row'
+						? `Wrong table · ${ownerName ?? 'unknown table'} · ${reference.id}`
+						: `Missing target table · ${reference.id}`;
+			choices.push({ id: reference.id, label, broken: true });
+			knownIds.add(reference.id);
+		}
+
+		const fieldset = wrapper.createEl('fieldset', {
+			cls: 'tablify-native-link-choice-group',
+		});
+		fieldset.createEl('legend', { text: `Choose ${field.name}` });
+		const list = fieldset.createDiv({ cls: 'tablify-native-link-choice-list' });
+		const searchableChoices: HTMLElement[] = [];
+		const noResults = list.createDiv({
+			cls: 'tablify-native-link-no-results',
+			text: 'No matching records.',
+		});
+		noResults.hidden = true;
+		noResults.setAttribute('role', 'status');
+		noResults.setAttribute('aria-live', 'polite');
+		const selected = isStringList(edit.draft) ? [...edit.draft] : [];
+
+		const addChoiceLabel = (choice: NativeLinkChoice): HTMLLabelElement => {
+			const labelElement = list.createEl('label', {
+				cls: choice.broken
+					? 'tablify-native-link-choice is-broken-link'
+					: 'tablify-native-link-choice',
+			});
+			labelElement.setAttribute('data-link-option', 'true');
+			labelElement.setAttribute('data-link-search-text', choice.label.toLocaleLowerCase());
+			searchableChoices.push(labelElement);
+			const control = labelElement.createEl('input', {
+				type: field.settings.allowMultiple === true ? 'checkbox' : 'radio',
+			});
+			control.type = field.settings.allowMultiple === true ? 'checkbox' : 'radio';
+			control.value = choice.id;
+			control.setAttribute('value', choice.id);
+			if (field.settings.allowMultiple === true) {
+				control.checked = selected.includes(choice.id);
+				bind(control, `Link to ${choice.label}`);
+				control.addEventListener('change', () => {
+					const current = this.editing;
+					const draft = isStringList(current?.draft) ? [...current.draft] : [];
+					const next = control.checked
+						? draft.includes(choice.id)
+							? draft
+							: [...draft, choice.id]
+						: draft.filter((id) => id !== choice.id);
+					updateDraft(next, control);
+				});
+			} else {
+				control.name = `${this.instanceId}-link-${rowId}-${field.id}`;
+				control.checked = selected[0] === choice.id;
+				bind(control, `Select ${choice.label}`);
+				control.addEventListener('change', () => {
+					if (control.checked) {
+						updateDraft([choice.id], control);
+					}
+				});
+			}
+			labelElement.createSpan({ text: choice.label });
+			return labelElement;
+		};
+
+		if (field.settings.allowMultiple !== true) {
+			const clearLabel = list.createEl('label', {
+				cls: 'tablify-native-link-choice tablify-native-link-clear',
+			});
+			const clear = clearLabel.createEl('input', { type: 'radio' });
+			clear.type = 'radio';
+			clear.name = `${this.instanceId}-link-${rowId}-${field.id}`;
+			clear.value = '';
+			clear.checked = selected.length === 0;
+			bind(clear, `Clear ${field.name}`);
+			clear.addEventListener('change', () => {
+				if (clear.checked) {
+					updateDraft([], clear);
+				}
+			});
+			clearLabel.createSpan({ text: 'No linked record' });
+		}
+		for (const choice of choices) {
+			addChoiceLabel(choice);
+		}
+		if (choices.length === 0) {
+			const empty = list.createDiv({
+				cls: 'tablify-native-link-editor-empty',
+				text: `No records in ${targetTable.name}.`,
+			});
+			empty.setAttribute('role', 'note');
+		}
+
+		const applySearch = (): void => {
+			const query = search.value.trim().toLocaleLowerCase();
+			let matches = 0;
+			for (const option of searchableChoices) {
+				const searchText = option.getAttribute('data-link-search-text') ?? '';
+				const visible = query === '' || searchText.includes(query);
+				option.hidden = !visible;
+				if (visible) {
+					matches += 1;
+				}
+			}
+			noResults.hidden = query === '' || matches > 0;
+		};
+		search.addEventListener('input', () => {
+			const current = this.editing;
+			if (current !== null) {
+				this.editing = { ...current, search: search.value };
+			}
+			applySearch();
+		});
+		applySearch();
 	}
 
 	private beginEdit(
@@ -927,12 +1565,12 @@ export class NativeDatabaseGrid {
 			return;
 		}
 		const current = viewCellOf(model.activeTable, selection.rowId, selection.fieldId);
-		const draft = editDraftOf(column.field, current);
+		const draft = editDraftFor(model, column, selection.rowId, current);
 		if (draft === null) {
 			return;
 		}
 		this.selection = selection;
-		this.editing = { ...selection, draft, error: null };
+		this.editing = { ...selection, draft, error: null, search: '' };
 		this.renderRows(scroll, grid, body, model, rowHeight, store);
 		this.focusEditor(grid);
 	}
@@ -1018,41 +1656,64 @@ export class NativeDatabaseGrid {
 			return true;
 		}
 		let value: CellValue;
-		switch (editorOf(column.field)) {
-			case 'checkbox':
-				value = edit.draft === true;
-				break;
-			case 'select':
-				value = typeof edit.draft === 'string' && edit.draft !== '' ? edit.draft : null;
-				break;
-			case 'multiSelect':
-				value = isStringList(edit.draft) && edit.draft.length > 0 ? [...edit.draft] : null;
-				break;
-			default: {
-				if (typeof edit.draft !== 'string') {
-					this.editing = { ...edit, error: 'This field editor has an invalid draft.' };
-					this.renderRows(scroll, grid, body, model, rowHeight, store);
-					this.focusEditor(grid);
-					return false;
-				}
-				if (edit.draft.trim() === '') {
-					value = null;
+		let linkRowIds: readonly string[] | null = null;
+		if (isLinkColumn(column)) {
+			if (!isStringList(edit.draft)) {
+				this.editing = {
+					...edit,
+					error: 'Choose one or more records before saving this link.',
+				};
+				this.renderRows(scroll, grid, body, model, rowHeight, store);
+				this.focusEditor(grid);
+				return false;
+			}
+			linkRowIds = edit.draft;
+			value = linkCellValue(column, linkRowIds);
+		} else {
+			switch (editorOf(column.field)) {
+				case 'checkbox':
+					value = edit.draft === true;
+					break;
+				case 'select':
+					value = typeof edit.draft === 'string' && edit.draft !== '' ? edit.draft : null;
+					break;
+				case 'multiSelect':
+					value =
+						isStringList(edit.draft) && edit.draft.length > 0 ? [...edit.draft] : null;
+					break;
+				default: {
+					if (typeof edit.draft !== 'string') {
+						this.editing = {
+							...edit,
+							error: 'This field editor has an invalid draft.',
+						};
+						this.renderRows(scroll, grid, body, model, rowHeight, store);
+						this.focusEditor(grid);
+						return false;
+					}
+					if (edit.draft.trim() === '') {
+						value = null;
+						break;
+					}
+					const parsed = column.field.descriptor.parse(edit.draft, column.field.context);
+					if (!parsed.ok) {
+						this.editing = { ...edit, error: parsed.error };
+						this.renderRows(scroll, grid, body, model, rowHeight, store);
+						this.focusEditor(grid);
+						return false;
+					}
+					value = column.field.descriptor.toJson(parsed.value, column.field.context);
 					break;
 				}
-				const parsed = column.field.descriptor.parse(edit.draft, column.field.context);
-				if (!parsed.ok) {
-					this.editing = { ...edit, error: parsed.error };
-					this.renderRows(scroll, grid, body, model, rowHeight, store);
-					this.focusEditor(grid);
-					return false;
-				}
-				value = column.field.descriptor.toJson(parsed.value, column.field.context);
-				break;
 			}
 		}
 
 		const current = viewCellOf(model.activeTable, edit.rowId, edit.fieldId);
-		if (sameCellValue(current, value)) {
+		const unchanged =
+			linkRowIds === null
+				? sameCellValue(current, value)
+				: sameLinkSelection(current, linkRowIds);
+		if (unchanged) {
 			this.editing = null;
 			if (next !== undefined) {
 				this.selection = next;
@@ -1068,16 +1729,24 @@ export class NativeDatabaseGrid {
 			this.selection = next;
 		}
 		const updatedAt = timestampFor(this.environment);
-		const result = store.dispatch(
-			{
-				kind: 'set-cells',
-				tableId: edit.tableId,
-				rowId: edit.rowId,
-				edits: [{ fieldId: edit.fieldId, value }],
-				...(updatedAt === null ? {} : { updatedAt }),
-			},
-			`Edit cell: ${column.field.definition.name}`,
-		);
+		const operation =
+			linkRowIds === null
+				? {
+						kind: 'set-cells' as const,
+						tableId: edit.tableId,
+						rowId: edit.rowId,
+						edits: [{ fieldId: edit.fieldId, value }],
+						...(updatedAt === null ? {} : { updatedAt }),
+					}
+				: {
+						kind: 'set-link' as const,
+						tableId: edit.tableId,
+						rowId: edit.rowId,
+						fieldId: edit.fieldId,
+						rowIds: linkRowIds,
+						...(updatedAt === null ? {} : { updatedAt }),
+					};
+		const result = store.dispatch(operation, `Edit cell: ${column.field.definition.name}`);
 		if (!result.ok) {
 			this.editing = { ...edit, error: result.message };
 			this.selection = previousSelection;
@@ -1107,6 +1776,28 @@ export class NativeDatabaseGrid {
 			return;
 		}
 		if (event.key === 'Tab') {
+			const target = event.target;
+			const linkEditor =
+				target instanceof Element
+					? target.closest<HTMLElement>('.tablify-native-link-editor')
+					: null;
+			if (linkEditor !== null) {
+				const controls = Array.from(
+					linkEditor.querySelectorAll<HTMLElement>('[data-native-editor]'),
+				).filter(
+					(control) =>
+						control.tabIndex >= 0 &&
+						!control.hasAttribute('disabled') &&
+						control.closest('[hidden]') === null,
+				);
+				const currentIndex = target instanceof HTMLElement ? controls.indexOf(target) : -1;
+				const nextIndex = currentIndex + (event.shiftKey ? -1 : 1);
+				if (nextIndex >= 0 && nextIndex < controls.length) {
+					event.preventDefault();
+					controls[nextIndex]?.focus();
+					return;
+				}
+			}
 			event.preventDefault();
 			const next = this.nextSelection(model, 0, event.shiftKey ? -1 : 1, true);
 			this.commitEditor(next, scroll, grid, body, model, rowHeight, store);
@@ -1183,7 +1874,10 @@ export class NativeDatabaseGrid {
 		store: DatabaseStore,
 	): void {
 		const target = event.target;
-		if (target instanceof Element && target.closest('[data-native-editor]') !== null) {
+		if (
+			target instanceof Element &&
+			target.closest('[data-native-editor], [data-link-navigation]') !== null
+		) {
 			return;
 		}
 		const rows = model.visibleRows;

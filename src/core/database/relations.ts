@@ -13,7 +13,7 @@
  * cleanup and undo can preserve unrelated damage in a document the user is repairing.
  */
 import type { FieldDefinition, TableField } from './fields';
-import type { CellState } from './rows';
+import type { CellState, TableRow } from './rows';
 import type { DatabaseDocument, DatabaseTable } from './schema';
 import { isInvalidCell } from './values';
 
@@ -62,6 +62,7 @@ export interface LinkCellInspection {
 interface RelationIndex {
 	readonly tableById: ReadonlyMap<string, DatabaseTable>;
 	readonly rowIdsByTable: ReadonlyMap<string, ReadonlySet<string>>;
+	readonly rowsByTable: ReadonlyMap<string, ReadonlyMap<string, TableRow>>;
 	readonly firstTableByRowId: ReadonlyMap<string, DatabaseTable>;
 }
 
@@ -69,19 +70,23 @@ interface RelationIndex {
 function indexRelations(document: DatabaseDocument): RelationIndex {
 	const tableById = new Map<string, DatabaseTable>();
 	const rowIdsByTable = new Map<string, ReadonlySet<string>>();
+	const rowsByTable = new Map<string, ReadonlyMap<string, TableRow>>();
 	const firstTableByRowId = new Map<string, DatabaseTable>();
 	for (const table of document.tables) {
 		tableById.set(table.id, table);
 		const rowIds = new Set<string>();
+		const rows = new Map<string, TableRow>();
 		for (const row of table.rows) {
 			rowIds.add(row.id);
+			rows.set(row.id, row);
 			if (!firstTableByRowId.has(row.id)) {
 				firstTableByRowId.set(row.id, table);
 			}
 		}
 		rowIdsByTable.set(table.id, rowIds);
+		rowsByTable.set(table.id, rows);
 	}
-	return { tableById, rowIdsByTable, firstTableByRowId };
+	return { tableById, rowIdsByTable, rowsByTable, firstTableByRowId };
 }
 
 /** Resolve a link field's declared target, or `undefined` for a missing declaration/table. */
@@ -461,15 +466,23 @@ export function checkLinkFieldChange(
  * Inspect one stored link cell. A broken reference is reported, not repaired; the cell remains the
  * document's value and can be serialized or edited by an explicit user action.
  */
-export function inspectLinkCell(
-	document: DatabaseDocument,
+/** A reusable read-only relation view for one immutable document revision. */
+export interface RelationInspector {
+	inspectLinkCell(
+		tableId: string,
+		rowId: string,
+		fieldId: string,
+	): LinkCellInspection | undefined;
+}
+
+function inspectLinkCellFromIndex(
+	index: RelationIndex,
 	tableId: string,
 	rowId: string,
 	fieldId: string,
 ): LinkCellInspection | undefined {
-	const index = indexRelations(document);
 	const table = index.tableById.get(tableId);
-	const row = table?.rows.find((candidate) => candidate.id === rowId);
+	const row = index.rowsByTable.get(tableId)?.get(rowId);
 	const field = table?.fields.find((candidate) => candidate.id === fieldId);
 	if (
 		table === undefined ||
@@ -534,4 +547,26 @@ export function inspectLinkCell(
 		references,
 		findings,
 	};
+}
+
+/** Build the read-only lookup once, then inspect many cells without re-indexing the whole document. */
+export function createRelationInspector(document: DatabaseDocument): RelationInspector {
+	const index = indexRelations(document);
+	return {
+		inspectLinkCell: (tableId, rowId, fieldId) =>
+			inspectLinkCellFromIndex(index, tableId, rowId, fieldId),
+	};
+}
+
+/**
+ * Inspect one stored link cell. A broken reference is reported, not repaired; the cell remains the
+ * document's value and can be serialized or edited by an explicit user action.
+ */
+export function inspectLinkCell(
+	document: DatabaseDocument,
+	tableId: string,
+	rowId: string,
+	fieldId: string,
+): LinkCellInspection | undefined {
+	return createRelationInspector(document).inspectLinkCell(tableId, rowId, fieldId);
 }
