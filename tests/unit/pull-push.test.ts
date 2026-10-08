@@ -33,6 +33,8 @@ import {
 	runSync,
 } from '../../src/sync/pullPush';
 import type { PlanInput, SyncLocalPort } from '../../src/sync/pullPush';
+import { fieldKey } from '../../src/sync/diff';
+import type { SyncTarget } from '../../src/sync/SyncTarget';
 import { resolveField } from '../../src/core/schema/propertySchema';
 import type { ResolvedField } from '../../src/core/schema/propertySchema';
 import type { CellValue, FieldTypeId } from '../../src/core/types';
@@ -584,6 +586,63 @@ describe('`runSync` end to end', () => {
 		// Both sides now agree on both records, so both hashes moved to what they agree on.
 		expect(report.snapshot['rec01']?.['fld01']).toBe(await hashValue('new'));
 		expect(report.snapshot['rec02']?.['fld01']).toBe(await hashValue('mine'));
+	});
+});
+
+describe('`runSync` with a complete review', () => {
+	// Both sides moved on the same field, so the plan holds one conflict. The person keeps the remote side.
+	async function conflictRun(gate: 'plan' | 'choices' | undefined) {
+		const local = createSyncLocal({ notes: { 'Rows/Note 01.md': { Field1: 'mine' } } });
+		const agreed = await hashValue('old');
+		const target: SyncTarget = {
+			async describe() {
+				return {
+					baseId: BASE,
+					baseName: 'Base',
+					tableId: TABLE,
+					tableName: 'Table',
+					fields: [],
+				};
+			},
+			async pull() {
+				return {
+					records: [{ id: 'rec01', fields: { fld01: 'new' } }],
+					pulledAt: '2026-10-08T10:00:00.000Z',
+					truncated: false,
+				};
+			},
+			async push() {
+				return { pushed: [], pushedAt: '2026-10-08T10:00:00.000Z', accepted: 0 };
+			},
+			capabilities() {
+				return { incrementalPull: true, maxRecordsPerWrite: 10, lastModified: false };
+			},
+		};
+		const report = await runSync({
+			target,
+			local,
+			fields: [field('Field1')],
+			fieldMap: { Field1: 'fld01' },
+			recordMap: { 'Rows/Note 01.md': 'rec01' },
+			snapshot: { rec01: { fld01: agreed } },
+			direction: 'both',
+			since: null,
+			choices: new Map([[fieldKey('rec01', 'Field1'), { kind: 'remote' as const }]]),
+			...(gate === undefined ? {} : { conflictGate: gate }),
+		});
+		return { local, report };
+	}
+
+	it('the default gate holds every write while a conflict exists, even with a choice for it', async () => {
+		const { local, report } = await conflictRun(undefined);
+		expect(local.notes['Rows/Note 01.md']?.Field1).toBe('mine');
+		expect(report.pull).toBeNull();
+	});
+
+	it("the 'choices' gate applies a complete review: the chosen remote value is written", async () => {
+		const { local, report } = await conflictRun('choices');
+		expect(local.notes['Rows/Note 01.md']?.Field1).toBe('new');
+		expect(report.pull?.written).toBe(1);
 	});
 });
 

@@ -374,6 +374,9 @@ export function createSyncHost(options: SyncHostOptions) {
 				snapshot: found.document.snapshot,
 				direction,
 				...(choices === undefined ? {} : { choices }),
+				// A complete review must be able to apply. Without choices every conflict is unresolved, so this gate
+				// holds the same writes as the default: only a review that resolves every conflict changes anything.
+				conflictGate: 'choices',
 				since: direction === 'push' ? null : found.document.lastPulledAt,
 				unmapped: resolved.unmapped,
 			});
