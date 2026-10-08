@@ -5,10 +5,19 @@ import { openDatabase } from '../../src/adapters/tablifyFile/session';
 import { createDatabaseStore } from '../../src/adapters/tablifyFile/databaseStore';
 import { createNativeSyncPort } from '../../src/sync/nativePort';
 import type { NativeSyncPort } from '../../src/sync/nativePort';
-import { nativeLinkPath, newNativeLink, serialiseNativeLink } from '../../src/sync/nativeLink';
+import {
+	nativeLinkPath,
+	newNativeLink,
+	parseNativeLink,
+	serialiseNativeLink,
+} from '../../src/sync/nativeLink';
 import type { NativeLinkDocument } from '../../src/sync/nativeLink';
 import type { PullResult, SyncTarget, TargetDescription } from '../../src/sync/SyncTarget';
-import { syncActiveStore, syncNativeTable } from '../../src/plugin/sync/nativeHost';
+import {
+	linkActiveStore,
+	syncActiveStore,
+	syncNativeTable,
+} from '../../src/plugin/sync/nativeHost';
 import type { NativeFilePort } from '../../src/plugin/sync/nativeHost';
 import { createFakeClock } from '../fakes/clock';
 import { createFakePort } from '../fakes/tablifyFile';
@@ -99,11 +108,16 @@ function linkedDocument(overrides: Partial<NativeLinkDocument> = {}): NativeLink
 }
 
 /** A remote that serves one record and counts how often it was asked. */
-function remote(options: { readonly pull?: () => Promise<PullResult> } = {}) {
+function remote(
+	options: {
+		readonly pull?: () => Promise<PullResult>;
+		readonly fields?: TargetDescription['fields'];
+	} = {},
+) {
 	const counts = { describe: 0, pull: 0 };
 	const description: TargetDescription = {
 		...TARGET,
-		fields: [{ id: 'fldTitle', name: 'Title', type: 'singleLineText' }],
+		fields: options.fields ?? [{ id: 'fldTitle', name: 'Title', type: 'singleLineText' }],
 	};
 	const target: SyncTarget = {
 		async describe() {
@@ -153,6 +167,7 @@ describe('native sync host: refusals stop before anything is fetched or written'
 		});
 		expect(outcome).toEqual({
 			kind: 'refused',
+			reason: 'unlinked',
 			message: 'This table is not linked to a remote table yet.',
 		});
 		expect(counts.pull).toBe(0);
@@ -281,5 +296,106 @@ describe('native sync host: the store the view shows', () => {
 		expect(outcome.kind).toBe('refused');
 		expect(counts.pull).toBe(0);
 		expect(files.writes).toBe(0);
+	});
+});
+
+describe('native sync host: first link', () => {
+	const LINK_INPUT = {
+		keyFieldName: 'Title',
+		target: { baseId: 'appBASE', tableId: 'tblREMOTE' },
+	};
+
+	it('links by one key, saves the link once, and reports what could not be paired', async () => {
+		const files = vault();
+		const { target } = remote({
+			pull: async () => ({
+				records: [
+					{ id: 'recA', fields: { fldTitle: 'Rooftop' } },
+					{ id: 'recB', fields: { fldTitle: 'Elsewhere' } },
+				],
+				pulledAt: STAMP,
+				truncated: false,
+			}),
+		});
+		const outcome = await linkActiveStore(options(files, target), {
+			store: await storeOf(),
+			...LINK_INPUT,
+		});
+		expect(outcome.kind).toBe('linked');
+		expect(files.writes).toBe(1);
+		const saved = files.files.get(nativeLinkPath(DB, TABLE)) ?? '';
+		expect(saved).not.toContain(TOKEN);
+		const reread = parseNativeLink(saved, 'x');
+		expect(reread.ok && reread.document.rowMap).toEqual({ [ROW]: 'recA' });
+		expect(reread.ok && reread.document.fieldMap).toEqual({ [TITLE]: 'fldTitle' });
+		expect(reread.ok && reread.document.lastPulledAt).toBeNull();
+		if (outcome.kind === 'linked') {
+			expect(outcome.message).toContain('Linked 1 row(s)');
+			expect(outcome.message).toContain('1 record(s) could not be paired');
+		}
+	});
+
+	it('refuses to replace an existing link, and does not fetch', async () => {
+		const path = nativeLinkPath(DB, TABLE);
+		const files = vault({ [path]: serialiseNativeLink(linkedDocument()) });
+		const { target, counts } = remote();
+		const outcome = await linkActiveStore(options(files, target), {
+			store: await storeOf(),
+			...LINK_INPUT,
+		});
+		expect(outcome.kind).toBe('refused');
+		expect(counts.describe).toBe(0);
+		expect(files.writes).toBe(0);
+	});
+
+	it('refuses a truncated remote read, so nothing is paired against part of a table', async () => {
+		const files = vault();
+		const { target } = remote({
+			pull: async () => ({ records: [], pulledAt: STAMP, truncated: true }),
+		});
+		const outcome = await linkActiveStore(options(files, target), {
+			store: await storeOf(),
+			...LINK_INPUT,
+		});
+		expect(outcome.kind).toBe('refused');
+		expect(files.writes).toBe(0);
+	});
+
+	it('refuses when the remote table has no field of that name', async () => {
+		const files = vault();
+		const { target, counts } = remote({
+			fields: [{ id: 'fldOther', name: 'Other', type: 'singleLineText' }],
+		});
+		const outcome = await linkActiveStore(options(files, target), {
+			store: await storeOf(),
+			...LINK_INPUT,
+		});
+		expect(outcome.kind).toBe('refused');
+		expect(counts.pull).toBe(0);
+		expect(files.writes).toBe(0);
+	});
+
+	it('refuses a key name that matches no synced local field, before any network call', async () => {
+		const files = vault();
+		const { target, counts } = remote();
+		const outcome = await linkActiveStore(options(files, target), {
+			store: await storeOf(),
+			keyFieldName: 'Nope',
+			target: LINK_INPUT.target,
+		});
+		expect(outcome.kind).toBe('refused');
+		expect(counts.describe).toBe(0);
+		expect(files.writes).toBe(0);
+	});
+
+	it('refuses without a token, before any network call', async () => {
+		const files = vault();
+		const { target, counts } = remote();
+		const outcome = await linkActiveStore(options(files, target, null), {
+			store: await storeOf(),
+			...LINK_INPUT,
+		});
+		expect(outcome.kind).toBe('refused');
+		expect(counts.describe).toBe(0);
 	});
 });
