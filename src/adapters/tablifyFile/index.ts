@@ -10,6 +10,13 @@ export type { FilePort, FilePortEvent } from './port';
 export type { CloseResult, QueueScheduler, WriteQueue, WriteQueueOptions } from './queue';
 export { createWriteQueue } from './queue';
 export type {
+	DatabaseStore,
+	DatabaseStoreOptions,
+	DatabaseStoreSnapshot,
+	TableSelectionResult,
+} from './databaseStore';
+export { createDatabaseStore } from './databaseStore';
+export type {
 	DatabaseHandle,
 	RegistryFailure,
 	RegistryResult,
@@ -26,6 +33,7 @@ export type {
 	DispatchRefusalCode,
 	DispatchResult,
 	FlushResult,
+	HistoryResult,
 	OpenFailure,
 	OpenResult,
 	SessionChange,
@@ -33,3 +41,4 @@ export type {
 	SessionState,
 } from './session';
 export { openDatabase } from './session';
+export type { DatabaseHistorySummary } from '../../core/database/history';

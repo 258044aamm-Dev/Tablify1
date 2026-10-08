@@ -191,6 +191,8 @@ export class TablifyFileView extends FileView {
 		this.render();
 		if (change.kind === 'conflict') {
 			new Notice('Tablify: the file changed on disk. Reload from disk or keep a copy.');
+		} else if (change.kind === 'write-failed') {
+			new Notice(`Tablify: the change is still unsaved — ${change.message}`);
 		}
 	}
 

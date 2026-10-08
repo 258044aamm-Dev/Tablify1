@@ -270,13 +270,48 @@ cells), self-links, exact broken-link round-trip/repair undo, target-configurati
 order-preserving deletion; `tests/unit/core-operations.test.ts` and the R2 session/link suites also
 passed in the full unit run.
 
-### Step 6 — Adapt history and the store
+### Step 6 — Adapt history and the store ✅ landed
 
-- Keep operations pure and serializable where possible; do not place callbacks, `TFile` objects, React nodes, or `Date` instances into history state.
-- Make `dispatch` validate before optimistic application; rejected operation returns an explicit refusal.
-- Queue one document write batch after state transition; `flush`, undo, redo, close, and sync use the same revision-aware repository path.
-- Maintain truthful optimistic UI after partial failures. The document is one write unit; define the new failure contract instead of copying the old per-file partial-success behavior.
-- Preserve the current bulk import coalescing intent. Do not defer snapshots or notifications in a way that breaks immediate selectors, undo, progress, or error reporting.
+**What landed:** the canonical `DatabaseSession` now owns one bounded operation history and remains the
+single write path; the framework-free `DatabaseStore` derives one active-table snapshot per pane without
+adding another writable copy. The legacy `src/grid/store/store.ts` was not changed.
+
+- **History is operation-based and bounded.** `core/database/history.ts` stores the accepted operations
+  and their exact inverses (60-step cap), not document snapshots or callbacks. Session dispatch runs the
+  database operation algebra before adopting document/history state; undo and redo likewise adopt a
+  stack transition only after the inverse/forward operations apply. Empty batches do not create entries,
+  failed/stale operations do not consume history, and a table switch cannot clear the database stack.
+- **Writes are scheduled after state transitions.** `createWriteQueue` subscribes to accepted dirty
+  transitions and debounces a burst into one whole-document write. The explicit `flush`, undo, redo, and
+  close paths use the same session flush and ADR-0005 revision check. Closing with `flush: false` can let
+  an already-started pass finish, but it does not start another pass for edits that arrived in flight.
+- **Failure remains visible and truthful.** A read/write failure emits `write-failed`; the optimistic
+  document and undo entry remain available, the session stays dirty, and a retry uses the same queue.
+  `TablifyFileView` displays an unsaved-change notice. A document is one write unit: there is no copied
+  per-file partial-success behavior.
+- **The native store is pane-local navigation over shared state.** `createDatabaseStore` keeps the
+  session's exact `DatabaseDocument`, derives `ActiveTableSnapshot` from the selected stable `TableId`,
+  and shares the session's queue/history. Table selection makes no operation, history entry, or write;
+  a deleted selection falls back to the first remaining table. The adapter is at
+  `src/adapters/tablifyFile/databaseStore.ts`, rather than under `src/grid/`, to keep the native path
+  separate from the still-live legacy grid store.
+- **Immediate observation and batch coalescing are retained.** A multi-operation user action publishes
+  one new snapshot/notification and one history entry; subsequent synchronous edits share the write
+  debounce. No selector or error result is delayed until disk I/O.
+
+**Tests:** `tests/unit/core-database-history.test.ts`, `tests/unit/tablify-history.test.ts`,
+`tests/unit/tablify-write-queue.test.ts`, and `tests/unit/tablify-database-store.test.ts` cover bounded
+history, dispatch/undo/redo, shared history across table switches and panes, immediate projections,
+automatic queueing, conflict/failure/retry, close during an in-flight edit, and no-write navigation.
+
+**Verification (2026-10-08, VERIFIED):** the focused run passed typecheck, lint, and **66 tests across
+six files**. The full `PATH="$HOME/.bun/bin:$PATH" bun run check` passed typecheck, lint, brand and
+manifest gates, formatting, **86 unit files / 1,943 tests**, build, all **32** gated contrast checks,
+CSS gate, and bundle-size gate (**544,153 raw / 166,299 gzip bytes**, within 900 / 300 KB limits).
+`PATH="$HOME/.bun/bin:$PATH" bun scripts/r3-inventory.ts --check` reported the inventory current;
+`PATH="$HOME/.bun/bin:$PATH" bun run test:layout` passed **115/115** across desktop, desktop-dark,
+phone-closed, phone-keyboard, and tablet. Existing React `act(...)` warnings during the full test run
+were non-fatal.
 
 ### Step 7 — Preserve read-only metadata semantics
 

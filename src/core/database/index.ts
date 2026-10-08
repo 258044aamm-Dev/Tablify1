@@ -47,6 +47,21 @@ export type {
 	ViewPatch,
 } from './operations';
 export { applyOperation, applyOperations } from './operations';
+export type {
+	DatabaseHistoryEntry,
+	DatabaseHistoryPlan,
+	DatabaseHistoryState,
+	DatabaseHistorySummary,
+} from './history';
+export {
+	MAX_DATABASE_HISTORY_DEPTH,
+	clearDatabaseHistory,
+	createDatabaseHistory,
+	planDatabaseRedo,
+	planDatabaseUndo,
+	pushDatabaseHistory,
+	summarizeDatabaseHistory,
+} from './history';
 export type { CreateDocumentOptions } from './create';
 export { createEmptyDocument } from './create';
 export type { CellState, TableRow } from './rows';

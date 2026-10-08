@@ -116,6 +116,60 @@ describe('a burst of edits is one write', () => {
 		expect(onDisk.includes('"B"')).toBe(true);
 	});
 
+	it('automatically schedules one write for a multi-operation user action', async () => {
+		const { port, session, clock, queue } = await rig();
+		const applied = session.dispatch(
+			[
+				{
+					kind: 'set-cells',
+					tableId: TABLE_ID,
+					rowId: R_ONE,
+					edits: [{ fieldId: F_TITLE, value: 'First paste cell' }],
+				},
+				{
+					kind: 'set-cells',
+					tableId: TABLE_ID,
+					rowId: R_TWO,
+					edits: [{ fieldId: F_TITLE, value: 'Second paste cell' }],
+				},
+			],
+			'Paste two cells',
+		);
+		expect(applied.ok).toBe(true);
+		expect(session.getHistorySummary()).toMatchObject({
+			depth: 1,
+			undoLabel: 'Paste two cells',
+		});
+		expect(queue.pending()).toBe(true);
+		expect(clock.pending()).toBe(1);
+		expect(port.writes).toEqual([]);
+
+		clock.advance(400);
+		await settleMicrotasks();
+		expect(port.writes).toEqual([PATH]);
+		expect(queue.pending()).toBe(false);
+		expect(port.files.get(PATH)).toContain('First paste cell');
+		expect(port.files.get(PATH)).toContain('Second paste cell');
+	});
+
+	it('automatically queues undo and redo through the same document writer', async () => {
+		const { port, session, clock, queue } = await rig();
+		setCell(session, R_ONE, 'Changed');
+		expect(session.undo().ok).toBe(true);
+		expect(queue.pending()).toBe(true);
+		clock.advance(400);
+		await settleMicrotasks();
+		expect(port.writes).toEqual([PATH]);
+		expect(port.files.get(PATH)).not.toContain('Changed');
+
+		expect(session.redo().ok).toBe(true);
+		expect(queue.pending()).toBe(true);
+		clock.advance(400);
+		await settleMicrotasks();
+		expect(port.writes).toEqual([PATH, PATH]);
+		expect(port.files.get(PATH)).toContain('Changed');
+	});
+
 	it('flushNow writes without waiting for the window', async () => {
 		const { port, session, clock, queue } = await rig();
 		setCell(session, R_ONE, 'Now');
@@ -230,6 +284,26 @@ describe('close', () => {
 		expect(session.getState()).toBe('disposed');
 		expect(port.listenerCount()).toBe(0);
 		expect(await queue.request()).toEqual({ ok: false, kind: 'disposed' });
+	});
+
+	it('does not start a second pass for edits arriving during an explicitly declined close', async () => {
+		const { port, session, clock, queue } = await rig();
+		const release = port.deferNextWrite();
+		setCell(session, R_ONE, 'Written before close');
+		const first = queue.request();
+		clock.advance(400);
+		await settleMicrotasks();
+		expect(port.writesStarted).toBe(1);
+
+		const closing = queue.close({ flush: false });
+		setCell(session, R_TWO, 'Declined during close');
+		release();
+		expect(await first).toMatchObject({ ok: true, wrote: true });
+		expect(await closing).toEqual({ ok: true, wrote: true });
+		expect(port.writes).toEqual([PATH]);
+		expect(port.files.get(PATH)).toContain('Written before close');
+		expect(port.files.get(PATH)).not.toContain('Declined during close');
+		expect(session.getState()).toBe('disposed');
 	});
 
 	it('can decline the write, and says so to whoever was waiting', async () => {

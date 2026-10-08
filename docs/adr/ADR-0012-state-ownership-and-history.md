@@ -71,6 +71,23 @@ be spelled that way is not an undoable operation; it is UI state, and it lives i
 - Undo history is session state. It is not serialized into `.tablify`, and a reopen starts with an
   empty stack — deliberate: a file is not a log of one person's editing session.
 
+## Implementation record — R3 step 6 (2026-10-08)
+
+- `DatabaseSession` owns a 60-entry-bounded undo/redo history of accepted operations and exact inverses.
+  The session applies an operation or history plan before publishing it; a refusal cannot partially
+  change the document or consume a history entry. Reload and disposal clear the session history.
+- `createWriteQueue` subscribes to dirty document transitions and debounces them into the same
+  revision-checked whole-document `flush` used by explicit flush, undo, redo, and close. A failed write
+  leaves the optimistic document dirty and undoable; the session emits a failure event for the file
+  view's notice and the queue remains retryable.
+- `createDatabaseStore` is a framework-free, per-pane derived selector in
+  `src/adapters/tablifyFile/databaseStore.ts`. It shares the session/document/history, holds only the
+  selected `TableId`, and derives a fresh `ActiveTableSnapshot`; navigation does not dispatch or write.
+  The existing legacy `src/grid/store/store.ts` remains untouched.
+- Evidence: the R3 step 6 section of the phase guide, the history/queue/store unit suites, the current
+  identity-inventory gate, the full `bun run check`, and the 115-case layout gate. Step-by-step gate
+  results are recorded in `/home/user/r1-r5-progress.md` (workspace tracker).
+
 ## Rejected alternatives
 
 - **A grid-owned writable store beside the document** (the pre-refactor shape). Rejected: this is the

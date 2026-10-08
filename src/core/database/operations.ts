@@ -62,8 +62,8 @@
  * ## Not here
  *
  * `validateLinks(document)` remains the separate document-wide warning scan; targeted relation
- * checks here do not duplicate it. History, dispatch validation and the store are step 6; row timestamp
- * semantics are step 7.
+ * checks here do not duplicate it. The database session owns operation history and validated dispatch
+ * (step 6); row timestamp semantics are step 7.
  */
 import { decodeQueryDocument } from '../query/ast';
 import type { JsonValue } from './json';
