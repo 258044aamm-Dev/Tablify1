@@ -218,6 +218,7 @@ export default class TablifyPlugin extends Plugin {
 			return new TablifyFileView(leaf, {
 				registry,
 				createId: nativeIds,
+				environment: pluginEnvironment(),
 				copyDatabase: async (path, text) => {
 					await vaultPort.create(path, text);
 				},

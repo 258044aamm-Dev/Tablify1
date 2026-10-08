@@ -37,16 +37,24 @@ function table(id: string, name: string, rows: number): Record<string, unknown> 
 		name,
 		fields: [{ id: fieldId, name: 'Title', type: 'text' }],
 		rows: Array.from({ length: rows }, (_, index) => ({
-			id: `row_${'e'.repeat(25)}${String(index % 10)}`,
+			id: `row_${'e'.repeat(24)}${index.toString(36).padStart(2, '0')}`,
 			cells: { [fieldId]: `${name} ${String(index + 1)}` },
 		})),
 		views: [
 			{
 				id: `viw_${'d'.repeat(25)}${id.slice(-1)}`,
 				name: 'Board',
-				sorts: [{ fieldId, direction: 'asc' }],
+				sorts: [{ fieldId, direction: 'desc' }],
 				density: 'tall',
 				frozenPrimary: true,
+			},
+			{
+				id: `viw_${'f'.repeat(25)}${id.slice(-1)}`,
+				name: 'Only second',
+				filter: {
+					version: 1,
+					expr: { kind: 'cmp', fieldId, op: 'contains', operand: '2' },
+				},
 			},
 		],
 	};
@@ -55,6 +63,13 @@ function table(id: string, name: string, rows: number): Record<string, unknown> 
 const FIRST_TABLE = `tbl_${'a'.repeat(25)}1`;
 const SECOND_TABLE = `tbl_${'a'.repeat(25)}2`;
 const FIRST_VIEW = `viw_${'d'.repeat(25)}1`;
+const FILTERED_VIEW = `viw_${'f'.repeat(25)}1`;
+const FIRST_FIELD = `fld_${'c'.repeat(25)}1`;
+const SECOND_FIELD = `fld_${'c'.repeat(25)}2`;
+const ROW_FIRST = `row_${'e'.repeat(24)}00`;
+const ROW_SECOND = `row_${'e'.repeat(24)}01`;
+const OPTION_OPEN = `opt_${'o'.repeat(26)}1`;
+const OPTION_CLOSED = `opt_${'o'.repeat(26)}2`;
 
 function databaseText(name = 'Studio'): string {
 	return JSON.stringify({
@@ -295,6 +310,337 @@ describe('a readable document', () => {
 		expect(rig.vault.writes).toEqual([]);
 	});
 
+	it('projects active table IDs and saved view query/order into the native DOM grid', async () => {
+		const rig = loadPlugin({ [PATH]: databaseText() });
+		const view = await openPane(rig, PATH);
+		const gridOf = (): HTMLTableElement => {
+			const grid = view.containerEl.querySelector<HTMLTableElement>('[role="grid"]');
+			if (grid === null) {
+				throw new Error('the native table grid must be rendered');
+			}
+			return grid;
+		};
+		const rowIds = (grid: HTMLTableElement): string[] =>
+			Array.from(grid.querySelectorAll<HTMLTableRowElement>('tbody tr[data-row-id]')).map(
+				(row) => row.getAttribute('data-row-id') ?? '',
+			);
+
+		let grid = gridOf();
+		expect(grid.getAttribute('data-table-id')).toBe(FIRST_TABLE);
+		expect(grid.getAttribute('data-view-id')).toBe('');
+		expect(grid.getAttribute('aria-label')).toBe('Grid for Shoots');
+		expect(rowIds(grid)).toEqual([ROW_FIRST, ROW_SECOND]);
+		const defaultCell = grid.querySelector<HTMLElement>(
+			`[data-row-id="${ROW_FIRST}"][data-field-id="${FIRST_FIELD}"]`,
+		);
+		expect(defaultCell).not.toBeNull();
+
+		const views = selector(view, 'Saved view');
+		views.value = FIRST_VIEW;
+		views.dispatchEvent(new Event('change'));
+		grid = gridOf();
+		expect(grid.getAttribute('aria-label')).toBe('Grid for Shoots — Board');
+		expect(rowIds(grid)).toEqual([ROW_SECOND, ROW_FIRST]);
+		expect(
+			view.containerEl
+				.querySelector<HTMLElement>('[role="region"]')
+				?.style.getPropertyValue('--tablify-row-h'),
+		).toBe('64px');
+
+		views.value = FILTERED_VIEW;
+		views.dispatchEvent(new Event('change'));
+		grid = gridOf();
+		expect(grid.getAttribute('data-view-id')).toBe(FILTERED_VIEW);
+		expect(grid.getAttribute('aria-label')).toBe('Grid for Shoots — Only second');
+		expect(rowIds(grid)).toEqual([ROW_SECOND]);
+		const selected = grid.querySelector<HTMLElement>(
+			`[data-row-id="${ROW_SECOND}"][data-field-id="${FIRST_FIELD}"]`,
+		);
+		selected?.click();
+		expect(grid.getAttribute('aria-activedescendant')).toBe(selected?.id);
+		expect(
+			grid
+				.querySelector(`[data-row-id="${ROW_SECOND}"][data-field-id="${FIRST_FIELD}"]`)
+				?.getAttribute('aria-selected'),
+		).toBe('true');
+
+		const tables = selector(view, 'Table');
+		tables.value = SECOND_TABLE;
+		tables.dispatchEvent(new Event('change'));
+		grid = gridOf();
+		expect(grid.getAttribute('data-table-id')).toBe(SECOND_TABLE);
+		expect(grid.getAttribute('aria-label')).toBe('Grid for Clients');
+		expect(rowIds(grid)).toEqual([ROW_FIRST]);
+		expect(
+			grid.querySelector(`[data-row-id="${ROW_FIRST}"][data-field-id="${SECOND_FIELD}"]`),
+		).not.toBeNull();
+		expect(selector(view, 'Saved view').value).toBe('');
+
+		const tablesBack = selector(view, 'Table');
+		tablesBack.value = FIRST_TABLE;
+		tablesBack.dispatchEvent(new Event('change'));
+		expect(selector(view, 'Saved view').value).toBe(FILTERED_VIEW);
+		grid = gridOf();
+		expect(rowIds(grid)).toEqual([ROW_SECOND]);
+		expect(rig.vault.writes).toEqual([]);
+	});
+
+	it('edits a cell through its descriptor and shared history only when the edit is committed', async () => {
+		const rig = loadPlugin({ [PATH]: databaseText() });
+		const view = await openPane(rig, PATH);
+		const cell = view.containerEl.querySelector<HTMLElement>(
+			`[data-row-id="${ROW_SECOND}"][data-field-id="${FIRST_FIELD}"]`,
+		);
+		if (cell === null) {
+			throw new Error('the native text cell must be rendered');
+		}
+		cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+		let editor = view.containerEl.querySelector<HTMLInputElement>('input[data-native-editor]');
+		if (editor === null) {
+			throw new Error('double-click must open the native text editor');
+		}
+		editor.value = 'Renamed 2';
+		editor.dispatchEvent(new Event('input', { bubbles: true }));
+		expect(
+			view.handle()?.session.getDocument().tables[0]?.rows[1]?.cells.get(FIRST_FIELD),
+		).toBe('Shoots 2');
+		expect(rig.vault.writes).toEqual([]);
+
+		editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+		expect(
+			view.containerEl.querySelector(
+				`[data-row-id="${ROW_SECOND}"][data-field-id="${FIRST_FIELD}"]`,
+			)?.textContent,
+		).toBe('Renamed 2');
+		const handle = view.handle();
+		if (handle === null) {
+			throw new Error('the pane must hold a database handle');
+		}
+		expect(handle.session.getDocument().tables[0]?.rows[1]?.cells.get(FIRST_FIELD)).toBe(
+			'Renamed 2',
+		);
+		expect(handle.session.getHistorySummary().depth).toBe(1);
+		const saved = await handle.session.flush();
+		expect(saved.ok).toBe(true);
+		const persisted = parseDocument(rig.vault.files.get(PATH) ?? '');
+		expect(persisted.ok).toBe(true);
+		if (persisted.ok) {
+			expect(persisted.document.tables[0]?.rows[1]?.cells.get(FIRST_FIELD)).toBe('Renamed 2');
+		}
+		expect(rig.vault.writes).toEqual([PATH]);
+
+		handle.session.undo();
+		expect(handle.session.getDocument().tables[0]?.rows[1]?.cells.get(FIRST_FIELD)).toBe(
+			'Shoots 2',
+		);
+		await handle.session.flush();
+		expect(rig.vault.writes).toEqual([PATH, PATH]);
+		await view.onClose();
+	});
+
+	it('navigates by stable row ID, opens with Enter, and cancels with Escape without writing', async () => {
+		const rig = loadPlugin({ [PATH]: databaseText() });
+		const view = await openPane(rig, PATH);
+		const grid = view.containerEl.querySelector<HTMLTableElement>('[role="grid"]');
+		const firstCell = view.containerEl.querySelector<HTMLElement>(
+			`[data-row-id="${ROW_FIRST}"][data-field-id="${FIRST_FIELD}"]`,
+		);
+		if (grid === null || firstCell === null) {
+			throw new Error('the native grid and its first cell must be rendered');
+		}
+		grid.focus();
+		grid.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+		expect(
+			grid
+				.querySelector(`[data-row-id="${ROW_FIRST}"][data-field-id="${FIRST_FIELD}"]`)
+				?.getAttribute('aria-selected'),
+		).toBe('true');
+		grid.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+		expect(
+			grid
+				.querySelector(`[data-row-id="${ROW_SECOND}"][data-field-id="${FIRST_FIELD}"]`)
+				?.getAttribute('aria-selected'),
+		).toBe('true');
+		grid.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+		const editor = view.containerEl.querySelector<HTMLInputElement>(
+			'input[data-native-editor]',
+		);
+		if (editor === null) {
+			throw new Error('Enter must open the selected cell editor');
+		}
+		editor.value = 'discard this draft';
+		editor.dispatchEvent(new Event('input', { bubbles: true }));
+		editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+		expect(
+			view.containerEl.querySelector(
+				`[data-row-id="${ROW_SECOND}"][data-field-id="${FIRST_FIELD}"]`,
+			)?.textContent,
+		).toBe('Shoots 2');
+		expect(
+			view.handle()?.session.getDocument().tables[0]?.rows[1]?.cells.get(FIRST_FIELD),
+		).toBe('Shoots 2');
+		expect(rig.vault.writes).toEqual([]);
+		await view.onClose();
+	});
+
+	it('keeps a rejected typed value in the editor without writing or changing the cell', async () => {
+		const numericDatabase = JSON.stringify({
+			format: 'tablify',
+			version: 1,
+			databaseId: `db_${'x'.repeat(26)}`,
+			name: 'Numbers',
+			tables: [
+				{
+					id: FIRST_TABLE,
+					name: 'Counts',
+					fields: [{ id: FIRST_FIELD, name: 'Count', type: 'number' }],
+					rows: [{ id: ROW_FIRST, cells: { [FIRST_FIELD]: 1 } }],
+					views: [],
+				},
+			],
+		});
+		const rig = loadPlugin({ [PATH]: numericDatabase });
+		const view = await openPane(rig, PATH);
+		const cell = view.containerEl.querySelector<HTMLElement>(
+			`[data-row-id="${ROW_FIRST}"][data-field-id="${FIRST_FIELD}"]`,
+		);
+		if (cell === null) {
+			throw new Error('the native numeric cell must be rendered');
+		}
+		cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+		let editor = view.containerEl.querySelector<HTMLInputElement>('input[data-native-editor]');
+		if (editor === null) {
+			throw new Error('double-click must open the native number editor');
+		}
+		editor.value = 'not a number';
+		editor.dispatchEvent(new Event('input', { bubbles: true }));
+		editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+		expect(view.containerEl.querySelector('[role="alert"]')?.textContent).toContain('number');
+		expect(
+			view.handle()?.session.getDocument().tables[0]?.rows[0]?.cells.get(FIRST_FIELD),
+		).toBe(1);
+		expect(rig.vault.writes).toEqual([]);
+		editor = view.containerEl.querySelector<HTMLInputElement>('input[data-native-editor]');
+		expect(editor?.value).toBe('not a number');
+		await view.onClose();
+	});
+
+	it('shows select labels, filters by label, and writes the selected stable option ID', async () => {
+		const optionDatabase = JSON.stringify({
+			format: 'tablify',
+			version: 1,
+			databaseId: `db_${'w'.repeat(26)}`,
+			name: 'Options',
+			tables: [
+				{
+					id: FIRST_TABLE,
+					name: 'Tasks',
+					fields: [
+						{
+							id: FIRST_FIELD,
+							name: 'Status',
+							type: 'singleSelect',
+							options: [
+								{ id: OPTION_OPEN, name: 'Open' },
+								{ id: OPTION_CLOSED, name: 'Closed' },
+							],
+						},
+					],
+					rows: [{ id: ROW_FIRST, cells: { [FIRST_FIELD]: OPTION_OPEN } }],
+					views: [
+						{
+							id: FIRST_VIEW,
+							name: 'Open only',
+							sorts: [],
+							filter: {
+								version: 1,
+								expr: {
+									kind: 'cmp',
+									fieldId: FIRST_FIELD,
+									op: 'is',
+									operand: 'Open',
+								},
+							},
+						},
+					],
+				},
+			],
+		});
+		const rig = loadPlugin({ [PATH]: optionDatabase });
+		const view = await openPane(rig, PATH);
+		const gridOf = (): HTMLTableElement => {
+			const grid = view.containerEl.querySelector<HTMLTableElement>('[role="grid"]');
+			if (grid === null) {
+				throw new Error('the native table grid must be rendered');
+			}
+			return grid;
+		};
+		expect(
+			gridOf().querySelector(`[data-row-id="${ROW_FIRST}"][data-field-id="${FIRST_FIELD}"]`)
+				?.textContent,
+		).toBe('Open');
+		let views = selector(view, 'Saved view');
+		views.value = FIRST_VIEW;
+		views.dispatchEvent(new Event('change'));
+		expect(gridOf().querySelectorAll('tbody tr[data-row-id]').length).toBe(1);
+		views = selector(view, 'Saved view');
+		views.value = '';
+		views.dispatchEvent(new Event('change'));
+
+		const cell = view.containerEl.querySelector<HTMLElement>(
+			`[data-row-id="${ROW_FIRST}"][data-field-id="${FIRST_FIELD}"]`,
+		);
+		if (cell === null) {
+			throw new Error('the native single-select cell must be rendered');
+		}
+		cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+		const editor = view.containerEl.querySelector<HTMLSelectElement>(
+			'select[data-native-editor]',
+		);
+		if (editor === null) {
+			throw new Error('double-click must open the native select editor');
+		}
+		editor.value = OPTION_CLOSED;
+		editor.dispatchEvent(new Event('change', { bubbles: true }));
+		editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+		expect(
+			view.containerEl.querySelector(
+				`[data-row-id="${ROW_FIRST}"][data-field-id="${FIRST_FIELD}"]`,
+			)?.textContent,
+		).toBe('Closed');
+		expect(
+			view.handle()?.session.getDocument().tables[0]?.rows[0]?.cells.get(FIRST_FIELD),
+		).toBe(OPTION_CLOSED);
+		views = selector(view, 'Saved view');
+		views.value = FIRST_VIEW;
+		views.dispatchEvent(new Event('change'));
+		expect(gridOf().querySelectorAll('tbody tr[data-row-id]').length).toBe(0);
+		expect(rig.vault.writes).toEqual([]);
+		await view.onClose();
+	});
+
+	it('windows a large table by stable row IDs instead of mounting every record', async () => {
+		const largeDatabase = JSON.stringify({
+			format: 'tablify',
+			version: 1,
+			databaseId: `db_${'y'.repeat(26)}`,
+			name: 'Large',
+			tables: [table(FIRST_TABLE, 'Records', 500)],
+		});
+		const rig = loadPlugin({ [PATH]: largeDatabase });
+		const view = await openPane(rig, PATH);
+		const grid = view.containerEl.querySelector<HTMLTableElement>('[role="grid"]');
+		if (grid === null) {
+			throw new Error('the native table grid must be rendered');
+		}
+		const mountedRows = grid.querySelectorAll('tbody tr[data-row-id]');
+		expect(grid.getAttribute('aria-rowcount')).toBe('501');
+		expect(mountedRows.length).toBeGreaterThan(0);
+		expect(mountedRows.length).toBeLessThan(500);
+		expect(mountedRows[0]?.getAttribute('data-row-id')).toBe(ROW_FIRST);
+		expect(rig.vault.writes).toEqual([]);
+	});
+
 	it('keeps table and view selections pane-local while sharing one database session', async () => {
 		const rig = loadPlugin({ [PATH]: databaseText() });
 		const first = await openPane(rig, PATH);
@@ -431,7 +777,7 @@ describe('a conflict is a choice, never a silent write', () => {
 		const applied = handle.session.dispatch({
 			kind: 'set-cells',
 			tableId: `tbl_${'a'.repeat(25)}1`,
-			rowId: `row_${'e'.repeat(25)}0`,
+			rowId: ROW_FIRST,
 			edits: [{ fieldId, value: 'Edited in the pane' }],
 		});
 		expect(applied.ok).toBe(true);

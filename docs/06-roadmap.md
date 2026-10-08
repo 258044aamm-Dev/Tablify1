@@ -1,15 +1,15 @@
 # 06 — Native `.tablify` refactor roadmap
 
-> **Status:** planned work only. The current `0.1.0` prerelease still uses Bases and Markdown-note rows. This roadmap does not claim `.tablify` support exists.
+> **Status (2026-10-08):** implementation is in progress on `refactor/native-tablify`. R1–R3 are complete; R4 Step 1 and the Step 2 native-grid integration checkpoint have passed local automated gates. R5 is authorized but not yet complete; R6 and all release/version/tag metadata remain untouched. The published `0.1.0` release is still Bases/Markdown-note based; this branch is not a release and no `.tablify` support is claimed for `0.1.0`.
 
-The implementation is deliberately phased. Each phase is a reviewable, testable boundary; no calendar estimate is claimed before the R2 file-write proof and R1 schema decisions are closed. Detailed step sequences, scope fences, tests, and exit criteria live in [`docs/`](README.md).
+The implementation is deliberately phased, reviewable, and gated. Real Obsidian desktop/mobile probes remain **NOT RUN**; see [`docs/manual-test-log.md`](manual-test-log.md). Detailed step sequences, scope fences, tests, and exit criteria live in [`docs/`](README.md).
 
 ## Baseline to preserve
 
 - Repository/plugin id remains `tablify`; do not create a replacement repository or rewrite the `0.1.0` tag.
 - The `0.1.0` GitHub release is a prerelease for personal/device testing. Manual real-vault/phone verification remains `NOT RUN` in `docs/manual-test-log.md`.
-- Current unit/DOM/layout/CI work is the baseline to retain; the test/build gate has not been rerun in this documentation pass.
-- The application remains Bases-backed until the cutover. Keep current `manifest.json` and `package.json` product descriptions truthful until a release that actually includes `.tablify` support.
+- `bun run check` passed on 2026-10-08: 87 test files / 1,960 tests, plus typecheck, lint, formatting, build, contrast, CSS, and bundle-size gates. `bun run test:layout` passed 115/115 cases; that harness covers the existing grid only and is not a native FileView/device check.
+- The application/release metadata remain on the existing Bases-backed `0.1.0` product until an authorized later cutover. Keep `manifest.json`, `package.json`, tags, and releases untouched in R4/R5 implementation steps.
 
 ## Dependency graph
 
@@ -37,27 +37,28 @@ R3 and parts of R2 may be explored in parallel only after their public state/rep
 
 **Exit:** active guidance distinguishes current 0.1 behavior from `.tablify` target; no open product-scope contradiction; unresolved details are marked as ADRs.
 
-## R1 — Native JSON schema and pure core
+## R1 — Native JSON schema and pure core ✅ complete
 
 **Goal:** define the file format before host I/O.
 
-- [ ] Freeze envelope, stable IDs, field values/empty semantics, saved views, explicit record order, relation references, and attachment paths.
-- [ ] Build pure parser/validator/serializer and deterministic internal version migrations for `.tablify` only.
-- [ ] Create multi-table fixtures and test invalid/future versions, unknown fields/keys, broken links, and round-trip fidelity.
-- [ ] Keep core independent of Obsidian, React, DOM, file I/O, and Airtable.
+- [x] Freeze envelope, stable IDs, field values/empty semantics, saved views, explicit record order, relation references, and attachment paths.
+- [x] Build pure parser/validator/serializer and deterministic internal version migrations for `.tablify` only.
+- [x] Create multi-table fixtures and test invalid/future versions, unknown fields/keys, broken links, and round-trip fidelity.
+- [x] Keep core independent of Obsidian, React, DOM, file I/O, and Airtable.
 
-**Exit:** schema ADR accepted; all fixtures round-trip; corrupted/future data is never silently reset or rewritten.
+**Exit:** schema ADR accepted; all fixtures round-trip; corrupted/future data is never silently reset or rewritten. See the R1 contract and implementation at the current branch head; no new release metadata is implied.
 
 ## R2 — Repository and Obsidian custom file view
 
-**Goal:** open, create, save, and reopen `.tablify` safely.
+**Goal:** open, create, save, and reopen `.tablify` safely. Repository/view implementation and automated tests are complete; actual-host probes remain open.
 
-- [ ] Verify `registerView`, `registerExtensions`, `FileView` lifecycle, supported file-write APIs, and rename/external-modify events against pinned typings and actual desktop/mobile app versions.
-- [ ] Add document repository/session, in-memory validated snapshot, active-table projection, document-level serialized write queue, and revision conflict handling.
-- [ ] Add `.tablify` creation/open/close/reopen/rename and multi-pane behavior.
-- [ ] Test malformed file, unsupported future version, write failure, Obsidian Sync/external edit, and view disposal.
+- [x] Verify the relevant `registerView`, `registerExtensions`, `FileView` lifecycle, file-write, and event signatures against pinned typings/docs.
+- [ ] Verify those APIs and lifecycle/events against actual desktop **and** phone app versions with the R2 probe kit; both remain **NOT RUN** (see `docs/manual-test-log.md`).
+- [x] Add document repository/session, in-memory validated snapshot, active-table projection, document-level serialized write queue, and revision conflict handling.
+- [x] Add `.tablify` creation/open/close/reopen/rename and multi-pane behavior with automated coverage.
+- [x] Test malformed file, unsupported future version, write failure, external edit/conflict, and view disposal in automated tests.
 
-**Exit:** edit multiple tables, close/reopen, and preserve data; external/newer document state is never clobbered silently; no Bases plugin dependency.
+**Exit:** implementation/automated-test criteria are met; the R2 real-host acceptance check is still open until desktop and phone probes pass. Do not infer an app/device result from typings or browser tests.
 
 ## R3 — Multi-table identities and operations ✅ complete
 
@@ -84,14 +85,19 @@ not represented as passing by this R3 completion.
 
 **Goal:** give the user the existing spreadsheet-class workflows on a native database.
 
-**Step 1 — VERIFIED (2026-10-08):** the native file-view shell now has database/table/view hierarchy, pane-local table/view navigation, create-table/create-view controls through the shared store/queue, a grid region, history/recovery actions, and a status region. DOM tests cover create/switch/restore, two-pane selection isolation, and no-write navigation. The header flex-wraps within the available host; actual FileView geometry is **NOT RUN**. The unchanged Bases grid remains isolated. R2 desktop/phone probes remain user-run. Steps 2–6 are still open.
+**Step 1 — VERIFIED (2026-10-08):** the native file-view shell has database/table/view hierarchy, pane-local navigation, create-table/create-view controls through the shared store/queue, a grid region, history/recovery actions, and a status region. DOM tests cover create/switch/restore, two-pane selection isolation, and no-write navigation. The header flex-wraps within its host in the DOM implementation; actual Obsidian FileView geometry/lifecycle is **NOT RUN**. The unchanged Bases grid remains isolated. R2 desktop/phone probes remain user-run.
 
-- [ ] Add table/view switching, create/rename/delete UX for tables/fields/views, and persist saved views in the `.tablify` file.
-- [ ] Retain selection, keyboard, editing, clipboard, bulk operations, row/column order, undo/redo, accessibility, mobile layout, and performance.
-- [ ] Add linked-record chooser, display, navigation, missing-target state, and keyboard/screen-reader behavior.
-- [ ] Add native-view lifecycle tests beyond the existing browser-only layout harness.
+**Step 2 — VERIFIED implementation checkpoint (2026-10-08):** `NativeDatabaseGrid` renders the active snapshot with native DOM (no React/legacy `GridView` mount), stable row/field IDs, saved-view filter/sort/group/column order/visibility/density, the shared row-window calculation, and per-table selected-view/scroll state. It supports single-cell selection, arrow-key movement, Enter/F2/double-click editing, descriptor-backed basic editors, Tab/Enter commit, Escape cancel, and one shared `set-cells` history/write operation; select/multi-select display labels while retaining option IDs. Unsupported, unaddressable, invalid-stored, metadata, and link cells stay read-only as applicable. The native DOM suite covers view/query projection, select-label filtering, keyboard navigation/cancel, valid edits, validation refusal, and undo. Rename/delete focus handling is deferred until those schema controls exist; this checkpoint is not a claim of full R4 parity.
 
-**Exit:** a multi-table `.tablify` document can be used without enabling Bases; full agreed grid parity and link behavior pass.
+- [x] Implement table/view switching, create-table/create-view, and saved-view projection through the shared operation/store path.
+- [ ] Add rename/delete UX for tables, fields, and views; restore focus after those controls remove/rename the active target.
+- [x] Implement the initial native DOM active-table grid, basic single-cell selection/editing, and safe history-backed cell commits without React.
+- [ ] Retain full range/row/column selection, clipboard, bulk operations, row/column reorder and resize, type-to-replace, shortcuts, and full accessibility/mobile/performance parity.
+- [ ] Add linked-record chooser, label/display, navigation, missing-target state, and keyboard/screen-reader behavior.
+- [x] Add native FileView DOM integration tests; `test:layout` still exercises only the pre-existing grid harness.
+- [ ] Run the native FileView in real Obsidian desktop and on physical mobile devices; all such checks remain **NOT RUN**.
+
+**Exit:** a multi-table `.tablify` document can be used without enabling Bases; full agreed grid parity and link behavior pass. That exit remains open.
 
 ## R5 — Spreadsheet interchange and Airtable
 

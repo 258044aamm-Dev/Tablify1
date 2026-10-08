@@ -3,7 +3,7 @@
  *
  * The registry gives each open path one shared session and write queue. Each leaf adds a small
  * `DatabaseStore` projection, so table navigation is local to the pane while document operations
- * and history still belong to the shared database. R4 reconnects the existing grid in the next step;
+ * and history still belong to the shared database. The R4 grid is a native DOM view over that projection;
  * this file-view shell owns the database/table/view hierarchy and never uses Bases controls.
  *
  * The file view remains responsible for R2's honest failure and recovery paths: unreadable files are
@@ -24,6 +24,8 @@ import type {
 } from '../adapters/tablifyFile';
 import { createDatabaseStore } from '../adapters/tablifyFile';
 import type { IdKind } from '../core/database';
+import { NativeDatabaseGrid } from './NativeDatabaseGrid';
+import type { NativeGridEnvironment } from './NativeDatabaseGrid';
 import type { TablifyLeafState } from './viewState';
 import { EMPTY_LEAF_STATE, leafStateOf, readLeafState } from './viewState';
 
@@ -42,6 +44,8 @@ export interface TablifyFileViewHost {
 	readonly registry: SessionRegistry;
 	/** Secure, kind-prefixed ids from the plugin's injected Web Crypto source. */
 	readonly createId: (kind: IdKind) => string;
+	/** Field-formatting context supplied by the plugin composition root. */
+	readonly environment: NativeGridEnvironment;
 	/** Write ADR-0005's recovery copy. Must refuse a path that already exists. */
 	copyDatabase(path: string, text: string): Promise<void>;
 }
@@ -83,6 +87,8 @@ export function describeState(state: SessionState): string {
 
 export class TablifyFileView extends FileView {
 	private readonly host: TablifyFileViewHost;
+	private readonly nativeGrid: NativeDatabaseGrid;
+	private readonly viewSelectionByTable = new Map<string, string | null>();
 	private currentHandle: DatabaseHandle | null = null;
 	private databaseStore: DatabaseStore | null = null;
 	private unsubscribe: (() => void) | null = null;
@@ -98,6 +104,7 @@ export class TablifyFileView extends FileView {
 	constructor(leaf: WorkspaceLeaf, host: TablifyFileViewHost) {
 		super(leaf);
 		this.host = host;
+		this.nativeGrid = new NativeDatabaseGrid(host.environment);
 	}
 
 	getViewType(): string {
@@ -144,7 +151,13 @@ export class TablifyFileView extends FileView {
 
 	async setState(state: unknown, result: ViewStateResult): Promise<void> {
 		void result;
+		if (this.selection.tableId !== null) {
+			this.viewSelectionByTable.set(this.selection.tableId, this.selection.viewId);
+		}
 		this.selection = readLeafState(state);
+		if (this.selection.tableId !== null) {
+			this.viewSelectionByTable.set(this.selection.tableId, this.selection.viewId);
+		}
 		const store = this.databaseStore;
 		if (store !== null) {
 			const snapshot = store.getSnapshot();
@@ -166,6 +179,9 @@ export class TablifyFileView extends FileView {
 				tableId: selected.activeTableId,
 				viewId: viewExists ? this.selection.viewId : null,
 			};
+			if (selected.activeTableId !== null) {
+				this.viewSelectionByTable.set(selected.activeTableId, this.selection.viewId);
+			}
 		}
 		// A restore is a read: it re-renders and writes nothing.
 		this.render();
@@ -251,7 +267,25 @@ export class TablifyFileView extends FileView {
 	/** Keep the workspace's view selection scoped to the table the per-pane store currently projects. */
 	private reconcileSelection(snapshot: DatabaseStoreSnapshot): void {
 		if (this.selection.tableId !== snapshot.activeTableId) {
-			this.selection = { tableId: snapshot.activeTableId, viewId: null };
+			if (this.selection.tableId !== null) {
+				this.viewSelectionByTable.set(this.selection.tableId, this.selection.viewId);
+			}
+			const table = snapshot.document.tables.find(
+				(candidate) => candidate.id === snapshot.activeTableId,
+			);
+			const remembered =
+				snapshot.activeTableId === null
+					? null
+					: (this.viewSelectionByTable.get(snapshot.activeTableId) ?? null);
+			const viewExists =
+				remembered !== null && table?.views.some((view) => view.id === remembered) === true;
+			this.selection = {
+				tableId: snapshot.activeTableId,
+				viewId: viewExists ? remembered : null,
+			};
+			if (snapshot.activeTableId !== null && !viewExists) {
+				this.viewSelectionByTable.set(snapshot.activeTableId, null);
+			}
 			return;
 		}
 		const table = snapshot.document.tables.find(
@@ -262,6 +296,9 @@ export class TablifyFileView extends FileView {
 			!table?.views.some((view) => view.id === this.selection.viewId)
 		) {
 			this.selection = { tableId: snapshot.activeTableId, viewId: null };
+			if (snapshot.activeTableId !== null) {
+				this.viewSelectionByTable.set(snapshot.activeTableId, null);
+			}
 		}
 	}
 
@@ -298,6 +335,7 @@ export class TablifyFileView extends FileView {
 
 	/** Reload means "adopt the disk text". Only a click reaches here; a restore never does. */
 	private async reloadFromDisk(): Promise<void> {
+		this.nativeGrid.cancelPending();
 		const handle = this.currentHandle;
 		if (handle === null) {
 			return;
@@ -311,6 +349,9 @@ export class TablifyFileView extends FileView {
 
 	/** Keep a copy: serialize what this pane holds and write it somewhere new (ADR-0005). */
 	private async keepAsCopy(): Promise<void> {
+		if (!this.commitGridEditBeforeNavigation()) {
+			return;
+		}
 		const handle = this.currentHandle;
 		if (handle === null) {
 			return;
@@ -353,9 +394,14 @@ export class TablifyFileView extends FileView {
 	): void {
 		const key = preferredKey ?? previous?.key ?? null;
 		if (key !== null) {
-			const target = Array.from(root.querySelectorAll<HTMLElement>('[data-focus-key]')).find(
-				(element) => element.getAttribute('data-focus-key') === key,
-			);
+			const controls = Array.from(root.querySelectorAll<HTMLElement>('[data-focus-key]'));
+			const target =
+				controls.find((element) => element.getAttribute('data-focus-key') === key) ??
+				(key === 'native-grid-editor'
+					? controls.find(
+							(element) => element.getAttribute('data-focus-key') === 'native-grid',
+						)
+					: undefined);
 			if (target !== undefined) {
 				target.focus();
 				if (
@@ -396,7 +442,7 @@ export class TablifyFileView extends FileView {
 			this.restoreFocus(root, preferredFocus, previousFocus);
 			return;
 		}
-		this.renderWorkspace(panel, store.getSnapshot());
+		this.renderWorkspace(panel, store, store.getSnapshot());
 		this.restoreFocus(root, preferredFocus, previousFocus);
 	}
 
@@ -421,6 +467,7 @@ export class TablifyFileView extends FileView {
 
 	private renderWorkspace(
 		panel: ReturnType<HTMLElement['createDiv']>,
+		store: DatabaseStore,
 		snapshot: DatabaseStoreSnapshot,
 	): void {
 		panel.addClass('tablify-root');
@@ -498,7 +545,9 @@ export class TablifyFileView extends FileView {
 			'Undo',
 			'undo',
 			() => {
-				this.databaseStore?.undo();
+				if (this.commitGridEditBeforeNavigation()) {
+					this.databaseStore?.undo();
+				}
 			},
 			!snapshot.history.canUndo,
 		);
@@ -507,7 +556,9 @@ export class TablifyFileView extends FileView {
 			'Redo',
 			'redo',
 			() => {
-				this.databaseStore?.redo();
+				if (this.commitGridEditBeforeNavigation()) {
+					this.databaseStore?.redo();
+				}
 			},
 			!snapshot.history.canRedo,
 		);
@@ -533,27 +584,7 @@ export class TablifyFileView extends FileView {
 		}
 
 		const grid = panel.createDiv({ cls: 'tablify-grid-area tablify-native-grid' });
-		grid.setAttribute('role', 'region');
-		grid.setAttribute(
-			'aria-label',
-			current === null ? 'Table grid' : `Grid for ${current.name}`,
-		);
-		const placeholder = grid.createDiv({ cls: 'tablify-native-grid-placeholder' });
-		if (current === null) {
-			placeholder.createEl('h2', { text: 'No tables yet' });
-			placeholder.createEl('p', {
-				text: 'Create a table to start organizing records in this database.',
-			});
-		} else {
-			placeholder.createEl('h2', { text: current.name });
-			placeholder.createEl('p', {
-				text: `${String(current.rows.length)} rows · ${String(current.fields.length)} fields`,
-			});
-			placeholder.createEl('p', {
-				cls: 'tablify-native-grid-note',
-				text: 'The native row grid is coming next.',
-			});
-		}
+		this.nativeGrid.render(grid, store, snapshot, this.selection.viewId);
 
 		const status = panel.createDiv({ cls: 'tablify-statusbar tablify-native-status' });
 		status.setAttribute('role', 'status');
@@ -584,10 +615,23 @@ export class TablifyFileView extends FileView {
 		return button;
 	}
 
+	private commitGridEditBeforeNavigation(): boolean {
+		if (this.nativeGrid.commitPending()) {
+			return true;
+		}
+		this.focusControl = 'native-grid-editor';
+		this.render();
+		return false;
+	}
+
 	private selectTable(tableId: string): void {
 		const store = this.databaseStore;
-		if (store === null) {
+		if (store === null || !this.commitGridEditBeforeNavigation()) {
 			return;
+		}
+		const previousTableId = store.getSnapshot().activeTableId;
+		if (previousTableId !== null) {
+			this.viewSelectionByTable.set(previousTableId, this.selection.viewId);
 		}
 		const selected = store.selectTable(tableId);
 		if (!selected.ok) {
@@ -595,7 +639,10 @@ export class TablifyFileView extends FileView {
 			return;
 		}
 		if (!selected.changed) {
-			this.selection = { tableId, viewId: null };
+			this.selection = {
+				tableId,
+				viewId: this.viewSelectionByTable.get(tableId) ?? null,
+			};
 			this.render();
 		}
 	}
@@ -605,14 +652,23 @@ export class TablifyFileView extends FileView {
 		const table = this.databaseStore
 			?.getSnapshot()
 			.document.tables.find((candidate) => candidate.id === tableId);
-		if (viewId !== null && !table?.views.some((view) => view.id === viewId)) {
+		if (
+			(viewId !== null && !table?.views.some((view) => view.id === viewId)) ||
+			!this.commitGridEditBeforeNavigation()
+		) {
 			return;
 		}
 		this.selection = { tableId, viewId };
+		if (tableId !== null) {
+			this.viewSelectionByTable.set(tableId, viewId);
+		}
 		this.render();
 	}
 
 	private openNameEditor(kind: 'table' | 'view'): void {
+		if (!this.commitGridEditBeforeNavigation()) {
+			return;
+		}
 		this.nameEditor = { kind, draft: '', error: null };
 		this.focusControl = 'name-input';
 		this.render();
@@ -719,6 +775,7 @@ export class TablifyFileView extends FileView {
 			this.focusControl = 'table-select';
 			store.selectTable(entityId);
 			this.selection = { tableId: entityId, viewId: null };
+			this.viewSelectionByTable.set(entityId, null);
 			this.render();
 			return;
 		}
@@ -744,6 +801,7 @@ export class TablifyFileView extends FileView {
 		}
 		this.nameEditor = null;
 		this.selection = { tableId, viewId: entityId };
+		this.viewSelectionByTable.set(tableId, entityId);
 		this.focusControl = 'view-select';
 		this.render();
 	}

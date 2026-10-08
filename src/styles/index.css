@@ -1,10 +1,10 @@
 /* ============================================================================
    index.css — the stylesheet entry point.
 
-   `bun run build` (esbuild, CSS) resolves these three imports and writes one
+   `bun run build` (esbuild, CSS) resolves these four imports and writes one
    `styles.css` at the repository root, which is the file Obsidian loads. The
-   order is the cascade: tokens define every value, brand spends the accent,
-   grid lays the surfaces out.
+   order is the cascade: tokens define values, brand spends the accent, grid
+   lays out the existing grid, then native-workspace adds the native FileView.
 
    A runtime `@import` would not do: only `main.js`, `manifest.json` and
    `styles.css` are shipped, so a stylesheet that imported `./tokens.css` from

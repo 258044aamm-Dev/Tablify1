@@ -1,6 +1,6 @@
 # Tablify native `.tablify` refactor plan
 
-**Status:** user-confirmed product direction. *Amendment 2026-10-07:* this audit is a historical record of the pre-implementation state; R1–R5 are now implemented under the user's standing authorization (`docs/08-decisions.md` §Implementation authorization log). Current implementation state is always the source at HEAD, not this document.
+**Status:** user-confirmed product direction. *Amendment 2026-10-08:* this audit is a historical record of the pre-implementation state. R1–R3 are implemented; R4 is in progress (Step 1 plus the initial Step 2 native-grid checkpoint); R5 is authorized but not yet complete. R6, release metadata, and version tags remain untouched under the current scope. Current implementation state is always the source at HEAD; `docs/06-roadmap.md` is the concise phase tracker.
 
 **Repository audited:** `258044aamm-Dev/Tablify`, `main` at `50f041f135abe9e7e9f111cf7c170b32dc98e9e0` (2026-10-06); tag `0.1.0` exists.
 
