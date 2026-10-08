@@ -671,6 +671,7 @@ export class TablifyFileView extends FileView {
 				timezone: this.host.environment.timezone,
 				locale: this.host.environment.locale,
 			},
+			viewId: this.selection.viewId,
 		});
 		this.exportModal = modal;
 		modal.open();

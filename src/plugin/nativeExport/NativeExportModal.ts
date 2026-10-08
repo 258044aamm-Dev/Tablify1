@@ -11,6 +11,8 @@ import { NativeExportPanel } from './NativeExportPanel';
 export interface NativeExportModalOptions {
 	readonly store: DatabaseStore;
 	readonly environment: NativeExportEnvironment;
+	/** The saved view the pane shows, so the current-view scope can be offered. */
+	readonly viewId: string | null;
 }
 
 export class NativeExportModal extends Modal {
@@ -28,6 +30,7 @@ export class NativeExportModal extends Modal {
 		this.panel = new NativeExportPanel(this.contentEl, {
 			store: this.modalOptions.store,
 			environment: this.modalOptions.environment,
+			viewId: this.modalOptions.viewId,
 			vault: {
 				exists: (path) => vault.getAbstractFileByPath(path) !== null,
 				createFolder: async (path) => {

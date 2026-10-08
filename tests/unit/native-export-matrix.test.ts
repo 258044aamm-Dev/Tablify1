@@ -6,7 +6,9 @@ import { projectTable } from '../../src/core/database/projection';
 import type { TableField } from '../../src/core/database/fields';
 import type { CellState, TableRow } from '../../src/core/database/rows';
 import { invalidCell } from '../../src/core/database/values';
-import { nativeTableMatrix } from '../../src/core/database/export/nativeMatrix';
+import { nativeTableMatrix, nativeViewMatrix } from '../../src/core/database/export/nativeMatrix';
+import type { TableView } from '../../src/core/database/views';
+import { emptyOf, notOf } from '../../src/core/query/ast';
 
 const ENV = {
 	now: () => Date.parse('2026-10-08T10:20:30.000Z'),
@@ -157,5 +159,107 @@ describe('native table export matrix', () => {
 		const sparse = documentWith([NAME], [rowOf('row_blank', new Map())]);
 		const result = nativeTableMatrix(projectedTable(sparse), 'display', ENV);
 		expect(result.matrix).toEqual([['Name'], ['']]);
+	});
+});
+
+describe('native saved-view export matrix', () => {
+	const document = documentWith(
+		[NAME, DONE, LINK, STATUS],
+		[
+			rowOf(
+				'row_ada',
+				new Map<string, CellState>([
+					['fld_name', 'Ada'],
+					['fld_done', true],
+					['fld_status', 'opt_a'],
+				]),
+			),
+			rowOf(
+				'row_blank',
+				new Map<string, CellState>([
+					['fld_name', ''],
+					['fld_done', false],
+				]),
+			),
+			rowOf(
+				'row_bea',
+				new Map<string, CellState>([
+					['fld_name', 'Bea'],
+					['fld_done', false],
+				]),
+			),
+		],
+	);
+	const viewOf = (overrides: Partial<TableView>): TableView => ({
+		id: 'viw_a',
+		name: 'Saved',
+		filter: null,
+		filterExpr: null,
+		filterProblems: [],
+		sorts: [],
+		groupBy: null,
+		hiddenFieldIds: [],
+		columnOrder: [],
+		collapsedKeys: [],
+		widths: new Map<string, number>(),
+		density: null,
+		frozenPrimary: false,
+		unknown: [],
+		...overrides,
+	});
+
+	it('leaves out hidden columns, follows the saved column order, and sorts like the grid', () => {
+		const outcome = nativeViewMatrix(
+			projectedTable(document),
+			viewOf({
+				hiddenFieldIds: ['fld_done'],
+				columnOrder: ['fld_status', 'fld_name'],
+				sorts: [{ fieldId: 'fld_name', direction: 'desc', unknown: [] }],
+			}),
+			'display',
+			ENV,
+		);
+		expect(outcome.ok).toBe(true);
+		if (!outcome.ok) return;
+		expect(outcome.result.exportedFields).toEqual(['Status', 'Name']);
+		expect(outcome.result.hiddenColumns).toBe(1);
+		expect(outcome.result.sortCount).toBe(1);
+		expect(outcome.result.matrix[1]?.[1]).toBe('Bea');
+		expect(outcome.result.rowCount).toBe(3);
+	});
+
+	it('applies the saved filter with the grid evaluator, so the matched rows are the only rows written', () => {
+		const outcome = nativeViewMatrix(
+			projectedTable(document),
+			viewOf({ filterExpr: notOf(emptyOf('fld_name')) }),
+			'display',
+			ENV,
+		);
+		expect(outcome.ok).toBe(true);
+		if (!outcome.ok) return;
+		expect(outcome.result.rowCount).toBe(2);
+		expect(outcome.result.matrix.map((row) => row[0])).toEqual(['Name', 'Ada', 'Bea']);
+	});
+
+	it('refuses, with a reason, a filter that reads the link field the export does not write', () => {
+		const outcome = nativeViewMatrix(
+			projectedTable(document),
+			viewOf({ filterExpr: emptyOf('fld_link') }),
+			'display',
+			ENV,
+		);
+		expect(outcome.ok).toBe(false);
+		if (outcome.ok) return;
+		expect(outcome.reason).toContain('Refers');
+	});
+
+	it('carries the filter problems the grid shows, so the dialog can state them', () => {
+		const outcome = nativeViewMatrix(
+			projectedTable(document),
+			viewOf({ filterProblems: ['Filter type unknown.'] }),
+			'display',
+			ENV,
+		);
+		expect(outcome.ok && outcome.result.filterProblems).toEqual(['Filter type unknown.']);
 	});
 });

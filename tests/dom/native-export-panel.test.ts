@@ -21,6 +21,7 @@ import { fromTsv } from '../../src/core/selection/clipboard';
 import { serializeDocument } from '../../src/core/database';
 import type { DatabaseDocument, DatabaseTable } from '../../src/core/database';
 import type { TableField } from '../../src/core/database/fields';
+import type { TableView } from '../../src/core/database/views';
 import type { CellState, TableRow } from '../../src/core/database/rows';
 import { NativeExportPanel } from '../../src/plugin/nativeExport/NativeExportPanel';
 import type { NativeExportVault } from '../../src/plugin/nativeExport/NativeExportPanel';
@@ -45,6 +46,32 @@ const FIELDS: readonly TableField[] = [
 
 function row(id: string, cells: ReadonlyMap<string, CellState>): TableRow {
 	return { id, cells, createdAt: null, updatedAt: null, unknown: [] };
+}
+
+/** The same rows, with one saved view that hides the Done field. */
+function documentWithHidingView(): DatabaseDocument {
+	const base = documentWithRows();
+	const table = base.tables[0];
+	if (table === undefined) {
+		throw new Error('the fixture has one table');
+	}
+	const view: TableView = {
+		id: 'viw_names',
+		name: 'Names only',
+		filter: null,
+		filterExpr: null,
+		filterProblems: [],
+		sorts: [],
+		groupBy: null,
+		hiddenFieldIds: ['fld_done'],
+		columnOrder: [],
+		collapsedKeys: [],
+		widths: new Map<string, number>(),
+		density: null,
+		frozenPrimary: null,
+		unknown: [],
+	};
+	return { ...base, tables: [{ ...table, views: [view] }] };
 }
 
 function documentWithRows(): DatabaseDocument {
@@ -86,8 +113,8 @@ interface Rig {
 	close(): Promise<void>;
 }
 
-async function rig(): Promise<Rig> {
-	const port = createFakePort({ [PATH]: serializeDocument(documentWithRows()) });
+async function rig(document: DatabaseDocument = documentWithRows()): Promise<Rig> {
+	const port = createFakePort({ [PATH]: serializeDocument(document) });
 	const opened = await openDatabase(port, PATH);
 	if (!opened.ok) {
 		throw new Error('the export fixture must open');
@@ -141,6 +168,7 @@ function mount(
 	store: DatabaseStore,
 	recorder: RecordingVault,
 	writeXlsx?: (rows: readonly XlsxRow[], name: string) => Promise<XlsxResult>,
+	viewId: string | null = null,
 ) {
 	const root = augment(document.createElement('div'));
 	document.body.append(root);
@@ -152,6 +180,7 @@ function mount(
 		vault: recorder,
 		now: () => NOW,
 		writeXlsx,
+		viewId,
 		close: () => undefined,
 		announce: (message) => {
 			announced.push(message);
@@ -167,6 +196,43 @@ afterEach(() => {
 });
 
 describe('native CSV export panel', () => {
+	it('defaults to the current saved view when one is selected, and states what it leaves out', async () => {
+		const fixture = await rig(documentWithHidingView());
+		const { panel } = mount(fixture.store, vault(), undefined, 'viw_names');
+
+		const lines = panel.scopeLines();
+		expect(lines[0]).toBe(
+			'Saved view “Names only”: 2 row(s) matching its filter, in manual order, 1 field(s). 1 hidden field(s) are left out.',
+		);
+		expect(lines).not.toContain(
+			'Saved view filters and sorts are not applied: the whole table is exported.',
+		);
+		await fixture.close();
+	});
+
+	it('writes only the visible fields of the saved view, when the view is the scope', async () => {
+		const fixture = await rig(documentWithHidingView());
+		const recorder = vault();
+		const { panel } = mount(fixture.store, recorder, undefined, 'viw_names');
+
+		await panel.exportNow();
+
+		expect(recorder.writes[0]?.text).toBe(
+			toCsv([['Name'], ['Ada, Countess'], ['=SUM(A1:A9)']]),
+		);
+		await fixture.close();
+	});
+
+	it('falls back to the whole table when no view is selected', async () => {
+		const fixture = await rig(documentWithHidingView());
+		const { panel } = mount(fixture.store, vault(), undefined, null);
+
+		expect(panel.scopeLines()[0]).toBe(
+			'Whole table “Main”, in manual order: 2 row(s), 2 field(s).',
+		);
+		await fixture.close();
+	});
+
 	it('states the exact scope and every omission before anything is written', async () => {
 		const fixture = await rig();
 		const { panel } = mount(fixture.store, vault());

@@ -13,7 +13,8 @@ import { toTsv } from '../../core/selection/clipboard';
 import { toXlsxData } from '../../core/export/serialize';
 import type { ExportColumn, XlsxRow } from '../../core/export/serialize';
 import type { XlsxResult } from '../export/xlsx';
-import { nativeTableMatrix } from '../../core/database/export/nativeMatrix';
+import { nativeTableMatrix, nativeViewMatrix } from '../../core/database/export/nativeMatrix';
+import type { TableView } from '../../core/database/views';
 import type {
 	NativeExportMode,
 	NativeExportEnvironment,
@@ -35,6 +36,8 @@ export interface NativeExportPanelOptions {
 	readonly now: () => Date;
 	readonly close: () => void;
 	readonly announce: (message: string) => void;
+	/** The saved view the pane shows when the dialog opens, or `null`. Used by the current-view scope. */
+	readonly viewId?: string | null;
 	/** Injected by the tests; the real writer is the dynamic import in `../export/xlsx`, so the workbook code loads only on export. */
 	readonly writeXlsx?:
 		((rows: readonly XlsxRow[], name: string) => Promise<XlsxResult>) | undefined;
@@ -46,6 +49,47 @@ export type ExportOutcome =
 
 /** The file formats this panel writes. CSV and TSV only; XLSX from native tables is a later step. */
 export type NativeExportFormat = 'csv' | 'tsv' | 'xlsx';
+
+/** Which rows and columns the file carries: the current saved view, or the whole table. */
+export type NativeExportScope = 'table' | 'view';
+
+interface PanelPlan {
+	readonly tableName: string;
+	readonly scope: NativeExportScope;
+	readonly viewName: string | null;
+	readonly rowCount: number;
+	readonly exportedCount: number;
+	readonly hiddenColumns: number;
+	readonly sortCount: number;
+	readonly grouped: boolean;
+	readonly filterProblems: readonly string[];
+	readonly omittedLinks: number;
+	readonly omittedUnsupported: number;
+	readonly blockedReason: string | null;
+	readonly matrix: readonly (readonly string[])[];
+	readonly columns: readonly ExportColumn[];
+	readonly exportable: boolean;
+}
+
+function blockedPlan(tableName: string, viewName: string, reason: string): PanelPlan {
+	return {
+		tableName,
+		scope: 'view',
+		viewName,
+		rowCount: 0,
+		exportedCount: 0,
+		hiddenColumns: 0,
+		sortCount: 0,
+		grouped: false,
+		filterProblems: [],
+		omittedLinks: 0,
+		omittedUnsupported: 0,
+		blockedReason: reason,
+		matrix: [],
+		columns: [],
+		exportable: false,
+	};
+}
 
 /** Characters a file name cannot carry on the platforms Obsidian runs on. */
 function safeStem(name: string): string {
@@ -74,6 +118,8 @@ export class NativeExportPanel {
 	private mode: NativeExportMode = 'display';
 	private newline: CsvNewline = 'crlf';
 	private format: NativeExportFormat = 'csv';
+	/** The scope the person picked; `null` means the default: the current view when one is selected. */
+	private scopeChoice: NativeExportScope | null = null;
 	private outcome: ExportOutcome | null = null;
 	private busy = false;
 	private disposed = false;
@@ -95,9 +141,24 @@ export class NativeExportPanel {
 		if (plan === null) {
 			return ['No table is open.'];
 		}
-		const lines = [
-			`Whole table “${plan.tableName}”, in manual order: ${String(plan.rowCount)} row(s), ${String(plan.exportedCount)} field(s).`,
-		];
+		if (plan.blockedReason !== null) {
+			return [plan.blockedReason];
+		}
+		const lines: string[] = [];
+		if (plan.scope === 'view') {
+			const order = plan.sortCount > 0 ? 'in its sort order' : 'in manual order';
+			const collapsed = plan.grouped ? ', including rows in collapsed groups' : '';
+			lines.push(
+				`Saved view “${plan.viewName ?? ''}”: ${String(plan.rowCount)} row(s) matching its filter, ${order}${collapsed}, ${String(plan.exportedCount)} field(s). ${String(plan.hiddenColumns)} hidden field(s) are left out.`,
+			);
+			for (const problem of plan.filterProblems) {
+				lines.push(`Filter problem in the view: ${problem}`);
+			}
+		} else {
+			lines.push(
+				`Whole table “${plan.tableName}”, in manual order: ${String(plan.rowCount)} row(s), ${String(plan.exportedCount)} field(s).`,
+			);
+		}
 		if (plan.omittedLinks > 0) {
 			lines.push(
 				`${String(plan.omittedLinks)} link field(s) are left out: linked records are not exported as IDs yet.`,
@@ -108,7 +169,11 @@ export class NativeExportPanel {
 				`${String(plan.omittedUnsupported)} field(s) of a type this build does not support are left out.`,
 			);
 		}
-		lines.push('Saved view filters and sorts are not applied: the whole table is exported.');
+		if (plan.scope === 'table') {
+			lines.push(
+				'Saved view filters and sorts are not applied: the whole table is exported.',
+			);
+		}
 		return lines;
 	}
 
@@ -158,16 +223,23 @@ export class NativeExportPanel {
 		this.disposed = true;
 	}
 
-	private plan(): {
-		readonly tableName: string;
-		readonly rowCount: number;
-		readonly exportedCount: number;
-		readonly omittedLinks: number;
-		readonly omittedUnsupported: number;
-		readonly matrix: readonly (readonly string[])[];
-		readonly columns: readonly ExportColumn[];
-		readonly exportable: boolean;
-	} | null {
+	private effectiveScope(): NativeExportScope {
+		const snapshot = this.options.store.getSnapshot();
+		const hasView =
+			snapshot.activeTableId !== null &&
+			this.options.viewId !== undefined &&
+			this.options.viewId !== null &&
+			this.viewOf(snapshot.activeTableId, this.options.viewId) !== null;
+		return this.scopeChoice ?? (hasView ? 'view' : 'table');
+	}
+
+	private viewOf(tableId: string, viewId: string): TableView | null {
+		const document = this.options.store.getSnapshot().document;
+		const table = projectTable(document, tableId);
+		return table?.viewById.get(viewId) ?? null;
+	}
+
+	private plan(): PanelPlan | null {
 		const document = this.options.store.getSnapshot().document;
 		const activeId = this.options.store.getSnapshot().activeTableId;
 		if (activeId === null) {
@@ -177,13 +249,47 @@ export class NativeExportPanel {
 		if (snapshot === null) {
 			return null;
 		}
+		const scope = this.effectiveScope();
+		const viewId = this.options.viewId ?? null;
+		const view = scope === 'view' && viewId !== null ? this.viewOf(activeId, viewId) : null;
+		if (scope === 'view' && view !== null) {
+			const outcome = nativeViewMatrix(snapshot, view, this.mode, this.options.environment);
+			if (!outcome.ok) {
+				return blockedPlan(snapshot.table.name, view.name, outcome.reason);
+			}
+			const { result } = outcome;
+			return {
+				tableName: snapshot.table.name,
+				scope: 'view',
+				viewName: result.viewName,
+				rowCount: result.rowCount,
+				exportedCount: result.exportedFields.length,
+				hiddenColumns: result.hiddenColumns,
+				sortCount: result.sortCount,
+				grouped: view.groupBy !== null,
+				filterProblems: result.filterProblems,
+				omittedLinks: result.omittedLinks,
+				omittedUnsupported: result.omittedUnsupported,
+				blockedReason: null,
+				matrix: result.matrix,
+				columns: result.columns,
+				exportable: result.matrix.length > 0,
+			};
+		}
 		const result = nativeTableMatrix(snapshot, this.mode, this.options.environment);
 		return {
 			tableName: snapshot.table.name,
+			scope: 'table',
+			viewName: null,
 			rowCount: result.rowCount,
 			exportedCount: result.exportedFields.length,
+			hiddenColumns: 0,
+			sortCount: 0,
+			grouped: false,
+			filterProblems: [],
 			omittedLinks: result.omittedLinks,
 			omittedUnsupported: result.omittedUnsupported,
+			blockedReason: null,
 			matrix: result.matrix,
 			columns: result.columns,
 			exportable: result.matrix.length > 0,
@@ -201,6 +307,55 @@ export class NativeExportPanel {
 
 		for (const line of this.scopeLines()) {
 			el(body, 'div', 'tablify-dlg-fact', line);
+		}
+
+		const scopes = el(body, 'div', 'tablify-native-import-modes');
+		scopes.setAttribute('role', 'radiogroup');
+		scopes.setAttribute('aria-label', 'Rows and columns');
+		const viewId = this.options.viewId ?? null;
+		const snapshot = this.options.store.getSnapshot();
+		const selectedView =
+			snapshot.activeTableId !== null && viewId !== null
+				? this.viewOf(snapshot.activeTableId, viewId)
+				: null;
+		const scopeChoices: readonly {
+			readonly id: NativeExportScope;
+			readonly label: string;
+			readonly help: string;
+			readonly disabled: boolean;
+		}[] = [
+			{
+				id: 'view',
+				label:
+					selectedView === null
+						? 'Current view (none selected)'
+						: `Current view “${selectedView.name}”`,
+				help: 'Only the rows its filter matches, in its sort order, without its hidden fields.',
+				disabled: selectedView === null,
+			},
+			{
+				id: 'table',
+				label: 'Whole table',
+				help: 'Every row in manual order, and every field.',
+				disabled: false,
+			},
+		];
+		for (const choice of scopeChoices) {
+			const label = el(scopes, 'label', 'tablify-native-import-label');
+			const radio = el(label, 'input');
+			radio.type = 'radio';
+			radio.name = 'tablify-export-scope';
+			radio.value = choice.id;
+			radio.disabled = choice.disabled;
+			radio.checked = this.effectiveScope() === choice.id && !choice.disabled;
+			radio.addEventListener('change', () => {
+				if (radio.checked) {
+					this.scopeChoice = choice.id;
+					this.render();
+				}
+			});
+			label.appendChild(this.root.ownerDocument.createTextNode(choice.label));
+			el(scopes, 'div', 'tablify-dlg-hint', choice.help);
 		}
 
 		const modes = el(body, 'div', 'tablify-native-import-modes');
