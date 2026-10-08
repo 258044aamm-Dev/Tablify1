@@ -406,14 +406,8 @@ export default class TablifyPlugin extends Plugin {
 						return;
 					}
 					try {
-						const { syncActiveNativeTable } = await import('./sync/nativeCommand');
-						await syncActiveNativeTable({
-							app: this.app,
-							store,
-							notify: (message) => {
-								new Notice(`Tablify: ${message}`);
-							},
-						});
+						const { openNativeSyncPanel } = await import('./sync/nativeCommand');
+						openNativeSyncPanel({ app: this.app, store });
 					} catch (error) {
 						new Notice(
 							`Tablify: ${error instanceof Error ? error.message : 'the table could not be synced'}`,

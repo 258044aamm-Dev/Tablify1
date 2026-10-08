@@ -370,3 +370,80 @@ export async function linkActiveStore(
 function refused(reason: RefusalReason, message: string): NativeSyncOutcome {
 	return { kind: 'refused', reason, message };
 }
+
+/**
+ * What the sync panel shows for the active table: whether it is linked, when it last synced, which fields sync and
+ * which do not, and whether a token is stored. It only reads. It never refuses, writes or calls the network, so
+ * opening the panel cannot change anything.
+ */
+export type NativeSyncStatus = {
+	readonly tableId: string;
+	readonly tableName: string;
+	readonly linked: boolean;
+	/** One sentence when a link file exists but cannot be used. Nothing runs until it is fixed. */
+	readonly problem: string | null;
+	readonly remoteTableName: string | null;
+	readonly lastPulledAt: string | null;
+	readonly lastPushedAt: string | null;
+	/** Display names of the fields that sync this run. */
+	readonly synced: readonly string[];
+	/** Display names and reasons of the fields that do not sync. */
+	readonly excluded: readonly { readonly name: string; readonly reason: string }[];
+	readonly hasToken: boolean;
+};
+
+export async function nativeStatusOf(
+	options: NativeSyncOptions,
+	store: DatabaseStore,
+): Promise<NativeSyncStatus | null> {
+	const snapshot = store.getSnapshot();
+	const tableId = snapshot.activeTableId;
+	if (tableId === null) {
+		return null;
+	}
+	const databaseId = snapshot.document.databaseId;
+	const tableName =
+		snapshot.document.tables.find((table) => table.id === tableId)?.name ?? tableId;
+	const path = nativeLinkPath(databaseId, tableId);
+	const text = await options.files.read(path);
+	let linked = false;
+	let problem: string | null = null;
+	let document: NativeLinkDocument | null = null;
+	if (text !== null) {
+		const loaded = parseNativeLink(text, path);
+		if (loaded.ok) {
+			linked = true;
+			document = loaded.document;
+		} else {
+			problem = loaded.reason;
+		}
+	}
+	const linkFields = await linkFieldsFor(
+		(p) => options.files.read(p),
+		store,
+		databaseId,
+		tableId,
+	);
+	const port = createNativeSyncPort({
+		store,
+		tableId,
+		environment: options.environment,
+		linkFields,
+	});
+	return {
+		tableId,
+		tableName,
+		linked,
+		problem,
+		remoteTableName: document?.target.tableName ?? null,
+		lastPulledAt: document?.lastPulledAt ?? null,
+		lastPushedAt: document?.lastPushedAt ?? null,
+		synced: port
+			.syncFields()
+			.map((field) => port.columnNameOf(field.definition.name) ?? field.definition.name),
+		excluded: port
+			.excludedFields()
+			.map((field) => ({ name: field.name, reason: field.reason })),
+		hasToken: options.token() !== null,
+	};
+}

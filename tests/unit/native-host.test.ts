@@ -15,6 +15,7 @@ import type { NativeLinkDocument } from '../../src/sync/nativeLink';
 import type { PullResult, SyncTarget, TargetDescription } from '../../src/sync/SyncTarget';
 import {
 	linkActiveStore,
+	nativeStatusOf,
 	syncActiveStore,
 	syncNativeTable,
 } from '../../src/plugin/sync/nativeHost';
@@ -465,5 +466,47 @@ describe('native sync host: a conflict is written only after a choice', () => {
 		expect(resolved.kind).toBe('ran');
 		expect(resolved.kind === 'ran' && resolved.needsReview).toBe(false);
 		expect((await port.values(ROW))[TITLE]).toBe('Remote edit');
+	});
+});
+
+describe('native sync host: the status the panel shows', () => {
+	it('reports an unlinked table, with the token state, and writes nothing', async () => {
+		const files = vault();
+		const status = await nativeStatusOf(
+			options(files, remote().target, TOKEN),
+			await storeOf(),
+		);
+		expect(status).not.toBeNull();
+		expect(status?.linked).toBe(false);
+		expect(status?.problem).toBeNull();
+		expect(status?.remoteTableName).toBeNull();
+		expect(status?.hasToken).toBe(true);
+		expect(files.writes).toBe(0);
+	});
+
+	it('reports the remote table and the last pull of a linked table', async () => {
+		const linkPath = nativeLinkPath(DB, TABLE);
+		const text = serialiseNativeLink(linkedDocument({ lastPulledAt: STAMP }));
+		const linked = vault({ [linkPath]: text });
+		const status = await nativeStatusOf(
+			options(linked, remote().target, null),
+			await storeOf(),
+		);
+		expect(linked.writes).toBe(0);
+		expect(status?.linked).toBe(true);
+		expect(status?.remoteTableName).toBe('Shoots');
+		expect(status?.lastPulledAt).toBe(STAMP);
+		expect(status?.lastPushedAt).toBeNull();
+		expect(status?.hasToken).toBe(false);
+	});
+
+	it('reports a link file that cannot be used as a problem, not as linked', async () => {
+		const linkPath = nativeLinkPath(DB, TABLE);
+		const status = await nativeStatusOf(
+			options(vault({ [linkPath]: 'not a link' }), remote().target, TOKEN),
+			await storeOf(),
+		);
+		expect(status?.linked).toBe(false);
+		expect(status?.problem).not.toBeNull();
 	});
 });
