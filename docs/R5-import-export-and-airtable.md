@@ -113,6 +113,18 @@ A local link value is a set/list of local row IDs. Convert it to Airtable record
 - Use fake transports in tests. Assert authorization tokens do not appear in error, logs, sidecar, plugin settings, or exported files.
 - Keep rate-limit/backoff and Airtable page caps; incomplete reads cannot authorize push.
 
+## Remaining R5 work (plan, 2026-10-08)
+
+Recorded as documentation only. No code changes accompany this plan. Each item is a separate, isolated, gated step: it must leave existing grid, note-import, FileView, and export behaviour unchanged, be pushed on its own, and keep host checks NOT RUN until after R6.
+
+1. **Native TSV and XLSX export** from the active native table. Reuse the clipboard TSV writer and the XLSX writer with the same whole-table scope and omission report the CSV panel already states.
+2. **Saved-view scope for export.** Apply the view's filters and sorts through the existing view pipeline before writing, and state the applied filters and sorts in the panel. Until this lands, the panel keeps saying that filters and sorts are not applied.
+3. **Explicit link-value mapping in the import wizard.** Map each source value to a target row ID in a deterministic target table, so a link column is imported rather than refused. Labels are never matched by guessing.
+4. **XLSX source reading and worksheet choice** for import, via the existing read-excel-file dependency, with a worksheet chooser and the same preview and plan path.
+5. **Part C (Airtable sync)** after Parts A and B are closed, following Steps 1–6 above.
+
+Each step also needs its own check that the legacy note importer, the grid, and the existing export paths are unchanged, and each stays NOT RUN for host checks until after R6.
+
 ## R5 test matrix and exit criteria
 
 - Import CSV/TSV/XLSX: headers/no headers, typed overrides, empties, duplicate values, malformed values, 400×6 undo, cancellation, size warning, create/append/replace.
