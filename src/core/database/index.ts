@@ -120,3 +120,10 @@ export type {
 	DatabaseImportPreviewResult,
 } from './import/preview';
 export { previewDatabaseImport } from './import/preview';
+export type {
+	DatabaseImportDestination,
+	ExplicitImportField,
+	ImportFieldMapping,
+	ReplaceRowMatch,
+} from './import/destination';
+export { requiresImportMappingConfirmation } from './import/destination';

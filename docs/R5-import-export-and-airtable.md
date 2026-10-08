@@ -2,7 +2,7 @@
 
 **Mode:** active implementation guide under the authorized R1–R5 scope; proceed one gated step at a time. **Dependencies:** stable R1 schema, R2 repository, R3 IDs/ops, and R4 field/table UI.
 
-**Status (2026-10-08):** Part A Step 1's source-only preview boundary has a verified implementation checkpoint. R5 is not complete: Part A Steps 2–4 and Parts B–C remain open. R6, release metadata, and version tags remain untouched. Native Obsidian-host and physical-device checks remain **NOT RUN**.
+**Status (2026-10-08):** Part A Steps 1–2 have verified source-preview and destination-contract checkpoints. R5 is not complete: Part A Steps 3–4 and Parts B–C remain open. R6, release metadata, and version tags remain untouched. Native Obsidian-host and physical-device checks remain **NOT RUN**.
 
 ## Objective
 
@@ -22,13 +22,17 @@ Reuse matrix readers, header handling, type inference, per-column overrides, cli
 
 ### Step 2 — Define destinations
 
-The new wizard offers:
+The native destination contract has three choices for the future wizard:
 
-1. **Create table** in the current database.
-2. **Append records** to a selected existing table, matching columns by stable field ID only when an explicit import mapping exists; otherwise preview name matches and require confirmation.
-3. **Replace table contents/schema** only after an explicit destructive preview and confirmation. Before implementation, decide whether unmatched existing fields are retained or removed.
+1. **Create table** in the current database, with a user-supplied table name.
+2. **Append records** to a selected existing table. An explicit mapping targets stable field IDs. Without one, header/name matches are suggestions only and the exact preview requires confirmation before apply.
+3. **Replace imported values** in a selected existing table, following [ADR-0007](adr/ADR-0007-import-replace.md): update rows only through a user-mapped key; without a key, append imported rows. Never match by position or reuse a row ID for a different logical row. Fields absent from the import and their values are retained by default; removing absent fields is a separate, explicit, off-by-default choice. Existing rows not identified by the mapped key are retained and listed; import never deletes unmatched rows.
 
-The source file remains an external import input; it is never renamed to `.tablify` or treated as a database without parsing/confirmation.
+The replace preview enumerates affected fields, type/cell changes, skipped or lossy values, and unmatched rows before an explicit confirmation. Apply must re-plan and refuse a stale plan. The source file remains an external import input; it is never renamed to `.tablify` or treated as a database without parsing/confirmation.
+
+**VERIFIED implementation checkpoint (2026-10-08):** `src/core/database/import/destination.ts` exports a discriminated destination contract for create, append, and replace plus the field-mapping and row-key choices. Name suggestions are distinguished from explicit stable-field-ID mappings, and the helper marks name-based matches as requiring confirmation. Replace defaults preserve import-absent fields, model field removal as an explicit choice, require an explicit stable field ID for key matching, and represent no-key behavior as append. No unmatched-row deletion or positional row matching is represented. This is a pure core contract, not a mounted wizard or an apply path; plan construction and destructive confirmation remain Step 3.
+
+**VERIFIED gates:** `npx bun run check` passed (89 test files / 1,976 tests and all automated repository gates); targeted destination + preview + legacy-import suites passed 45/45. `npx bun run test:layout` passed 115/115; that harness covers the pre-existing grid only. **NOT RUN:** native importer UI, Obsidian-host, and physical-device verification.
 
 ### Step 3 — Build an exact import plan
 
