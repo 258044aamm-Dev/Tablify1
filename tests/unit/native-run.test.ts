@@ -295,6 +295,120 @@ describe('native sync run: pull and push', () => {
 		expect(pushed.document.lastPulledAt).toBe(pulled.document.lastPulledAt);
 	});
 
+	it('keeps a rejected edit pending, so the next push sends it again', async () => {
+		const { port, store } = await rig();
+		const first = fakeTarget({ fields: REMOTE_FIELDS, records: BASELINE_RECORDS });
+		const pulled = await runNativeSync({
+			target: first.target,
+			port,
+			document: linkedDocument(),
+			direction: 'pull',
+			now: () => STAMP,
+		});
+		store.dispatch(
+			{
+				kind: 'set-cells',
+				tableId: TABLE,
+				rowId: ROW_ONE,
+				edits: [{ fieldId: TITLE, value: 'Rooftop, edited' }],
+			},
+			'edit',
+		);
+
+		const refusing = fakeTarget({ fields: REMOTE_FIELDS, records: REMOTE_RECORDS });
+		refusing.target.push = async (changes) => {
+			refusing.pushes.push(...changes);
+			return {
+				pushed: changes.map((change) => ({
+					ok: false as const,
+					recordId: change.recordId,
+					reason: 'rejected',
+				})),
+				pushedAt: STAMP,
+				accepted: 0,
+			};
+		};
+		const rejected = await runNativeSync({
+			target: refusing.target,
+			port,
+			document: pulled.document,
+			direction: 'push',
+			now: () => STAMP,
+		});
+		expect(rejected.report.push?.ok).toBe(false);
+
+		const accepting = fakeTarget({ fields: REMOTE_FIELDS, records: REMOTE_RECORDS });
+		await runNativeSync({
+			target: accepting.target,
+			port,
+			document: rejected.document,
+			direction: 'push',
+			now: () => STAMP,
+		});
+		expect(accepting.pushes).toEqual([
+			{ recordId: 'recA', fields: { fldTitle: 'Rooftop, edited' } },
+		]);
+	});
+
+	it('deletes nothing locally and pushes nothing when a record leaves an incremental read', async () => {
+		const { port } = await rig();
+		const first = fakeTarget({ fields: REMOTE_FIELDS, records: BASELINE_RECORDS });
+		const baseline = await runNativeSync({
+			target: first.target,
+			port,
+			document: linkedDocument(),
+			direction: 'pull',
+			now: () => STAMP,
+		});
+		const later = fakeTarget({ fields: REMOTE_FIELDS, records: BASELINE_RECORDS.slice(0, 1) });
+		await runNativeSync({
+			target: later.target,
+			port,
+			document: baseline.document,
+			direction: 'both',
+			now: () => STAMP,
+		});
+		expect(later.pushes).toEqual([]);
+		const rows = await port.rows();
+		expect(rows.map((row) => row.path)).toEqual([ROW_ONE, ROW_TWO, ROW_THREE]);
+	});
+
+	it('ignores a saved link for a row that no longer exists, and never pushes to its record', async () => {
+		const { port, store } = await rig();
+		const first = fakeTarget({ fields: REMOTE_FIELDS, records: BASELINE_RECORDS });
+		const pulled = await runNativeSync({
+			target: first.target,
+			port,
+			document: linkedDocument(),
+			direction: 'pull',
+			now: () => STAMP,
+		});
+		const ghost = 'row_' + 'f'.repeat(26);
+		const withGhost: NativeLinkDocument = {
+			...pulled.document,
+			rowMap: { ...pulled.document.rowMap, [ghost]: 'recGHOST' },
+		};
+		store.dispatch(
+			{
+				kind: 'set-cells',
+				tableId: TABLE,
+				rowId: ROW_ONE,
+				edits: [{ fieldId: TITLE, value: 'Rooftop, edited' }],
+			},
+			'edit',
+		);
+		const second = fakeTarget({ fields: REMOTE_FIELDS, records: REMOTE_RECORDS });
+		const result = await runNativeSync({
+			target: second.target,
+			port,
+			document: withGhost,
+			direction: 'push',
+			now: () => STAMP,
+		});
+		expect(second.pushes.map((change) => change.recordId)).toEqual(['recA']);
+		expect(result.report.ok).toBe(true);
+	});
+
 	it('writes nothing locally when the remote read is truncated, and does not push', async () => {
 		const { port } = await rig();
 		const { target, pushes } = fakeTarget({
