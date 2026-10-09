@@ -7,9 +7,6 @@
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "node esbuild.config.mjs production",
-		"harness:build": "bun run build && node harness/build.mjs",
-		"harness:serve": "node harness/serve.mjs",
-		"harness:watch": "node harness/build.mjs --watch",
 		"typecheck": "tsc --noEmit",
 		"lint": "eslint .",
 		"lint:fix": "eslint . --fix",
@@ -18,7 +15,6 @@
 		"format": "prettier --write .",
 		"format:check": "prettier --check .",
 		"test": "vitest run",
-		"test:layout": "bun run harness:build && playwright test",
 		"test:watch": "vitest",
 		"size": "bun scripts/bundle-size.ts",
 		"contrast": "bun scripts/contrast.ts",

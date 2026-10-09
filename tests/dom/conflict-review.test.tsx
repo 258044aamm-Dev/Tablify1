@@ -29,14 +29,7 @@ import {
 	reviewStateOf,
 } from '../../src/plugin/sync/ConflictReview';
 import type { ConflictReviewHost, ReviewState } from '../../src/plugin/sync/ConflictReview';
-import {
-	actionLabels,
-	actionRefusal,
-	mappingRows,
-	panelLines,
-} from '../../src/plugin/sync/SyncPanel';
-import type { SyncPanelState } from '../../src/plugin/sync/SyncPanel';
-import { planSync, pullLabel } from '../../src/sync/pullPush';
+import { planSync } from '../../src/sync/pullPush';
 import type { PlanInput, SyncPlan } from '../../src/sync/pullPush';
 import { hashValue } from '../../src/sync/hash';
 import type { ResolutionBook } from '../../src/sync/diff';
@@ -379,111 +372,5 @@ describe('the conflict review', () => {
 			ok: false,
 			reason: 'There is nothing to review — the two sides already agree.',
 		});
-	});
-});
-
-describe('the sync panel’s own numbers', () => {
-	const linked: SyncPanelState = {
-		link: 'Linked to Table 1 in Base 1 (recAlpha, recBeta)',
-		linkPath: '.tablify/links/1a2b3c4d5e6f7a8b.json',
-		mapping: [],
-		counts: {
-			rows: 12,
-			cells: 480,
-			pullRecords: 12,
-			pullFields: 480,
-			pushRecords: 0,
-			pushFields: 0,
-			conflicts: 0,
-			skipped: 1,
-			missing: 0,
-		},
-		blocked: null,
-		conflicts: 0,
-		unlinked: false,
-		hasToken: true,
-		lastRun: null,
-	};
-
-	it('puts the plan’s numbers on the buttons', () => {
-		expect(actionLabels(linked)).toEqual({
-			pull: 'Pull 12 notes · 480 fields',
-			push: 'Push 0 notes · 0 fields',
-		});
-		// The label is the engine’s own, so the button and the run are the same sentence.
-		expect(actionLabels(linked).pull).toBe(
-			pullLabel(
-				linked.counts ?? {
-					rows: 0,
-					cells: 0,
-					pullRecords: 0,
-					pullFields: 0,
-					pushRecords: 0,
-					pushFields: 0,
-					conflicts: 0,
-					skipped: 0,
-					missing: 0,
-				},
-			),
-		);
-		expect(actionRefusal(linked)).toBeNull();
-	});
-
-	it('refuses an action that cannot work, in the order a person would ask', () => {
-		expect(actionRefusal({ ...linked, hasToken: false })).toContain('Add an Airtable token');
-		expect(actionRefusal({ ...linked, blocked: 'The remote read was truncated.' })).toBe(
-			'The remote read was truncated.',
-		);
-		expect(actionRefusal({ ...linked, unlinked: true, counts: null })).toContain('not linked');
-		// Nothing to plan yet is not a refusal — it is a label without numbers.
-		expect(actionLabels({ ...linked, counts: null })).toEqual({ pull: 'Pull', push: 'Push' });
-	});
-
-	it('names the unmatched fields on both sides', () => {
-		const rows = mappingRows(
-			{
-				version: 1,
-				basePath: 'Tables/All.base',
-				viewName: 'Grid',
-				airtable: {
-					baseId: 'appTestBaseId',
-					baseName: 'Base 1',
-					tableId: 'tblTestTableId',
-					tableName: 'Table 1',
-				},
-				lastPulledAt: null,
-				lastPushedAt: null,
-				recordMap: RECORD_MAP,
-				fieldMap: FIELD_MAP,
-				snapshot: {},
-				unknown: {},
-			},
-			[
-				{ side: 'local', name: 'Status' },
-				{ side: 'remote', name: 'Extra' },
-			],
-		);
-		expect(rows.map((row) => [row.property, row.remoteField, row.note])).toEqual([
-			['Status', 'fldStatus', 'mapped'],
-			['Due', 'fldDue', 'mapped'],
-			['Note', 'fldNote', 'mapped'],
-			['Status', null, 'no remote field — skipped, never created (docs/08 §P9)'],
-			['—', 'Extra', 'no local column — skipped'],
-		]);
-		// No link, no mapping table: an empty list is honest, a fabricated row would not be.
-		expect(mappingRows(null, [])).toEqual([]);
-	});
-
-	it('tells a person where the link file is and that deleting it is safe', () => {
-		const lines = panelLines(linked).map((line) => line.text);
-		const location = lines.find((line) => line.startsWith('Link file: '));
-		expect(location).toContain('.tablify/links/1a2b3c4d5e6f7a8b.json');
-		expect(location).toContain('deleting it only loses the link, never your notes');
-		expect(panelLines({ ...linked, hasToken: false }).map((line) => line.kind)).toContain(
-			'warning',
-		);
-		expect(
-			panelLines({ ...linked, unlinked: true, counts: null }).map((line) => line.text)[0],
-		).toContain('not linked yet');
 	});
 });

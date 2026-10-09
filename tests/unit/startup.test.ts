@@ -1,55 +1,40 @@
 /**
  * The startup proof: **the sync feature is not on the path that loads the plugin.**
  *
- * Step 26 asks for two things here, and each needs a technique that would survive a hostile reading:
+ * The legacy Bases sync host and its status-bar badge were removed in R6 Step 2, so the only sync entry point is
+ * the native command (`src/plugin/sync/nativeCommand.ts`), which the command handler imports on demand. Two things
+ * are asserted, each by a technique that would survive a hostile reading:
  *
- *  1. *"the sync module is not imported on the startup path"* — asserted **twice**, structurally and at runtime:
+ *  1. *"no sync module is imported on the startup path"*, asserted **twice**, structurally and at runtime:
  *     · structurally, by building the plugin with `esbuild` (the same entry point and options as
- *       `esbuild.config.mjs`) and reading the **metafile** esbuild writes: every import edge out of
- *       `src/plugin/main.ts` is listed with its `kind`, so "no `import-statement` edge into `src/sync/**`" is a
- *       statement about the graph the bundler actually resolved rather than about the text of the file;
- *     · at runtime, by mocking `src/plugin/sync/host.ts` and counting how many times the module is **evaluated**
- *       and how many times `createSyncHost` is **called**: nothing happens with no link file, and exactly one of
- *       each happens the moment one exists.
- *  2. *"two startup measurements — with no link and with a link present"* — taken with `performance.now()` around
- *     the two things a person waits for: the plugin's `onload` (the module graph above it is already evaluated by
- *     then, which is what "startup path" means here) and the badge's own work. They are measured **once at module
- *     load** so the numbers appear in the test names: this repo forbids `console.*` everywhere, tests included
- *     (`query-table.test.ts` established the pattern), so a measurement that has to be pasted into a report goes
- *     where the runner prints it.
+ *       `esbuild.config.mjs`) and reading the **metafile**: every import edge out of `src/plugin/main.ts` is listed
+ *       with its `kind`, so "no `import-statement` edge into `src/sync/**`" is a statement about the graph the
+ *       bundler resolved;
+ *     · at runtime, by mocking `src/plugin/sync/nativeCommand.ts` and counting how many times it is **evaluated**:
+ *       loading the plugin evaluates it zero times, with or without a link file.
+ *  2. *"two startup measurements — with no link and with a link present"*, taken with `performance.now()` around
+ *     the plugin's `onload`. They are measured once at module load so the numbers appear in the test names.
  *
  * ## What is *not* claimed
  *
- * Two honest limits, both measured rather than assumed. First, in `cjs` format esbuild **inlines** a dynamic chunk:
- * the provider client's code is in the shipped `main.js` even though nothing imports it at startup, so what the
- * dynamic import buys today is a lazily *evaluated* module and a clean graph, not bytes. That is asserted below
- * (it is the reason the claim is worded carefully) rather than left in a report where it could be forgotten.
- * Second, this is Node and not a browser: the numbers are the plugin's own work, not a frame painted by Obsidian.
+ * In `cjs` format esbuild **inlines** a dynamic chunk: the provider client's code is in the shipped `main.js` even
+ * though nothing imports it at startup. What the dynamic import buys is a lazily *evaluated* module and a clean
+ * graph, not fewer bytes. That is asserted below, so a later change that lifts the `cjs` constraint has to update it.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { gzipSync } from 'node:zlib';
 import { build } from 'esbuild';
 
-import TablifyPlugin, { LINK_FOLDER_MIRROR } from '../../src/plugin/main';
+import TablifyPlugin from '../../src/plugin/main';
 import { LINK_FOLDER } from '../../src/sync/LinkStore';
 import { Plugin } from '../mocks/obsidian';
 
-/** The two counters the runtime half needs. `vi.hoisted`, because `vi.mock`'s factory runs before the imports. */
-const spy = vi.hoisted(() => ({
-	evaluations: 0,
-	hostBuilds: 0,
-}));
+/** The evaluation counter. `vi.hoisted`, because `vi.mock`'s factory runs before the imports. */
+const spy = vi.hoisted(() => ({ evaluations: 0 }));
 
-vi.mock('../../src/plugin/sync/host', async (importOriginal) => {
+vi.mock('../../src/plugin/sync/nativeCommand', async (importOriginal) => {
 	spy.evaluations += 1;
-	const real = await importOriginal<typeof import('../../src/plugin/sync/host')>();
-	return {
-		...real,
-		createSyncHost: (options: Parameters<typeof real.createSyncHost>[0]) => {
-			spy.hostBuilds += 1;
-			return real.createSyncHost(options);
-		},
-	};
+	return importOriginal<typeof import('../../src/plugin/sync/nativeCommand')>();
 });
 
 /**
@@ -187,160 +172,70 @@ async function bundleFacts(): Promise<BundleFacts> {
 type StartupMeasurement = {
 	readonly noLinkMs: number;
 	readonly withLinkMs: number;
-	/**
-	 * The same phase again, with the sync module already evaluated.
-	 *
-	 * Two numbers rather than one, because they mean different things and only the second is a startup cost: the
-	 * first `import('./sync/host')` in this file also pays **this harness's** one-time cost (Vite transforming that
-	 * module and its dependencies), which a real Obsidian has already paid when it read `main.js` off disk. The
-	 * cached number is what a person waits for on the second start of the day.
-	 */
-	readonly withLinkCachedMs: number;
-	readonly loadedWithoutLink: boolean;
-	readonly loadedWithLink: boolean;
-	/** How many times the module was evaluated during the measured phases: one, or the claim is broken. */
-	readonly evaluations: number;
-	/** Microtasks the cached badge path needed, from the ready callback to the host being built. */
-	readonly badgeTurns: number;
-	readonly hostBuildsWithoutLink: number;
-	readonly hostBuildsWithLink: number;
+	/** Sync module evaluations caused by loading the plugin, with no link file. */
+	readonly evaluationsWithoutLink: number;
+	/** Sync module evaluations caused by loading the plugin, with a link file present. */
+	readonly evaluationsWithLink: number;
 	readonly bundle: BundleFacts;
 };
 
-/** Milliseconds, to one decimal place: enough to compare two runs, not so much that the name drowns in digits. */
 function ms(value: number): string {
-	return `${value.toFixed(1)} ms`;
-}
-
-/**
- * Flushes **microtasks** until `done()` answers true, and answers how many turns it took.
- *
- * The alternative is a polling wait (`vi.waitFor`), and it is the wrong tool for timing: it waits on a timer, so a
- * three-microtask chain measures as a whole poll interval (the first version of this file reported 49.6 ms for work
- * that takes a fraction of one). Draining microtasks measures the code's own work — and the turn count is returned
- * so a chain that never settles fails loudly instead of timing out.
- */
-async function flushUntil(done: () => boolean, limit = 200_000): Promise<number> {
-	let turns = 0;
-	while (!done() && turns < limit) {
-		await Promise.resolve();
-		turns += 1;
-	}
-	if (!done()) {
-		throw new Error(`the async chain did not settle within ${String(limit)} microtasks`);
-	}
-	return turns;
+	return `${value.toFixed(2)} ms`;
 }
 
 async function measure(): Promise<StartupMeasurement> {
-	const bundle = await bundleFacts();
-
-	// Phase 1 — a vault that has never synced: the badge lists the link folder, finds nothing, and stops.
-	const evaluationsBefore = spy.evaluations;
-	const buildsBefore = spy.hostBuilds;
+	const before = spy.evaluations;
 	const noLinkStart = performance.now();
-	const without = loadPlugin([]);
-	without.state.readyCallbacks[0]?.();
-	await flushUntil(() => without.state.lists > 0);
+	const noLink = loadPlugin([]);
+	noLink.state.readyCallbacks.forEach((callback) => {
+		callback();
+	});
 	const noLinkMs = performance.now() - noLinkStart;
-	const loadedWithoutLink = spy.evaluations > evaluationsBefore;
+	const evaluationsWithoutLink = spy.evaluations - before;
 
-	// Phase 2 — one link file: the badge loads the sync module and asks it for the text.
-	// The **first** dynamic import in this file pays the harness's transform cost (Vite compiling the module and
-	// its graph from source), which is I/O and therefore not measurable by draining microtasks. It is measured with
-	// a polling wait, and both facts are in the report: the plugin's own work is the cached number below.
+	const withLinkBefore = spy.evaluations;
 	const withLinkStart = performance.now();
 	const withLink = loadPlugin(['0123456789abcdef.json']);
-	withLink.state.readyCallbacks[0]?.();
-	await vi.waitFor(() => {
-		expect(spy.hostBuilds).toBeGreaterThan(buildsBefore);
+	withLink.state.readyCallbacks.forEach((callback) => {
+		callback();
 	});
 	const withLinkMs = performance.now() - withLinkStart;
-	const loadedWithLink = spy.evaluations > evaluationsBefore;
-	const evaluationsAfter = spy.evaluations;
-	const hostBuildsWithLink = spy.hostBuilds - buildsBefore;
-
-	// Phase 3 — the same thing again, now that the module is evaluated: the steady-state cost of the badge.
-	const cachedStart = performance.now();
-	const builtSoFar = spy.hostBuilds;
-	const cached = loadPlugin(['fedcba9876543210.json']);
-	cached.state.readyCallbacks[0]?.();
-	// The observable end of this phase is the second host: with no Bases leaf open, `updateStatus` answers without
-	// touching storage at all (the view check comes first), so the host build *is* the last step of the badge path.
-	const turns = await flushUntil(() => spy.hostBuilds > builtSoFar);
-	const withLinkCachedMs = performance.now() - cachedStart;
+	const evaluationsWithLink = spy.evaluations - withLinkBefore;
 
 	return {
 		noLinkMs,
 		withLinkMs,
-		withLinkCachedMs,
-		loadedWithoutLink,
-		loadedWithLink,
-		// One evaluation for the whole session: the module is cached after the first dynamic import.
-		evaluations: evaluationsAfter - evaluationsBefore,
-		// How many microtasks the cached badge path needed. In the name, because it is the shape of the work: a
-		// handful of turns means the badge is a couple of awaits, not a chain of chained promises.
-		badgeTurns: turns,
-		hostBuildsWithoutLink: buildsBefore,
-		hostBuildsWithLink,
-		bundle,
+		evaluationsWithoutLink,
+		evaluationsWithLink,
+		bundle: await bundleFacts(),
 	};
 }
 
 const STARTUP: StartupMeasurement = await measure();
 
 describe('the startup path', () => {
-	it(`runs onload and the badge with no link in ${ms(STARTUP.noLinkMs)}, and loads no sync module`, () => {
-		// The whole claim in one assertion: with an empty link folder, the module was never evaluated and no host
-		// was ever built — the plugin did its work and stopped.
-		expect(STARTUP.loadedWithoutLink).toBe(false);
-		expect(STARTUP.hostBuildsWithoutLink).toBe(0);
+	it(`runs onload with no link in ${ms(STARTUP.noLinkMs)}, and loads no sync module`, () => {
+		expect(STARTUP.evaluationsWithoutLink).toBe(0);
 		expect(STARTUP.noLinkMs).toBeGreaterThanOrEqual(0);
 	});
 
-	it(`loads the sync module once a link exists (${ms(STARTUP.withLinkCachedMs)} over ${String(STARTUP.badgeTurns)} microtasks; first import, harness included: ${ms(STARTUP.withLinkMs)})`, () => {
-		expect(STARTUP.loadedWithLink).toBe(true);
-		expect(STARTUP.evaluations).toBe(1);
-		expect(STARTUP.hostBuildsWithLink).toBe(1);
-		// One host per plugin instance, built on the first thing that needs it: the *module* is evaluated once per
-		// session (above), the host is memoised inside `onload`'s own closure, and neither happens twice.
+	it(`runs onload with a link present in ${ms(STARTUP.withLinkMs)}, and still loads no sync module`, () => {
+		// The status-bar badge that used to read the link folder at startup is gone, so a link file no longer
+		// causes a load. The sync code runs only when the person asks for it.
+		expect(STARTUP.evaluationsWithLink).toBe(0);
 	});
 
 	it(`keeps every sync module off the static import graph (${String(STARTUP.bundle.staticSyncEdges.length)} static, ${String(STARTUP.bundle.dynamicSyncEdges.length)} dynamic)`, () => {
 		expect(STARTUP.bundle.staticSyncEdges).toEqual([]);
-		// The dynamic edges are the entry points, named: the panel's host, and the native table's command (R5 Part C).
-		// Each is loaded only inside its own command handler; a third one would need a deliberate decision here.
-		expect(STARTUP.bundle.dynamicSyncEdges).toEqual([
-			'src/plugin/sync/host.ts',
-			'src/plugin/sync/nativeCommand.ts',
-		]);
+		// The one dynamic edge is the entry point, named: the native table's command (R5 Part C). It is loaded only
+		// inside its own command handler; a second one would need a deliberate decision here.
+		expect(STARTUP.bundle.dynamicSyncEdges).toEqual(['src/plugin/sync/nativeCommand.ts']);
 	});
 
 	it(`measures the cjs inlining honestly (${String(STARTUP.bundle.rawBytes)} B raw, ${String(STARTUP.bundle.gzipBytes)} B gzip, client inlined: ${String(STARTUP.bundle.clientInlined)})`, () => {
 		// Not an aspiration: the number and the fact, so that a later step which lifts the `cjs` constraint has to
-		// update the wording in `src/plugin/sync/host.ts` in the same commit as this assertion.
+		// update this assertion in the same commit.
 		expect(STARTUP.bundle.clientInlined).toBe(true);
 		expect(STARTUP.bundle.rawBytes).toBeGreaterThan(0);
-	});
-
-	it(`mirrors the link folder (${LINK_FOLDER_MIRROR}) without importing it`, () => {
-		// The mirror exists so that `main.ts` has no import edge into `src/sync/**` (asserted above). This is what
-		// keeps the mirror from drifting: the two constants are compared here, once.
-		expect(LINK_FOLDER_MIRROR).toBe(LINK_FOLDER);
-		expect(LINK_FOLDER_MIRROR.startsWith('.')).toBe(true);
-	});
-
-	it('the sync command loads the feature even with no link file, because a person asked for it', async () => {
-		const before = spy.hostBuilds;
-		const { plugin, state } = loadPlugin([]);
-		const command = plugin.commands.find((entry) => entry.id === 'open-sync-panel');
-		expect(command?.name).toBe('Open the sync panel');
-		expect(command).toBeDefined();
-		command?.callback();
-		await vi.waitFor(() => {
-			expect(spy.hostBuilds).toBeGreaterThanOrEqual(before + 1);
-		});
-		// No Bases leaf, so the host's `open()` cannot find a view — and its port says so instead of throwing.
-		expect(state.listeners).toContain('active-leaf-change');
 	});
 });

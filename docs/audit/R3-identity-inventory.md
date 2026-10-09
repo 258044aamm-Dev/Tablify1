@@ -16,14 +16,13 @@ of the script, not a footnote — classifying it is the decision R3 step 1 exist
 
 ## Files, with the markers they carry
 
-### `replace` — 45 file(s)
+### `replace` — 20 file(s)
 
 Rule: `src/adapters/`, `src/core/fieldTypes/`, `src/core/`, `src/grid/`, `src/plugin/`
 
 | File | Matches |
 | --- | --- |
 | `src/adapters/RowSource.ts` | filePath ×1, PropertyId ×4, propertyId ×3, RowSource ×2 |
-| `src/adapters/bases/BasesSource.ts` | filePath ×27, PropertyId ×14, propertyId ×17, RowSource ×5, processFrontMatter ×1 |
 | `src/adapters/optimistic.ts` | filePath ×15, PropertyId ×5, propertyId ×11, RowSource ×1 |
 | `src/adapters/writeQueue.ts` | filePath ×4, PropertyId ×3, propertyId ×4, RowSource ×2, processFrontMatter ×6 |
 | `src/core/ops/apply.ts` | filePath ×34, PropertyId ×14 |
@@ -36,37 +35,13 @@ Rule: `src/adapters/`, `src/core/fieldTypes/`, `src/core/`, `src/grid/`, `src/pl
 | `src/core/schema/propertySchema.ts` | PropertyId ×2 |
 | `src/core/selection/range.ts` | filePath ×25, PropertyId ×4 |
 | `src/core/types.ts` | PropertyId ×1 |
-| `src/core/view/patch.ts` | PropertyId ×6 |
 | `src/core/view/pipeline.ts` | PropertyId ×20 |
-| `src/grid/FrozenColumn.tsx` | filePath ×5 |
-| `src/grid/GridView.tsx` | filePath ×33, PropertyId ×6 |
 | `src/grid/clipboard/matrix.ts` | filePath ×2 |
-| `src/grid/clipboard/pastePlan.ts` | filePath ×3, PropertyId ×6 |
-| `src/grid/commands/bulkEdit.ts` | PropertyId ×5 |
-| `src/grid/dialogs/BulkEditDialog.ts` | PropertyId ×2 |
-| `src/grid/dialogs/RowDetailsDialog.ts` | filePath ×6 |
-| `src/grid/dialogs/port.ts` | filePath ×3, PropertyId ×4 |
-| `src/grid/editSession.ts` | filePath ×1 |
-| `src/grid/editors/Popover.tsx` | filePath ×2 |
-| `src/grid/keyboard/focus.ts` | filePath ×5 |
-| `src/grid/menus/cellMenu.ts` | filePath ×2 |
-| `src/grid/menus/context.ts` | filePath ×5, PropertyId ×3 |
-| `src/grid/menus/gutterMenu.ts` | filePath ×2 |
-| `src/grid/pointer/fillHandle.ts` | filePath ×10, PropertyId ×4 |
-| `src/grid/pointer/hitTest.ts` | filePath ×10, PropertyId ×3 |
-| `src/grid/pointer/reorderColumn.ts` | PropertyId ×10 |
-| `src/grid/pointer/reorderRow.ts` | filePath ×13 |
-| `src/grid/pointer/resizeColumn.ts` | PropertyId ×4 |
-| `src/grid/rows/Cell.tsx` | filePath ×12, PropertyId ×2 |
-| `src/grid/rows/Row.tsx` | filePath ×12 |
-| `src/grid/selection/dragSelect.ts` | filePath ×3 |
 | `src/grid/store/commands.ts` | filePath ×27, PropertyId ×4 |
 | `src/grid/store/selectors.ts` | filePath ×35, PropertyId ×7, propertyId ×2 |
 | `src/grid/store/store.ts` | filePath ×76, PropertyId ×12, propertyId ×23, RowSource ×4 |
 | `src/grid/store/types.ts` | filePath ×2, PropertyId ×3, propertyId ×1, RowSource ×3 |
-| `src/plugin/TablifyView.ts` | filePath ×9, propertyId ×9, RowSource ×1, processFrontMatter ×4, metadataCache ×4, getFileCache ×1 |
 | `src/plugin/export/runExport.ts` | filePath ×2, PropertyId ×2 |
-| `src/plugin/sync/local.ts` | filePath ×1, PropertyId ×4, RowSource ×3 |
 
 ### `remote-record-id` — 3 file(s)
 
@@ -78,37 +53,23 @@ Rule: `src/sync/`
 | `src/sync/nativePort.ts` | filePath ×4, propertyId ×1, RowSource ×1 |
 | `src/sync/pullPush.ts` | filePath ×2, PropertyId ×3, RowSource ×1 |
 
-### `historical` — 28 file(s)
+### `historical` — 14 file(s)
 
 Rule: `tests/`
 
 | File | Matches |
 | --- | --- |
-| `tests/dom/a11y.test.ts` | filePath ×2 |
-| `tests/dom/bulk-edit.test.ts` | filePath ×6, RowSource ×1 |
-| `tests/dom/editors.test.tsx` | filePath ×1 |
-| `tests/dom/export-dialog.test.tsx` | filePath ×5 |
-| `tests/dom/gridview.test.tsx` | filePath ×3 |
-| `tests/dom/keyboard.test.tsx` | filePath ×10 |
-| `tests/dom/long-press.test.tsx` | filePath ×2 |
-| `tests/dom/menus.test.tsx` | filePath ×42 |
-| `tests/dom/paste-flow.test.tsx` | filePath ×3 |
-| `tests/dom/pointer.test.tsx` | filePath ×22 |
 | `tests/dom/store-render.test.ts` | filePath ×15 |
 | `tests/dom/store.test.ts` | filePath ×28, RowSource ×1 |
-| `tests/fakes/noteStore.ts` | filePath ×3 |
 | `tests/fakes/rowSource.ts` | filePath ×56, PropertyId ×19, propertyId ×30, RowSource ×5 |
 | `tests/fakes/syncLocal.ts` | filePath ×3, PropertyId ×2, RowSource ×1 |
 | `tests/fakes/vault.ts` | processFrontMatter ×9, metadataCache ×5, getFileCache ×4 |
 | `tests/mocks/obsidian.ts` | propertyId ×6, metadataCache ×2 |
-| `tests/unit/bases-source.test.ts` | filePath ×33, PropertyId ×1, propertyId ×11, processFrontMatter ×7 |
 | `tests/unit/boundaries.test.ts` | filePath ×1 |
 | `tests/unit/diff.test.ts` | filePath ×1, RowSource ×1 |
-| `tests/unit/edit-session.test.ts` | filePath ×2 |
 | `tests/unit/fakes-contract.test.ts` | processFrontMatter ×8, metadataCache ×2, getFileCache ×2 |
 | `tests/unit/native-port.test.ts` | filePath ×5, propertyId ×1 |
 | `tests/unit/ops-fixtures.ts` | filePath ×19, PropertyId ×2 |
-| `tests/unit/ops.test.ts` | filePath ×40 |
 | `tests/unit/r3-inventory.test.ts` | YamlValue ×1, toYaml ×1 |
 | `tests/unit/selection.test.ts` | filePath ×24 |
 | `tests/unit/write-queue.test.ts` | filePath ×4, propertyId ×4, RowSource ×1, processFrontMatter ×10 |
@@ -124,12 +85,12 @@ Rule: `tests/unit/view-state.test.ts`, `tests/unit/value-vocabulary.test.ts`
 
 ## Totals
 
-78 files carry 1190 marker occurrences.
+39 files carry 714 marker occurrences.
 
-- `replace`: 45 file(s), 702 occurrence(s)
+- `replace`: 20 file(s), 420 occurrence(s)
 - `host-path`: 0 file(s), 0 occurrence(s)
 - `remote-record-id`: 3 file(s), 13 occurrence(s)
-- `historical`: 28 file(s), 467 occurrence(s)
+- `historical`: 14 file(s), 273 occurrence(s)
 - `guard`: 2 file(s), 8 occurrence(s)
 - `native`: 0 file(s), 0 occurrence(s)
 

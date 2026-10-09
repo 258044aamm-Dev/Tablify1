@@ -31,7 +31,9 @@ describe('the committed inventory matches the tree', () => {
 	});
 
 	it('covers a tree with markers in it, so a green run means something', () => {
-		expect(inventory.files.length).toBeGreaterThan(50);
+		// The floor was 50 while the Bases and legacy `.tabula` code was shipped. R6 Step 2 removed that code, so the
+		// scan now sees 39 files. 30 is the line below which the scan has stopped seeing the tree; it is not a target.
+		expect(inventory.files.length).toBeGreaterThan(30);
 		const occurrences = inventory.files.reduce((sum, file) => sum + file.total, 0);
 		expect(occurrences).toBeGreaterThan(500);
 	});
