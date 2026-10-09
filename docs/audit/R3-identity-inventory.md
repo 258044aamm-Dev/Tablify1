@@ -16,15 +16,13 @@ of the script, not a footnote — classifying it is the decision R3 step 1 exist
 
 ## Files, with the markers they carry
 
-### `replace` — 9 file(s)
+### `replace` — 7 file(s)
 
 Rule: `src/adapters/`, `src/core/fieldTypes/`, `src/core/`, `src/grid/`, `src/plugin/`
 
 | File | Matches |
 | --- | --- |
 | `src/adapters/RowSource.ts` | filePath ×1, PropertyId ×3, propertyId ×2, RowSource ×1 |
-| `src/adapters/optimistic.ts` | filePath ×15, PropertyId ×5, propertyId ×11, RowSource ×1 |
-| `src/adapters/writeQueue.ts` | filePath ×4, PropertyId ×3, propertyId ×4, RowSource ×2, processFrontMatter ×6 |
 | `src/core/ops/types.ts` | filePath ×6, PropertyId ×13 |
 | `src/core/query/ast.ts` | PropertyId ×8 |
 | `src/core/query/evaluate.ts` | PropertyId ×6 |
@@ -42,7 +40,7 @@ Rule: `src/sync/`
 | `src/sync/nativePort.ts` | filePath ×4, propertyId ×1, RowSource ×1 |
 | `src/sync/pullPush.ts` | filePath ×2, PropertyId ×3, RowSource ×1 |
 
-### `historical` — 9 file(s)
+### `historical` — 8 file(s)
 
 Rule: `tests/`
 
@@ -56,7 +54,6 @@ Rule: `tests/`
 | `tests/unit/fakes-contract.test.ts` | processFrontMatter ×8, metadataCache ×2, getFileCache ×2 |
 | `tests/unit/native-port.test.ts` | filePath ×5, propertyId ×1 |
 | `tests/unit/r3-inventory.test.ts` | YamlValue ×1, toYaml ×1 |
-| `tests/unit/write-queue.test.ts` | filePath ×4, propertyId ×4, RowSource ×1, processFrontMatter ×10 |
 
 ### `guard` — 2 file(s)
 
@@ -69,12 +66,12 @@ Rule: `tests/unit/view-state.test.ts`, `tests/unit/value-vocabulary.test.ts`
 
 ## Totals
 
-23 files carry 209 marker occurrences.
+20 files carry 139 marker occurrences.
 
-- `replace`: 9 file(s), 114 occurrence(s)
+- `replace`: 7 file(s), 63 occurrence(s)
 - `host-path`: 0 file(s), 0 occurrence(s)
 - `remote-record-id`: 3 file(s), 13 occurrence(s)
-- `historical`: 9 file(s), 74 occurrence(s)
+- `historical`: 8 file(s), 55 occurrence(s)
 - `guard`: 2 file(s), 8 occurrence(s)
 - `native`: 0 file(s), 0 occurrence(s)
 

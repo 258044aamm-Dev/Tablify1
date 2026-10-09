@@ -25,7 +25,6 @@ import {
 import type { SettingPath, TablifySettings } from './schema';
 import { checkSettingValue, loadSettings } from './load';
 import type { SettingsWarning } from './load';
-import type { TimerPort } from '../../adapters/writeQueue';
 
 /**
  * How long a burst of settings changes is merged before the file is written. The docs name no interval for
@@ -61,6 +60,12 @@ export type SettingsStore = {
 	readonly dispose: () => void;
 	/** How many writes have reached the port. Diagnostics uses it; tests assert on it. */
 	readonly writeCount: () => number;
+};
+
+/** The two timing primitives the settings store needs, so tests inject the fake clock. */
+export type TimerPort = {
+	setTimer(callback: () => void, ms: number): number;
+	clearTimer(id: number): void;
 };
 
 export type SettingsStoreOptions = {

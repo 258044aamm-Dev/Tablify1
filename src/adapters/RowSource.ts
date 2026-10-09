@@ -3,7 +3,7 @@
  *
  * Before R6 Slice 2b this file also held the `RowSource` port, which had two implementations (`bases` and
  * `tabula-file`), both removed. What remains is what the native sync, the optimistic overlay and the write
- * queue still use: the row id, the refusal and error shapes, and the apply result with its helpers. The file
+ * queue still use: the row id, and the refusal, error and apply-result shapes. The file
  * keeps its name for now; renaming it is a follow-up.
  *
  * This file imports nothing that touches the vault, the DOM or React.
@@ -47,42 +47,3 @@ export type ApplyResult = {
 	readonly refused: readonly Refusal[];
 	readonly errors: readonly ApplyError[];
 };
-
-/** An empty result, for the paths that have nothing to report. */
-export const EMPTY_APPLY_RESULT: ApplyResult = {
-	ok: true,
-	written: 0,
-	files: [],
-	refused: [],
-	errors: [],
-};
-
-/** Builds an `ApplyResult` from its parts, so `ok` is computed in exactly one place. */
-export function applyResult(parts: {
-	readonly written: number;
-	readonly files: readonly RowId[];
-	readonly refused: readonly Refusal[];
-	readonly errors: readonly ApplyError[];
-}): ApplyResult {
-	return {
-		ok: parts.errors.length === 0 && parts.refused.length === 0,
-		written: parts.written,
-		files: parts.files,
-		refused: parts.refused,
-		errors: parts.errors,
-	};
-}
-
-/** One line describing a result, for a status bar or a Notice. Used by the placeholder view. */
-export function describeApplyResult(result: ApplyResult): string {
-	const parts: string[] = [
-		`${String(result.written)} cell(s) in ${String(result.files.length)} file(s)`,
-	];
-	if (result.refused.length > 0) {
-		parts.push(`${String(result.refused.length)} refused`);
-	}
-	if (result.errors.length > 0) {
-		parts.push(`${String(result.errors.length)} failed`);
-	}
-	return parts.join(', ');
-}

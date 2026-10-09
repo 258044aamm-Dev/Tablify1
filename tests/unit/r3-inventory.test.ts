@@ -37,7 +37,7 @@ describe('the committed inventory matches the tree', () => {
 		const scanned = new Set(inventory.files.map((file) => file.path));
 		for (const path of [
 			'src/sync/pullPush.ts',
-			'src/adapters/writeQueue.ts',
+			'src/sync/SyncTarget.ts',
 			'src/core/query/evaluate.ts',
 			'tests/mocks/obsidian.ts',
 		]) {
