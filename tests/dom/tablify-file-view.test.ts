@@ -1169,3 +1169,46 @@ describe('a conflict is a choice, never a silent write', () => {
 		expect(view.handle()?.session.getState()).toBe('detached');
 	});
 });
+
+describe('native grid keyboard clear', () => {
+	it('Delete clears the active cell as one undoable step, and Undo restores it', async () => {
+		const rig = loadPlugin({ [PATH]: databaseText() });
+		const view = await openPane(rig, PATH);
+		const gridOf = (): HTMLTableElement => {
+			const grid = view.containerEl.querySelector<HTMLTableElement>('[role="grid"]');
+			if (grid === null) {
+				throw new Error('the native table grid must be rendered');
+			}
+			return grid;
+		};
+		const cellOf = (): HTMLElement => {
+			const cell = gridOf().querySelector<HTMLElement>(
+				`[data-row-id="${ROW_FIRST}"][data-field-id="${FIRST_FIELD}"]`,
+			);
+			if (cell === null) {
+				throw new Error('the first cell must be rendered');
+			}
+			return cell;
+		};
+		const undo = (): HTMLButtonElement => {
+			const button = Array.from(
+				view.containerEl.querySelectorAll<HTMLButtonElement>('button'),
+			).find((candidate) => (candidate.textContent ?? '').trim() === 'Undo');
+			if (button === undefined) {
+				throw new Error('the Undo button must be rendered');
+			}
+			return button;
+		};
+
+		expect((cellOf().textContent ?? '').trim()).toBe('Shoots 1');
+		cellOf().click();
+		gridOf().dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+		await flush();
+		expect((cellOf().textContent ?? '').trim()).toBe('');
+
+		undo().click();
+		await flush();
+		expect((cellOf().textContent ?? '').trim()).toBe('Shoots 1');
+		expect(rig.vault.writes).toEqual([]);
+	});
+});

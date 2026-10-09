@@ -1864,6 +1864,53 @@ export class NativeDatabaseGrid {
 		grid.focus({ preventScroll: true });
 	}
 
+	/** Clear one editable cell as a single undoable store operation; unchanged or refused cells dispatch nothing. */
+	private clearActiveCell(
+		row: { readonly rowId: string } | undefined,
+		column: NativeColumn | undefined,
+		model: NativeGridModel,
+		store: DatabaseStore,
+	): void {
+		if (row === undefined || column === undefined) {
+			return;
+		}
+		const fieldId = column.field.definition.id;
+		const current = viewCellOf(model.activeTable, row.rowId, fieldId);
+		const updatedAt = timestampFor(this.environment);
+		const stamp = updatedAt === null ? {} : { updatedAt };
+		const label = `Clear cell: ${column.field.definition.name}`;
+		if (isLinkColumn(column)) {
+			if (sameLinkSelection(current, [])) {
+				return;
+			}
+			store.dispatch(
+				{
+					kind: 'set-link',
+					tableId: model.table.id,
+					rowId: row.rowId,
+					fieldId,
+					rowIds: [],
+					...stamp,
+				},
+				label,
+			);
+			return;
+		}
+		if (sameCellValue(current, null)) {
+			return;
+		}
+		store.dispatch(
+			{
+				kind: 'set-cells',
+				tableId: model.table.id,
+				rowId: row.rowId,
+				edits: [{ fieldId, value: null }],
+				...stamp,
+			},
+			label,
+		);
+	}
+
 	private onKeyDown(
 		event: KeyboardEvent,
 		scroll: HTMLElement,
@@ -1943,6 +1990,18 @@ export class NativeDatabaseGrid {
 					store,
 				);
 			}
+			return;
+		}
+		if (
+			(event.key === 'Delete' || event.key === 'Backspace') &&
+			hadSelection &&
+			!event.altKey &&
+			!event.ctrlKey &&
+			!event.metaKey &&
+			!event.shiftKey
+		) {
+			event.preventDefault();
+			this.clearActiveCell(rows[rowIndex], columns[columnIndex], model, store);
 			return;
 		}
 		let handled = true;
