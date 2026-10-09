@@ -19,7 +19,7 @@ docs win.
 | `PROCEED-ASSUMPTION-2026-10-05.md` | The dated assumption record that authorized the prototype-first start. |
 | `PROTOTYPE-FREEZE.md` | The freeze declaration for `prototype/`. |
 | `prototype/` | The frozen HTML/CSS/JS reference prototype (~9.6k lines) the grid's interaction model was specified against. Reference material for humans; no module may import from it. |
-| `spike/bases-path/` | The throwaway probe (step 10) that established what the Bases data path could and could not do. Superseded by the verified facts folded into the live architecture doc. |
+| `archive/bases-spike-findings-2026-10.md` | The findings of the throwaway Bases probe (step 10). The probe code was deleted in R6; the findings are kept as a historical record. |
 | `archive/bases-first-prompts-2026-10/` | The 29 numbered step prompts that built the Bases-backed product. |
 
 ## What is deliberately NOT here

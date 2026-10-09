@@ -1,3 +1,7 @@
+> **Historical record (R6 slice 2h).** The probe code in `spike/bases-path/` was deleted in R6. This file is the
+> preserved audit record of the Bases API evidence it produced. Its commands refer to that deleted folder and cannot be re-run;
+> the runtime rows marked `PENDING-RUN` were never run. Nothing here is current guidance.
+
 # Step 10 — the Bases spike: findings
 
 > **Historical API evidence for the retired Bases path:** these findings do not verify custom FileView APIs or native `.tablify` persistence. Preserve this record only; future R2 work must use pinned declarations and its own app proof.

@@ -18,7 +18,7 @@
  *   budget, not a benchmark, and the machine it was measured on is named in PROGRESS.md.
  */
 import { describe, expect, it } from 'vitest';
-import type { Expr, QueryContext } from '../../src/core/query/ast';
+import type { Expr } from '../../src/core/query/ast';
 import { andOf, comparison, emptyOf } from '../../src/core/query/ast';
 import type { FilterOpId } from '../../src/core/types';
 import type { RowView } from '../../src/core/query/evaluate';
@@ -76,8 +76,6 @@ const fields: readonly ResolvedField[] = [
 		base,
 	),
 ];
-
-const ctx: QueryContext = { fields };
 
 /** A comparison whose operand is read by the column's own reader, the way a typed filter value is read. */
 function cmp(name: string, op: FilterOpId, text: string): Expr {

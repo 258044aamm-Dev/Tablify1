@@ -1,9 +1,0 @@
-{
-	"id": "tablify-spike",
-	"name": "Tablify spike",
-	"version": "0.0.0",
-	"minAppVersion": "1.13.0",
-	"description": "Throwaway probe for the Bases data path. Not part of the build.",
-	"author": "Tablify",
-	"isDesktopOnly": false
-}

@@ -49,7 +49,7 @@ function restrict(options: {
 export default defineConfig(
 	// Reference material, build artefacts and caches are never linted.
 	globalIgnores([
-		// Frozen history (`docs/legacy/**`): the reference prototype, the throwaway Bases spike, and the
+		// Frozen history (`docs/legacy/**`): the reference prototype and the
 		// Bases-era records and plans. Material for humans, never part of a module graph, never linted.
 		'docs/legacy/**',
 		'main.js',
@@ -140,15 +140,14 @@ export default defineConfig(
 			'@typescript-eslint/consistent-type-assertions': ['error', { assertionStyle: 'never' }],
 		},
 	},
-	// Product names are not sentence case. Without this the rule rewrites "Tablify" to "tablify" and
-	// Obsidian's own feature name "Bases" to "bases" — a false positive, not a style violation.
+	// Product names are not sentence case. Without this the rule rewrites "Tablify" to "tablify".
 	{
 		files: ['src/**/*.ts'],
 		rules: {
 			'obsidianmd/ui/sentence-case': [
 				'warn',
 				{
-					brands: ['Tablify', 'Bases'],
+					brands: ['Tablify'],
 					acronyms: ['CSV', 'TSV', 'XLSX', 'URL'],
 					enforceCamelCaseLower: true,
 				},
@@ -226,6 +225,27 @@ export default defineConfig(
 						group: ['obsidian/*', 'react/*', 'react-dom/*'],
 						message:
 							'src/core must stay pure: no Obsidian API and no React in the core.',
+					},
+					{
+						group: ['**/adapters/**', '**/sync/**', '**/plugin/**', '**/grid/**'],
+						message:
+							'src/core must not import the adapters, sync, plugin or grid layers: the core is the database, and it knows nothing about how it is stored, synced or drawn.',
+					},
+				],
+			}),
+		},
+	},
+	// The sync engine is provider-agnostic. Only src/sync/airtable/** may name the Airtable provider.
+	{
+		files: ['src/sync/**/*.ts'],
+		ignores: ['src/sync/airtable/**'],
+		rules: {
+			'no-restricted-imports': restrict({
+				patterns: [
+					{
+						group: ['**/airtable/**', './airtable', './airtable/*'],
+						message:
+							'The sync engine stays provider-agnostic: only src/sync/airtable/** may import the Airtable provider.',
 					},
 				],
 			}),

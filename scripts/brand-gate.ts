@@ -204,6 +204,16 @@ const ALLOWED_LINES: { path: string; pattern: RegExp; reason: string }[] = [
 		reason: 'the token flow: the secret id is `tablify-airtable-token`, already stored by any install',
 	},
 	{
+		path: 'tests/unit/boundaries.test.ts',
+		pattern: /./,
+		reason: 'the boundary probes name the provider folder on purpose: they prove the rule that keeps it out of the sync engine',
+	},
+	{
+		path: 'eslint.config.mts',
+		pattern: /airtable/i,
+		reason: 'the provider-agnostic sync rule names the provider folder it protects',
+	},
+	{
 		path: 'tests/unit/airtable-client.test.ts',
 		pattern: /./,
 		reason: "the client test: every assertion is about the service's URLs, bodies and statuses",

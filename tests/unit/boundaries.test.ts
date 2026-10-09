@@ -85,6 +85,24 @@ const PROBES: Probe[] = [
 		because: 'the bridge exemption does not also exempt the frozen prototype',
 	},
 	{
+		path: 'src/core/__boundary-probe-adapter.ts',
+		code: "import type { DatabaseStore } from '../adapters/tablifyFile/databaseStore';\nexport type Probe = DatabaseStore;\n",
+		expectMessage: 'src/core must not import the adapters, sync, plugin or grid layers',
+		because: 'the database core is not allowed to know how it is stored',
+	},
+	{
+		path: 'src/sync/__boundary-probe-airtable.ts',
+		code: "import { createAirtableClient } from './airtable/client';\nexport const probe = createAirtableClient;\n",
+		expectMessage: 'The sync engine stays provider-agnostic',
+		because: 'the sync engine names no provider, so a second provider can be added beside it',
+	},
+	{
+		path: 'src/sync/airtable/__boundary-probe-client.ts',
+		code: "import { createAirtableClient } from './client';\nexport const probe = createAirtableClient;\n",
+		expectMessage: null,
+		because: 'the provider folder itself is where the Airtable client may be imported',
+	},
+	{
 		path: 'tests/unit/__boundary-probe-grid.ts',
 		code: "import { createStore } from '../../src/grid/store';\nexport const store = createStore;\n",
 		expectMessage: 'Only tests/dom may import src/grid',
