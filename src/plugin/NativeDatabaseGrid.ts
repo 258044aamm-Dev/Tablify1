@@ -1666,6 +1666,7 @@ export class NativeDatabaseGrid {
 		rowHeight: number,
 		store: DatabaseStore,
 	): void {
+		this.rangeAnchor = null;
 		this.editing = null;
 		this.renderRows(scroll, grid, body, model, rowHeight, store);
 		grid.focus({ preventScroll: true });
@@ -1718,6 +1719,7 @@ export class NativeDatabaseGrid {
 		model: NativeGridModel,
 		rowHeight: number,
 		store: DatabaseStore,
+		bulk = false,
 	): boolean {
 		const edit = this.editing;
 		if (edit === null) {
@@ -1785,6 +1787,27 @@ export class NativeDatabaseGrid {
 			}
 		}
 
+		if (bulk && linkRowIds === null) {
+			const range = this.rangeOf(model);
+			const column = range?.columns.find(
+				(candidate) => candidate.field.definition.id === edit.fieldId,
+			);
+			if (range !== null && column !== undefined && range.rows.length > 1) {
+				return this.commitBulk(
+					edit,
+					column,
+					value,
+					range,
+					scroll,
+					grid,
+					body,
+					model,
+					rowHeight,
+					store,
+				);
+			}
+		}
+		this.rangeAnchor = null;
 		const current = viewCellOf(model.activeTable, edit.rowId, edit.fieldId);
 		const unchanged =
 			linkRowIds === null
@@ -1827,6 +1850,58 @@ export class NativeDatabaseGrid {
 		if (!result.ok) {
 			this.editing = { ...edit, error: result.message };
 			this.selection = previousSelection;
+			this.renderRows(scroll, grid, body, model, rowHeight, store);
+			this.focusEditor(grid);
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 * Write one parsed value to one column across the range's rows, as one undoable step. Read-only cells and
+	 * cells that already hold the value are skipped. The range stays selected afterwards.
+	 */
+	private commitBulk(
+		edit: NativeCellEditor,
+		column: NativeColumn,
+		value: CellValue,
+		range: NativeCellRange,
+		scroll: HTMLElement,
+		grid: HTMLTableElement,
+		body: HTMLTableSectionElement,
+		model: NativeGridModel,
+		rowHeight: number,
+		store: DatabaseStore,
+	): boolean {
+		const fieldId = column.field.definition.id;
+		this.editing = null;
+		const updatedAt = timestampFor(this.environment);
+		const stamp = updatedAt === null ? {} : { updatedAt };
+		const operations: DatabaseOperation[] = [];
+		for (const row of range.rows) {
+			const current = viewCellOf(model.activeTable, row.rowId, fieldId);
+			if (
+				editDraftFor(model, column, row.rowId, current) === null ||
+				sameCellValue(current, value)
+			) {
+				continue;
+			}
+			operations.push({
+				kind: 'set-cells',
+				tableId: model.table.id,
+				rowId: row.rowId,
+				edits: [{ fieldId, value }],
+				...stamp,
+			});
+		}
+		if (operations.length === 0) {
+			this.renderRows(scroll, grid, body, model, rowHeight, store);
+			grid.focus({ preventScroll: true });
+			return true;
+		}
+		const result = store.dispatch(operations, `Bulk edit: ${column.field.definition.name}`);
+		if (!result.ok) {
+			this.editing = { ...edit, error: result.message };
 			this.renderRows(scroll, grid, body, model, rowHeight, store);
 			this.focusEditor(grid);
 			return false;
@@ -1882,6 +1957,14 @@ export class NativeDatabaseGrid {
 		}
 		if (event.key !== 'Enter') {
 			return;
+		}
+		if ((event.ctrlKey || event.metaKey) && !event.shiftKey) {
+			const range = this.rangeOf(model);
+			if (range !== null && range.rows.length > 1) {
+				event.preventDefault();
+				this.commitEditor(undefined, scroll, grid, body, model, rowHeight, store, true);
+				return;
+			}
 		}
 		const column = model.visibleColumns.find(
 			(candidate) => candidate.field.definition.id === edit.fieldId,
@@ -2475,7 +2558,6 @@ export class NativeDatabaseGrid {
 		}
 		if (event.key === 'Enter' || event.key === 'F2') {
 			event.preventDefault();
-			this.rangeAnchor = null;
 			const row = rows[rowIndex];
 			const column = columns[columnIndex];
 			if (row !== undefined && column !== undefined) {
@@ -2597,7 +2679,6 @@ export class NativeDatabaseGrid {
 				typeReplaces(editorOf(column.field), event.key)
 			) {
 				event.preventDefault();
-				this.rangeAnchor = null;
 				this.beginEdit(
 					{
 						databaseId: model.databaseId,

@@ -1671,4 +1671,123 @@ describe('native grid keyboard range', () => {
 		expect(rowIds()).toEqual([ROW_FIRST, ROW_SECOND]);
 		expect(rig.vault.writes).toEqual([]);
 	});
+
+	it('Ctrl+Enter writes the edited value to the whole column of a range, as one undo step', async () => {
+		const rig = loadPlugin({ [PATH]: databaseText() });
+		const view = await openPane(rig, PATH);
+		const gridOf = (): HTMLTableElement => {
+			const grid = view.containerEl.querySelector<HTMLTableElement>('[role="grid"]');
+			if (grid === null) {
+				throw new Error('the native table grid must be rendered');
+			}
+			return grid;
+		};
+		const cellOf = (rowId: string): HTMLElement => {
+			const cell = gridOf().querySelector<HTMLElement>(
+				`[data-row-id="${rowId}"][data-field-id="${FIRST_FIELD}"]`,
+			);
+			if (cell === null) {
+				throw new Error('the cell must be rendered');
+			}
+			return cell;
+		};
+		const textOf = (rowId: string): string => (cellOf(rowId).textContent ?? '').trim();
+		const undo = (): HTMLButtonElement => {
+			const button = Array.from(
+				view.containerEl.querySelectorAll<HTMLButtonElement>('button'),
+			).find((candidate) => (candidate.textContent ?? '').trim() === 'Undo');
+			if (button === undefined) {
+				throw new Error('the Undo button must be rendered');
+			}
+			return button;
+		};
+
+		cellOf(ROW_FIRST).click();
+		gridOf().dispatchEvent(
+			new KeyboardEvent('keydown', {
+				key: 'ArrowDown',
+				shiftKey: true,
+				bubbles: true,
+				cancelable: true,
+			}),
+		);
+		await flush();
+		gridOf().dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'b', bubbles: true, cancelable: true }),
+		);
+		await flush();
+		const editor = cellOf(ROW_SECOND).querySelector<HTMLInputElement | HTMLTextAreaElement>(
+			'[data-native-editor]',
+		);
+		if (editor === null) {
+			throw new Error('typing must open the cell editor');
+		}
+		const commit = new KeyboardEvent('keydown', {
+			key: 'Enter',
+			ctrlKey: true,
+			bubbles: true,
+			cancelable: true,
+		});
+		editor.dispatchEvent(commit);
+		await flush();
+		expect(commit.defaultPrevented).toBe(true);
+		expect(textOf(ROW_FIRST)).toBe('b');
+		expect(textOf(ROW_SECOND)).toBe('b');
+
+		undo().click();
+		await flush();
+		expect(textOf(ROW_FIRST)).toBe('Shoots 1');
+		expect(textOf(ROW_SECOND)).toBe('Shoots 2');
+		expect(rig.vault.writes).toEqual([]);
+	});
+
+	it('a plain Enter edits one cell and ends the range, as before', async () => {
+		const rig = loadPlugin({ [PATH]: databaseText() });
+		const view = await openPane(rig, PATH);
+		const gridOf = (): HTMLTableElement => {
+			const grid = view.containerEl.querySelector<HTMLTableElement>('[role="grid"]');
+			if (grid === null) {
+				throw new Error('the native table grid must be rendered');
+			}
+			return grid;
+		};
+		const cellOf = (rowId: string): HTMLElement => {
+			const cell = gridOf().querySelector<HTMLElement>(
+				`[data-row-id="${rowId}"][data-field-id="${FIRST_FIELD}"]`,
+			);
+			if (cell === null) {
+				throw new Error('the cell must be rendered');
+			}
+			return cell;
+		};
+
+		cellOf(ROW_FIRST).click();
+		gridOf().dispatchEvent(
+			new KeyboardEvent('keydown', {
+				key: 'ArrowDown',
+				shiftKey: true,
+				bubbles: true,
+				cancelable: true,
+			}),
+		);
+		await flush();
+		gridOf().dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'b', bubbles: true, cancelable: true }),
+		);
+		await flush();
+		const editor = cellOf(ROW_SECOND).querySelector<HTMLInputElement | HTMLTextAreaElement>(
+			'[data-native-editor]',
+		);
+		if (editor === null) {
+			throw new Error('typing must open the cell editor');
+		}
+		editor.dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+		);
+		await flush();
+		expect((cellOf(ROW_SECOND).textContent ?? '').trim()).toBe('b');
+		expect((cellOf(ROW_FIRST).textContent ?? '').trim()).toBe('Shoots 1');
+		expect(gridOf().querySelectorAll('.is-in-range')).toHaveLength(0);
+		expect(rig.vault.writes).toEqual([]);
+	});
 });
