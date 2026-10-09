@@ -227,7 +227,7 @@ export type DatabaseImportConfirmation =
 			readonly fields: readonly DatabaseImportRemovedField[];
 	  };
 
-/** A measured-policy warning. No `.tabula` or file-count heuristic is used. */
+/** A measured-policy warning. No file-count heuristic is used. */
 export interface DatabaseImportPlanWarning {
 	readonly code: 'document-size-threshold' | 'work-threshold';
 	readonly actual: number;

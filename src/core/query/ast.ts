@@ -43,7 +43,7 @@ export type QueryContext = {
 	readonly fields: readonly ResolvedField[];
 };
 
-/** A column by its prefixed Bases id (`note.Status`). */
+/** A column by its id. */
 export function fieldById(ctx: QueryContext, id: PropertyId): ResolvedField | undefined {
 	return ctx.fields.find((field) => field.definition.id === id);
 }

@@ -11,7 +11,7 @@
 import type { ResolvedField } from '../core/schema/propertySchema';
 import type { PropertyId } from '../core/types';
 
-/** A row id. A `TFile` path in `BasesSource`; a row id inside a `.tabula` file. */
+/** A row id: the native `row_…` id of a row in a `.tablify` database. */
 export type RowId = string;
 
 /** The column list, in render order. */

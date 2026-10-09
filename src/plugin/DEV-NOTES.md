@@ -1,26 +1,19 @@
-# Developer notes — current 0.1.0 and planned native view
+# Developer notes — the native `.tablify` plugin
 
-> **Do not confuse current and target behavior.** The checked-in `0.1.0` plugin is Bases-backed. It does not open or write a `.tablify` database file. The native file view is a future refactor documented in [`docs/REFACTOR-PLAN.md`](../../docs/REFACTOR-PLAN.md) and [`docs/`](../../docs/README.md).
+> **Current tree.** This tree is the native `.tablify` plugin (R0–R6 refactor). It has no Bases view, no `.base` config reader or writer, no `.tabula` reader, and no note-backed rows. The `0.1.0` release on the repository's history was Bases-backed. That release is historical; this tree does not reproduce it.
 
-## Current 0.1.0 scratch-vault procedure (historical/current implementation only)
+## Scratch-vault testing
 
-Use a disposable vault, not a user's production vault. The current release procedure is in `README.md` and `docs/09-publishing.md`; build commands come from `package.json`. The current view needs Obsidian Bases enabled and renders note-backed rows. Do not use this procedure to verify future `.tablify` behavior.
+Use a disposable vault, not a user's production vault. Build commands come from `package.json`. The release procedure is in [`docs/09-publishing.md`](../../docs/09-publishing.md).
 
-The 0.1.0 manual test status remains `NOT RUN` for real desktop/phone checks in `docs/manual-test-log.md`. A successful browser harness is not a substitute.
+Manual checks are recorded in [`docs/manual-test-log.md`](../../docs/manual-test-log.md). Their status is `NOT RUN` until a real Obsidian host has run them. A browser harness is not a substitute for those checks.
 
-## Native `.tablify` implementation investigation (future R2)
+## Rules for the native implementation
 
-When implementation is separately authorized:
+- Do not add `BasesView`, `registerBasesView`, `.base` config, `processFrontMatter`, note paths as row IDs, or `.tabula` parsing.
+- Obsidian APIs stay limited to what the plugin needs: custom file views, workspace leaves, vault text files, settings, commands, notices, modals and menus, and `SecretStorage`.
 
-1. Read the pinned `obsidian@1.13.1` type declarations and official custom-view / extension-routing references.
-2. Verify `registerView`, extension routing for `tablify`, file load/unload, rename/modify events, and the supported file-write API in a throwaway plugin/scratch vault before choosing the adapter interface.
-3. Test on the oldest desktop and mobile Obsidian versions intended for support. Do not assume a `FileView` callback or write guarantee from memory.
-4. Build the repository and fake-file tests before mounting the existing grid.
-5. Test corrupt/future-version files and external edits to prove the file is preserved and newer state is not silently overwritten.
-6. Do not use `BasesView`, `registerBasesView`, `.base` config, `processFrontMatter`, note paths as row IDs, or `.tabula` parsing in the target implementation.
+## Where the design lives
 
-## Product-document precedence
-
-- Current behavior for the current release: source and release metadata at the audited commit, plus the historical `0.1.0` changelog.
-- Target behavior: `docs/01–08` and the R0–R6 phase guides, with open decisions explicitly marked.
-- If a future implementation is authorized, obey `AGENTS.md` and the file fence in the specific phase prompt. Plan-only mode does not authorize application code.
+- [`docs/REFACTOR-PLAN.md`](../../docs/REFACTOR-PLAN.md) and [`docs/README.md`](../../docs/README.md) hold the target behaviour and the phase guides.
+- If work on the native file view is authorised, follow `AGENTS.md` and the file fence in the phase prompt. Plan-only mode does not authorise application code.

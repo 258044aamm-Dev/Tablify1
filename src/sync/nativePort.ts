@@ -4,7 +4,7 @@
  * The engine (`pullPush.ts`) speaks `SyncLocalPort`, whose two identifiers are the note path and the property name.
  * This adapter keeps that contract exactly and changes only what the identifiers *mean*: the **path is the local row
  * ID**, and the **property is the local field ID**. Field identity therefore survives a rename, and a row survives
- * a reorder. The engine, the legacy Bases port and the conflict UI are not touched.
+ * a reorder. The engine and the conflict UI are not touched.
  *
  * ## Rules this port enforces
  *

@@ -6,8 +6,7 @@
  *   1. `validateFieldOptions` turns the untrusted `fieldOptions` entry from a `.base` file into a typed
  *      object, dropping what it cannot use **and saying why**. Nothing here throws on bad user data.
  *   2. The two timestamp columns (`created time`, `last modified time`) are read-only descriptors built
- *      in this file. The legacy Bases adapter supplies `file.ctime`/`file.mtime`; native `.tablify` views
- *      supply each row's `createdAt`/`updatedAt` metadata. Neither source writes a cell or frontmatter.
+ *      in this file. Native `.tablify` views supply each row's `createdAt`/`updatedAt` metadata. Neither source writes a cell or frontmatter.
  *   3. `resolveField` picks the descriptor: the declared type when the registry knows it, otherwise `text`
  *      with a recorded reason. A hand-edited `.base` can never make the grid fail to open.
  *
@@ -38,7 +37,7 @@ export type PropertySource = 'database';
 
 /** A query-layer column projection, plus the raw options its adapter supplied. */
 export type PropertyDefinition = {
-	/** The query key: a prefixed Bases id or a native stable field id. */
+	/** The query key: a native stable field id. */
 	readonly id: string;
 	/** The column's visible name. */
 	readonly name: string;
@@ -282,12 +281,11 @@ function localDay(ms: number, ctx: FieldContext): string {
 }
 
 /**
- * Builds one of the two read-only timestamp descriptors shared by the legacy Bases and native views.
+ * Builds one of the two read-only timestamp descriptors used by native views.
  *
  * `toJson` always returns `null` — not "no value", but "nothing to write": the column is not stored in a
  * cell, so a write queue must never reach this branch. The adapter supplies its authoritative metadata:
- * the legacy Bases path passes `file.ctime`/`file.mtime`, while a native `.tablify` view passes the row's
- * `createdAt`/`updatedAt` string from its document metadata.
+ * a native `.tablify` view passes the row's `createdAt`/`updatedAt` string from its document metadata.
  */
 function createTimestampField(
 	id: 'createdTime' | 'lastModifiedTime',

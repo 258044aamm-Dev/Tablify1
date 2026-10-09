@@ -75,7 +75,7 @@ export type SyncLocalPort = {
 	has(path: string): Promise<boolean>;
 	/** One row's canonical values, keyed by local property name. Missing properties are simply absent. */
 	values(path: string): Promise<Readonly<Record<string, CellValue>>>;
-	/** The id an op must carry for a property name (`note.Status` in a Bases view). */
+	/** The id an op must carry for a property name (a native field id, such as `fld_…`). */
 	propertyIdOf(property: string): PropertyId;
 	/** One user action: ops applied, **one** undo step, one write-queue batch. */
 	apply(action: { readonly label: string; readonly ops: readonly Op[] }): Promise<ApplyResult>;

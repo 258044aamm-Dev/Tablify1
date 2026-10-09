@@ -9,8 +9,8 @@
  *
  * So **both directions go through the column's own descriptor**:
  *
- *   · **remote → local** is `descriptor.parse(raw, ctx)`, the same call the `.tabula` reader and a spreadsheet
- *     paste use. A value the column cannot accept is not a conflict and not a crash: it is
+ *   · **remote → local** is `descriptor.parse(raw, ctx)`, the same call a spreadsheet
+ *     paste uses. A value the column cannot accept is not a conflict and not a crash: it is
  *     {@link RemoteValueProblem}, a sentence, which `diff.ts` reports as a `type-mismatch` and the review dialog
  *     shows with both values so a person can see what arrived.
  *   · **local → remote** starts from `descriptor.toJson` — *"canonical value → what actually gets written to

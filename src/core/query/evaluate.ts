@@ -27,9 +27,8 @@ import type { Expr, QueryContext } from './ast';
  * A row as the grid sees it: an identity and canonical values.
  *
  * `rowId` is the identity, and the evaluator treats it as **opaque**: it is never parsed, never
- * sorted by meaning, and never compared to a name. The legacy Bases adapter fills it with a note
- * path because a note is a row there; the `.tablify` repository fills it with a `row_…` id (R3 step
- * 2 — the query layer was renamed for exactly this). Either way the layer above only asks one
+ * sorted by meaning, and never compared to a name. The `.tablify` repository fills it with a `row_…`
+ * id (R3 step 2 — the query layer was renamed for exactly this). The layer above only asks one
  * question of it: "is this row the one the caller named?"
  *
  * The values are already canonical — producing them is the adapter's job — and the query layer never

@@ -2,9 +2,8 @@
  * Field definitions — R1 step 4.
  *
  * A field is `{ id, name, type }` plus the settings its type understands. The vocabulary of those
- * settings is the one the Bases-era plugin already used (`.base` field options: rating `max`,
- * currency `symbol`/`precision`, duration `unit`), moved here into the field itself so a document
- * carries its own schema and a `.base` config is never consulted again.
+ * settings (rating `max`, currency `symbol`/`precision`, duration `unit`) comes from the 0.1.0 Bases-era
+ * plugin. It lives here, in the field itself, so a document carries its own schema.
  *
  * Two rules shape every decision in this module:
  *

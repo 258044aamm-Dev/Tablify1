@@ -26,14 +26,14 @@
  */
 export type CellValue = string | number | boolean | null | readonly string[];
 
-/** A property id is a Bases id, prefixed by its source: `file.name`, `note.Status`, `formula.Total`. */
+/** A property id is an opaque column key. Native columns use their stable field id; nothing parses it. */
 export type PropertyId = string;
 
 /**
- * The legacy grid's field types, closed on purpose: every `switch`/`if` over a type id is exhaustively
- * checked, and `isFieldTypeId` is the only way a name from a hand-edited `.base` file enters this union.
- * The two trailing ids are never registered. The Bases adapter resolves them from file metadata (P11);
- * a native `.tablify` table resolves them from that row's `createdAt`/`updatedAt` metadata (R3 step 7).
+ * The grid's field types, closed on purpose: every `switch`/`if` over a type id is exhaustively
+ * checked, and `isFieldTypeId` is the only way a name from a hand-edited file enters this union.
+ * The two trailing ids are never registered. A native `.tablify` table resolves them from that row's
+ * `createdAt`/`updatedAt` metadata (R3 step 7).
  */
 export type FieldTypeId =
 	| 'text'
