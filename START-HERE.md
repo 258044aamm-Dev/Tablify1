@@ -1,6 +1,6 @@
 # Start here — native `.tablify` refactor docs
 
-> **Plan-only status:** these documents describe the user-approved target and a phased plan. The current `0.1.0` release remains Bases-backed. This file does not authorize application code changes.
+> **Plan-only status:** these documents describe the user-approved target and a phased plan. The current `0.1.0` release remains Bases-backed. This file does not authorize application code changes. On the unreleased branch `refactor/native-tablify`, the Bases path has been removed and the native `.tablify` code is in place; the audited-commit facts below describe `0.1.0`.
 
 ## What this repository currently is
 

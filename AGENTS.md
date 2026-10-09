@@ -1,6 +1,6 @@
 # AGENTS.md — repository rules and refactor boundary
 
-Instructions for any agent or human working in this repository. The current `0.1.0` source is still Bases-backed; the native `.tablify` architecture below is the target, implemented phase by phase under named authorizations. The repository is **plan-only by default**: change documentation only when explicitly requested; do not edit application code, tests, styles, package/manifest/version files, release assets, or vault data unless the user has authorized that specific work. Authorisation is per task, never implied by a previous task. **Standing authorization (2026-10-07): implement phases R1–R5, one step at a time, pushing to `refactor/native-tablify` after every step.** R6, release metadata, version tags, release assets and new runtime dependencies stay under the default fence. See [`docs/08-decisions.md`](docs/08-decisions.md) §Implementation authorization log.
+Instructions for any agent or human working in this repository. The `0.1.0` release is Bases-backed. The branch `refactor/native-tablify` carries the native `.tablify` implementation (phases R1–R6, unreleased); the architecture below is that implementation's target, built phase by phase under named authorizations. The repository is **plan-only by default**: change documentation only when explicitly requested; do not edit application code, tests, styles, package/manifest/version files, release assets, or vault data unless the user has authorized that specific work. Authorisation is per task, never implied by a previous task. **Standing authorization (2026-10-07): implement phases R1–R5, one step at a time, pushing to `refactor/native-tablify` after every step.** R6, release metadata, version tags, release assets and new runtime dependencies stay under the default fence. See [`docs/08-decisions.md`](docs/08-decisions.md) §Implementation authorization log.
 
 ## Source-of-truth order
 
@@ -59,7 +59,7 @@ Stable database/table/field/row/view IDs are data identity. File path is only a 
 
 ## Legacy code policy during transition
 
-- Existing `BasesSource`, `BasesView`, note/frontmatter storage, and `.tabula` parser remain only because they are part of the current 0.1.0 build. Do not add new features to them under the native plan.
+- The Bases views, `BasesSource`, note/frontmatter storage and the `.tabula` parser were removed from the native branch in R6. They remain only in the `0.1.0` release and its history. Do not reintroduce them, and do not add features to them.
 - No new Bases mode, Bases fallback, `.base` migration, `.tabula` support, or note-row import path is part of the target.
 - Do not treat Airtable’s remote “base”/`baseId` terminology as Obsidian Bases integration; Airtable sync is retained by user decision.
 - Do not remove legacy code until the replacement exists and the R6 acceptance gate authorizes cutover.
