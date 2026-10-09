@@ -69,6 +69,7 @@ const FIRST_FIELD = `fld_${'c'.repeat(25)}1`;
 const SECOND_FIELD = `fld_${'c'.repeat(25)}2`;
 const ROW_FIRST = `row_${'e'.repeat(24)}00`;
 const ROW_SECOND = `row_${'e'.repeat(24)}01`;
+const CHECK_FIELD = `fld_${'c'.repeat(25)}3`;
 const OPTION_OPEN = `opt_${'o'.repeat(26)}1`;
 const OPTION_CLOSED = `opt_${'o'.repeat(26)}2`;
 const LINK_FIELD = `fld_${'l'.repeat(25)}1`;
@@ -77,6 +78,29 @@ const INVERSE_FIELD = `fld_${'n'.repeat(25)}1`;
 const TARGET_ROW_ONE = `row_${'p'.repeat(24)}01`;
 const TARGET_ROW_TWO = `row_${'q'.repeat(24)}02`;
 const MISSING_TARGET_ROW = `row_${'r'.repeat(24)}99`;
+
+function checkboxDatabaseText(): string {
+	return JSON.stringify({
+		format: 'tablify',
+		version: 1,
+		databaseId: `db_${'q'.repeat(26)}`,
+		name: 'Checks',
+		tables: [
+			{
+				id: FIRST_TABLE,
+				name: 'Shoots',
+				fields: [
+					{ id: FIRST_FIELD, name: 'Title', type: 'text' },
+					{ id: CHECK_FIELD, name: 'Done', type: 'checkbox' },
+				],
+				rows: [
+					{ id: ROW_FIRST, cells: { [FIRST_FIELD]: 'Shoots 1', [CHECK_FIELD]: false } },
+				],
+				views: [],
+			},
+		],
+	});
+}
 
 function databaseText(name = 'Studio'): string {
 	return JSON.stringify({
@@ -1423,6 +1447,133 @@ describe('native grid keyboard range', () => {
 		undo().click();
 		await flush();
 		expect(textOf(ROW_SECOND)).toBe('beta');
+		expect(rig.vault.writes).toEqual([]);
+	});
+
+	it('Ctrl+A selects the whole table and PageDown moves by a page', async () => {
+		const rig = loadPlugin({ [PATH]: databaseText() });
+		const view = await openPane(rig, PATH);
+		const gridOf = (): HTMLTableElement => {
+			const grid = view.containerEl.querySelector<HTMLTableElement>('[role="grid"]');
+			if (grid === null) {
+				throw new Error('the native table grid must be rendered');
+			}
+			return grid;
+		};
+		const cellOf = (rowId: string): HTMLElement => {
+			const cell = gridOf().querySelector<HTMLElement>(
+				`[data-row-id="${rowId}"][data-field-id="${FIRST_FIELD}"]`,
+			);
+			if (cell === null) {
+				throw new Error('the cell must be rendered');
+			}
+			return cell;
+		};
+		const key = (init: KeyboardEventInit): KeyboardEvent => {
+			const event = new KeyboardEvent('keydown', {
+				bubbles: true,
+				cancelable: true,
+				...init,
+			});
+			gridOf().dispatchEvent(event);
+			return event;
+		};
+
+		cellOf(ROW_FIRST).click();
+		const selectAll = key({ key: 'a', ctrlKey: true });
+		await flush();
+		expect(selectAll.defaultPrevented).toBe(true);
+		expect(cellOf(ROW_FIRST).classList.contains('is-in-range')).toBe(true);
+		expect(cellOf(ROW_SECOND).classList.contains('is-in-range')).toBe(true);
+
+		cellOf(ROW_FIRST).click();
+		key({ key: 'PageDown' });
+		await flush();
+		expect(cellOf(ROW_SECOND).classList.contains('is-active')).toBe(true);
+		expect(rig.vault.writes).toEqual([]);
+	});
+
+	it('typing replaces the active text cell and Enter commits it as one undo step', async () => {
+		const rig = loadPlugin({ [PATH]: databaseText() });
+		const view = await openPane(rig, PATH);
+		const gridOf = (): HTMLTableElement => {
+			const grid = view.containerEl.querySelector<HTMLTableElement>('[role="grid"]');
+			if (grid === null) {
+				throw new Error('the native table grid must be rendered');
+			}
+			return grid;
+		};
+		const cellOf = (rowId: string): HTMLElement => {
+			const cell = gridOf().querySelector<HTMLElement>(
+				`[data-row-id="${rowId}"][data-field-id="${FIRST_FIELD}"]`,
+			);
+			if (cell === null) {
+				throw new Error('the cell must be rendered');
+			}
+			return cell;
+		};
+
+		cellOf(ROW_FIRST).click();
+		gridOf().dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'z', bubbles: true, cancelable: true }),
+		);
+		await flush();
+		const editor = cellOf(ROW_FIRST).querySelector<HTMLInputElement | HTMLTextAreaElement>(
+			'[data-native-editor]',
+		);
+		if (editor === null) {
+			throw new Error('typing must open the cell editor');
+		}
+		expect(editor.value).toBe('z');
+		editor.dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+		);
+		await flush();
+		expect((cellOf(ROW_FIRST).textContent ?? '').trim()).toBe('z');
+		expect(rig.vault.writes).toEqual([]);
+	});
+
+	it('Space toggles a checkbox cell, and Undo restores it', async () => {
+		const rig = loadPlugin({ [PATH]: checkboxDatabaseText() });
+		const view = await openPane(rig, PATH);
+		const gridOf = (): HTMLTableElement => {
+			const grid = view.containerEl.querySelector<HTMLTableElement>('[role="grid"]');
+			if (grid === null) {
+				throw new Error('the native table grid must be rendered');
+			}
+			return grid;
+		};
+		const doneCell = (): HTMLElement => {
+			const cell = gridOf().querySelector<HTMLElement>(
+				`[data-row-id="${ROW_FIRST}"][data-field-id="${CHECK_FIELD}"]`,
+			);
+			if (cell === null) {
+				throw new Error('the checkbox cell must be rendered');
+			}
+			return cell;
+		};
+		const undo = (): HTMLButtonElement => {
+			const button = Array.from(
+				view.containerEl.querySelectorAll<HTMLButtonElement>('button'),
+			).find((candidate) => (candidate.textContent ?? '').trim() === 'Undo');
+			if (button === undefined) {
+				throw new Error('the Undo button must be rendered');
+			}
+			return button;
+		};
+
+		const before = (doneCell().textContent ?? '').trim();
+		doneCell().click();
+		const space = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+		gridOf().dispatchEvent(space);
+		await flush();
+		expect(space.defaultPrevented).toBe(true);
+		const after = (doneCell().textContent ?? '').trim();
+		expect(after).not.toBe(before);
+
+		undo().click();
+		await flush();
+		expect((doneCell().textContent ?? '').trim()).toBe(before);
 		expect(rig.vault.writes).toEqual([]);
 	});
 });

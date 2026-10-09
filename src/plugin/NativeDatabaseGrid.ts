@@ -221,6 +221,14 @@ function isInsideEditor(target: EventTarget | null): boolean {
 	return target instanceof Element && target.closest('[data-native-editor]') !== null;
 }
 
+/** Whether a typed character may start an edit in this editor, replacing the cell's text. */
+function typeReplaces(editor: EditorId, key: string): boolean {
+	if (editor === 'text' || editor === 'longText') {
+		return true;
+	}
+	return editor === 'number' && /^[0-9.-]$/.test(key);
+}
+
 function editorOf(field: ResolvedField): EditorId {
 	return field.descriptor.editor ?? 'text';
 }
@@ -1615,6 +1623,7 @@ export class NativeDatabaseGrid {
 		model: NativeGridModel,
 		rowHeight: number,
 		store: DatabaseStore,
+		typed: string | null = null,
 	): void {
 		const column = model.visibleColumns.find(
 			(candidate) => candidate.field.definition.id === selection.fieldId,
@@ -1627,8 +1636,9 @@ export class NativeDatabaseGrid {
 		if (draft === null) {
 			return;
 		}
+		const start = typed !== null && typeof draft === 'string' ? typed : draft;
 		this.selection = selection;
-		this.editing = { ...selection, draft, error: null, search: '' };
+		this.editing = { ...selection, draft: start, error: null, search: '' };
 		this.renderRows(scroll, grid, body, model, rowHeight, store);
 		this.focusEditor(grid);
 	}
@@ -2260,6 +2270,30 @@ export class NativeDatabaseGrid {
 		store.dispatch(operations, direction === 'down' ? 'Fill down' : 'Fill right');
 	}
 
+	/** Flip one checkbox cell as a single undoable step. Read-only cells are left alone. */
+	private toggleCheckbox(
+		rowId: string,
+		column: NativeColumn,
+		model: NativeGridModel,
+		store: DatabaseStore,
+	): void {
+		const current = viewCellOf(model.activeTable, rowId, column.field.definition.id);
+		if (editDraftFor(model, column, rowId, current) === null) {
+			return;
+		}
+		const updatedAt = timestampFor(this.environment);
+		store.dispatch(
+			{
+				kind: 'set-cells',
+				tableId: model.table.id,
+				rowId,
+				edits: [{ fieldId: column.field.definition.id, value: current !== true }],
+				...(updatedAt === null ? {} : { updatedAt }),
+			},
+			`Toggle ${column.field.definition.name}`,
+		);
+	}
+
 	private onKeyDown(
 		event: KeyboardEvent,
 		scroll: HTMLElement,
@@ -2343,6 +2377,104 @@ export class NativeDatabaseGrid {
 			return;
 		}
 		if (
+			(event.ctrlKey || event.metaKey) &&
+			!event.altKey &&
+			event.key.toLowerCase() === 'a' &&
+			rows.length > 0 &&
+			columns.length > 0
+		) {
+			const firstRow = rows[0];
+			const lastRow = rows[rows.length - 1];
+			const firstColumn = columns[0];
+			const lastColumn = columns[columns.length - 1];
+			if (
+				firstRow !== undefined &&
+				lastRow !== undefined &&
+				firstColumn !== undefined &&
+				lastColumn !== undefined
+			) {
+				event.preventDefault();
+				this.rangeAnchor = {
+					databaseId: model.databaseId,
+					tableId: model.table.id,
+					rowId: firstRow.rowId,
+					fieldId: firstColumn.field.definition.id,
+				};
+				this.activate(
+					{
+						databaseId: model.databaseId,
+						tableId: model.table.id,
+						rowId: lastRow.rowId,
+						fieldId: lastColumn.field.definition.id,
+					},
+					scroll,
+					grid,
+					body,
+					model,
+					rowHeight,
+					store,
+				);
+			}
+			return;
+		}
+		if (
+			event.key === ' ' &&
+			hadSelection &&
+			!event.altKey &&
+			!event.ctrlKey &&
+			!event.metaKey &&
+			!event.shiftKey
+		) {
+			const row = rows[rowIndex];
+			const column = columns[columnIndex];
+			if (
+				row !== undefined &&
+				column !== undefined &&
+				!isLinkColumn(column) &&
+				editorOf(column.field) === 'checkbox'
+			) {
+				event.preventDefault();
+				this.toggleCheckbox(row.rowId, column, model, store);
+				return;
+			}
+		}
+		if (
+			event.key.length === 1 &&
+			hadSelection &&
+			!event.altKey &&
+			!event.ctrlKey &&
+			!event.metaKey &&
+			event.key !== ' '
+		) {
+			const row = rows[rowIndex];
+			const column = columns[columnIndex];
+			if (
+				row !== undefined &&
+				column !== undefined &&
+				!isLinkColumn(column) &&
+				typeReplaces(editorOf(column.field), event.key)
+			) {
+				event.preventDefault();
+				this.rangeAnchor = null;
+				this.beginEdit(
+					{
+						databaseId: model.databaseId,
+						tableId: model.table.id,
+						rowId: row.rowId,
+						fieldId: column.field.definition.id,
+					},
+					scroll,
+					grid,
+					body,
+					model,
+					rowHeight,
+					store,
+					event.key,
+				);
+				return;
+			}
+		}
+		if (
 			event.altKey &&
 			!event.ctrlKey &&
 			!event.metaKey &&
@@ -2377,7 +2509,14 @@ export class NativeDatabaseGrid {
 			this.rangeAnchor = null;
 		}
 		let handled = true;
+		const pageRows = Math.max(1, Math.floor((scroll.clientHeight - HEADER_HEIGHT) / rowHeight));
 		switch (event.key) {
+			case 'PageDown':
+				rowIndex = Math.min(rows.length - 1, rowIndex + pageRows);
+				break;
+			case 'PageUp':
+				rowIndex = Math.max(0, rowIndex - pageRows);
+				break;
 			case 'ArrowDown':
 				rowIndex = Math.min(rows.length - 1, rowIndex + 1);
 				break;
