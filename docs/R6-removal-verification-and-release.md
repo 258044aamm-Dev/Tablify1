@@ -214,3 +214,11 @@ A non-run check remains `NOT RUN`; do not infer pass from the browser harness.
 - **Test:** a new two-column fixture, "Shift+Space selects the whole row, Ctrl+Space the whole column, and Alt+R fills right". It checks the whole row (both columns, not the other row), the whole column (both rows, not the other column), and Alt+R filling `x` to `Shoots 1` with one Undo to `x`. The row and column checks fail on the slice G grid.
 - **Gates:** `check` exit 0; 75 files; 1585 tests; bundle 134270 bytes gzip. Module comparison against `2c1bcc7`, alias-normalised: only `NativeDatabaseGrid.ts` changed. Reachability: LIVE 109, DEAD 0. **NOT RUN:** the shortcuts on macOS and Windows layouts, and header-click selection, which is not built.
 - **Still open for R4:** clickable row and column headers, and the R4 list's Step 1 items that the old grid had and this one has not yet verified in the host: frozen primary column, column resize and reorder, and virtualized rows.
+
+### R4 slice I: row-number and column-header selection
+
+- **Change:** a click on a row number selects that whole row. A click on a column header selects that whole column. Both reuse the slice H whole-line selection, so copy, clear, fill, and bulk edit apply unchanged.
+- **Unchanged:** cell clicks, the row-number click without a range, and all other clicks keep their existing behaviour. A header click while an editor is open does nothing, as before. The handler checks header targets only after the existing editor and link-navigation guard.
+- **Test:** "a click on a row number selects the row and a click on a column header selects the column". It checks row and column selection, and that a plain cell click afterwards leaves no range. The test fails on the slice H grid.
+- **Gates:** `check` exit 0; 75 files; 1586 tests; bundle 134424 bytes gzip. Module comparison against `5b914ae`, alias-normalised: only `NativeDatabaseGrid.ts` changed. Reachability: LIVE 109, DEAD 0. **NOT RUN:** header clicks on touch devices and in the host, and the header hover and focus styling.
+- **Still open for R4:** select-all corner, column resize and reorder, row reorder, frozen primary column, density control, and host checks for virtual rows and sticky header.

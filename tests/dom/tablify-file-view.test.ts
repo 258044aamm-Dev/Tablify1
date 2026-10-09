@@ -1878,4 +1878,54 @@ describe('native grid keyboard range', () => {
 		expect((cellOf(ROW_FIRST, SECOND_FIELD).textContent ?? '').trim()).toBe('x');
 		expect(rig.vault.writes).toEqual([]);
 	});
+
+	it('a click on a row number selects the row and a click on a column header selects the column', async () => {
+		const rig = loadPlugin({ [PATH]: twoFieldDatabaseText() });
+		const view = await openPane(rig, PATH);
+		const gridOf = (): HTMLTableElement => {
+			const grid = view.containerEl.querySelector<HTMLTableElement>('[role="grid"]');
+			if (grid === null) {
+				throw new Error('the native table grid must be rendered');
+			}
+			return grid;
+		};
+		const cellOf = (rowId: string, fieldId: string): HTMLElement => {
+			const cell = gridOf().querySelector<HTMLElement>(
+				`[data-row-id="${rowId}"][data-field-id="${fieldId}"]`,
+			);
+			if (cell === null) {
+				throw new Error('the cell must be rendered');
+			}
+			return cell;
+		};
+		const headerOf = (selector: string): HTMLElement => {
+			const header = gridOf().querySelector<HTMLElement>(selector);
+			if (header === null) {
+				throw new Error(`the header ${selector} must be rendered`);
+			}
+			return header;
+		};
+		const inRange = (rowId: string, fieldId: string): boolean =>
+			cellOf(rowId, fieldId).classList.contains('is-in-range');
+
+		// Row number click: the whole row, both columns, and not the other row.
+		headerOf(`th[data-row-id="${ROW_FIRST}"]`).click();
+		await flush();
+		expect(inRange(ROW_FIRST, FIRST_FIELD)).toBe(true);
+		expect(inRange(ROW_FIRST, SECOND_FIELD)).toBe(true);
+		expect(inRange(ROW_SECOND, FIRST_FIELD)).toBe(false);
+
+		// Column header click: the whole column, both rows, and not the other column.
+		headerOf(`th[data-field-id="${FIRST_FIELD}"]`).click();
+		await flush();
+		expect(inRange(ROW_FIRST, FIRST_FIELD)).toBe(true);
+		expect(inRange(ROW_SECOND, FIRST_FIELD)).toBe(true);
+		expect(inRange(ROW_FIRST, SECOND_FIELD)).toBe(false);
+
+		// A plain cell click still selects a single cell with no range.
+		cellOf(ROW_SECOND, SECOND_FIELD).click();
+		await flush();
+		expect(inRange(ROW_FIRST, FIRST_FIELD)).toBe(false);
+		expect(inRange(ROW_SECOND, SECOND_FIELD)).toBe(false);
+	});
 });

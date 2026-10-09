@@ -899,6 +899,15 @@ export class NativeDatabaseGrid {
 			) {
 				return;
 			}
+			const header = target.closest<HTMLElement>(
+				'.tablify-native-row-number[data-row-id], .tablify-native-column-header[data-field-id]',
+			);
+			if (header !== null) {
+				if (this.editing === null) {
+					this.selectFromHeader(header, scroll, grid, body, model, rowHeight, store);
+				}
+				return;
+			}
 			const cell = target.closest<HTMLElement>('[data-row-id][data-field-id]');
 			const rowId = cell?.getAttribute('data-row-id');
 			const fieldId = cell?.getAttribute('data-field-id');
@@ -2484,6 +2493,33 @@ export class NativeDatabaseGrid {
 		);
 		if (!result.ok) {
 			new Notice(result.message);
+		}
+	}
+
+	/** A click on a row number selects that whole row; a click on a column header selects that whole column. */
+	private selectFromHeader(
+		header: HTMLElement,
+		scroll: HTMLElement,
+		grid: HTMLTableElement,
+		body: HTMLTableSectionElement,
+		model: NativeGridModel,
+		rowHeight: number,
+		store: DatabaseStore,
+	): void {
+		const rowId = header.getAttribute('data-row-id');
+		if (rowId !== null) {
+			const rowIndex = model.visibleRows.findIndex((row) => row.rowId === rowId);
+			if (rowIndex >= 0) {
+				this.selectLine('row', rowIndex, 0, model, scroll, grid, body, rowHeight, store);
+			}
+			return;
+		}
+		const fieldId = header.getAttribute('data-field-id');
+		const columnIndex = model.visibleColumns.findIndex(
+			(column) => column.field.definition.id === fieldId,
+		);
+		if (columnIndex >= 0) {
+			this.selectLine('column', 0, columnIndex, model, scroll, grid, body, rowHeight, store);
 		}
 	}
 
