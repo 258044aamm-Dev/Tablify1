@@ -222,3 +222,11 @@ A non-run check remains `NOT RUN`; do not infer pass from the browser harness.
 - **Test:** "a click on a row number selects the row and a click on a column header selects the column". It checks row and column selection, and that a plain cell click afterwards leaves no range. The test fails on the slice H grid.
 - **Gates:** `check` exit 0; 75 files; 1586 tests; bundle 134424 bytes gzip. Module comparison against `5b914ae`, alias-normalised: only `NativeDatabaseGrid.ts` changed. Reachability: LIVE 109, DEAD 0. **NOT RUN:** header clicks on touch devices and in the host, and the header hover and focus styling.
 - **Still open for R4:** select-all corner, column resize and reorder, row reorder, frozen primary column, density control, and host checks for virtual rows and sticky header.
+
+### R4 slice J: select-all from the header corner
+
+- **Change:** a click on the header corner (the `#` cell above the row numbers) selects the whole table. It uses the same range as Ctrl/Cmd+A, from the first row and column to the last. The keyboard branch is unchanged.
+- **Unchanged:** cell, row-number, and column-header clicks, and the Ctrl/Cmd+A shortcut. A corner click while an editor is open does nothing.
+- **Test:** "a click on the header corner selects the whole table, as Ctrl/Cmd+A does". It checks that all four cells of a two-by-two grid are in range. The test fails on the slice I grid.
+- **Gates:** `check` exit 0; 75 files; 1587 tests; bundle 134519 bytes gzip. Module comparison against `205839e`, alias-normalised: only `NativeDatabaseGrid.ts` changed. Reachability: LIVE 109, DEAD 0. **NOT RUN:** corner clicks on touch devices and in the host, and the Ctrl/Cmd+A check on macOS.
+- **Still open for R4:** column resize and reorder, row reorder, frozen primary column, density control, and host checks for virtual rows and the sticky header.

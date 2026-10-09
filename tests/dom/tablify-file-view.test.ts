@@ -1928,4 +1928,36 @@ describe('native grid keyboard range', () => {
 		expect(inRange(ROW_FIRST, FIRST_FIELD)).toBe(false);
 		expect(inRange(ROW_SECOND, SECOND_FIELD)).toBe(false);
 	});
+
+	it('a click on the header corner selects the whole table, as Ctrl/Cmd+A does', async () => {
+		const rig = loadPlugin({ [PATH]: twoFieldDatabaseText() });
+		const view = await openPane(rig, PATH);
+		const gridOf = (): HTMLTableElement => {
+			const grid = view.containerEl.querySelector<HTMLTableElement>('[role="grid"]');
+			if (grid === null) {
+				throw new Error('the native table grid must be rendered');
+			}
+			return grid;
+		};
+		const cellOf = (rowId: string, fieldId: string): HTMLElement => {
+			const cell = gridOf().querySelector<HTMLElement>(
+				`[data-row-id="${rowId}"][data-field-id="${fieldId}"]`,
+			);
+			if (cell === null) {
+				throw new Error('the cell must be rendered');
+			}
+			return cell;
+		};
+		const corner = gridOf().querySelector<HTMLElement>('thead .tablify-native-row-number');
+		if (corner === null) {
+			throw new Error('the header corner must be rendered');
+		}
+		corner.click();
+		await flush();
+		for (const rowId of [ROW_FIRST, ROW_SECOND]) {
+			for (const fieldId of [FIRST_FIELD, SECOND_FIELD]) {
+				expect(cellOf(rowId, fieldId).classList.contains('is-in-range')).toBe(true);
+			}
+		}
+	});
 });

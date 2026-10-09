@@ -899,6 +899,13 @@ export class NativeDatabaseGrid {
 			) {
 				return;
 			}
+			const corner = target.closest<HTMLElement>('thead .tablify-native-row-number');
+			if (corner !== null) {
+				if (this.editing === null) {
+					this.selectAll(scroll, grid, body, model, rowHeight, store);
+				}
+				return;
+			}
 			const header = target.closest<HTMLElement>(
 				'.tablify-native-row-number[data-row-id], .tablify-native-column-header[data-field-id]',
 			);
@@ -2494,6 +2501,51 @@ export class NativeDatabaseGrid {
 		if (!result.ok) {
 			new Notice(result.message);
 		}
+	}
+
+	/** A click on the header corner selects the whole table, the same range as Ctrl/Cmd+A. */
+	private selectAll(
+		scroll: HTMLElement,
+		grid: HTMLTableElement,
+		body: HTMLTableSectionElement,
+		model: NativeGridModel,
+		rowHeight: number,
+		store: DatabaseStore,
+	): void {
+		const rows = model.visibleRows;
+		const columns = model.visibleColumns;
+		const firstRow = rows[0];
+		const lastRow = rows[rows.length - 1];
+		const firstColumn = columns[0];
+		const lastColumn = columns[columns.length - 1];
+		if (
+			firstRow === undefined ||
+			lastRow === undefined ||
+			firstColumn === undefined ||
+			lastColumn === undefined
+		) {
+			return;
+		}
+		this.rangeAnchor = {
+			databaseId: model.databaseId,
+			tableId: model.table.id,
+			rowId: firstRow.rowId,
+			fieldId: firstColumn.field.definition.id,
+		};
+		this.activate(
+			{
+				databaseId: model.databaseId,
+				tableId: model.table.id,
+				rowId: lastRow.rowId,
+				fieldId: lastColumn.field.definition.id,
+			},
+			scroll,
+			grid,
+			body,
+			model,
+			rowHeight,
+			store,
+		);
 	}
 
 	/** A click on a row number selects that whole row; a click on a column header selects that whole column. */
