@@ -16,7 +16,7 @@ of the script, not a footnote — classifying it is the decision R3 step 1 exist
 
 ## Files, with the markers they carry
 
-### `replace` — 20 file(s)
+### `replace` — 19 file(s)
 
 Rule: `src/adapters/`, `src/core/fieldTypes/`, `src/core/`, `src/grid/`, `src/plugin/`
 
@@ -41,7 +41,6 @@ Rule: `src/adapters/`, `src/core/fieldTypes/`, `src/core/`, `src/grid/`, `src/pl
 | `src/grid/store/selectors.ts` | filePath ×35, PropertyId ×7, propertyId ×2 |
 | `src/grid/store/store.ts` | filePath ×6, PropertyId ×3, propertyId ×5, RowSource ×1 |
 | `src/grid/store/types.ts` | filePath ×2, PropertyId ×3, propertyId ×1, RowSource ×1 |
-| `src/plugin/export/runExport.ts` | filePath ×2, PropertyId ×2 |
 
 ### `remote-record-id` — 3 file(s)
 
@@ -82,9 +81,9 @@ Rule: `tests/unit/view-state.test.ts`, `tests/unit/value-vocabulary.test.ts`
 
 ## Totals
 
-36 files carry 455 marker occurrences.
+35 files carry 451 marker occurrences.
 
-- `replace`: 20 file(s), 315 occurrence(s)
+- `replace`: 19 file(s), 311 occurrence(s)
 - `host-path`: 0 file(s), 0 occurrence(s)
 - `remote-record-id`: 3 file(s), 13 occurrence(s)
 - `historical`: 11 file(s), 119 occurrence(s)

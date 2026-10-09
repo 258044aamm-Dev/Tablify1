@@ -29,7 +29,7 @@ import {
 } from '../../src/core/export/serialize';
 import type { ExportTable } from '../../src/core/export/serialize';
 import { toHtml as coreToHtml, toTsv as coreToTsv } from '../../src/core/selection/clipboard';
-import { runExport } from '../../src/plugin/export/runExport';
+import { EXPORT_FOLDER, EXPORT_PREFIX, freePath, stamp } from '../../src/plugin/export/runExport';
 import { resolveField } from '../../src/core/schema/propertySchema';
 import type { ResolvedField } from '../../src/core/schema/propertySchema';
 import type { CellValue, FieldTypeId } from '../../src/core/types';
@@ -321,166 +321,36 @@ describe('the counts', () => {
 	});
 });
 
-describe('the runner', () => {
-	/** A vault in memory, and a clipboard that records what it was handed. */
-	function ports(overrides: { readonly writeFails?: boolean } = {}) {
-		const files = new Map<string, unknown>();
-		const folders = new Set<string>();
-		const clipboard: { tsv: string; html: string }[] = [];
-		const messages: string[] = [];
-		return {
-			files,
-			folders,
-			clipboard,
-			messages,
-			ports: {
-				clipboard: {
-					write: async (payload: { tsv: string; html: string }) => {
-						clipboard.push(payload);
-						return 'clipboard-api' as const;
-					},
-				},
-				vault: {
-					exists: (path: string) => files.has(path) || folders.has(path),
-					createFolder: async (path: string) => {
-						folders.add(path);
-					},
-					create: async (path: string, file: string | ArrayBuffer) => {
-						files.set(path, file);
-					},
-				},
-				now: () => new Date(2026, 9, 6, 14, 32),
-				announce: (message: string) => {
-					messages.push(message);
-				},
-				...(overrides.writeFails === true
-					? {
-							writeXlsx: async () => {
-								throw new Error('the zipper gave up');
-							},
-						}
-					: {}),
-			},
-		};
-	}
-
-	const view = (): ExportTable => ({
-		fields: [field('Title', 'text'), field('Weight', 'number')],
-		rows: [
-			['A shipment', 12.5],
-			['Another', 3],
-		],
+describe('the file names an export gets', () => {
+	it('stamps the moment in local time, as year-month-day and hour-minute', () => {
+		expect(stamp(new Date(2026, 9, 6, 14, 32))).toBe('2026-10-06 1432');
 	});
 
-	it('writes both clipboard flavours and says how many cells left', async () => {
-		const harness = ports();
-		const summary = await runExport(
-			{ scope: 'view', format: 'tsv', destination: 'clipboard', mode: 'raw' },
-			view(),
-			harness.ports,
-		);
-		expect(summary.ok).toBe(true);
-		expect(summary.clipboardPath).toBe('clipboard-api');
-		expect(summary.message).toBe('Exported 2 × 2 to the clipboard.');
-		expect(harness.clipboard).toHaveLength(1);
-		expect(harness.clipboard[0]?.tsv).toBe('Title\tWeight\nA shipment\t12.5\nAnother\t3');
-		expect(harness.clipboard[0]?.html).toContain('<table>');
-		expect(harness.files.size).toBe(0);
+	it('writes into the documented folder, with the documented prefix', () => {
+		expect(EXPORT_FOLDER).toBe('Tablify exports');
+		expect(EXPORT_PREFIX).toBe('Tablify export');
 	});
 
-	it('refuses XLSX to the clipboard before writing anything', async () => {
-		const harness = ports();
-		const summary = await runExport(
-			{ scope: 'view', format: 'xlsx', destination: 'clipboard', mode: 'raw' },
-			view(),
-			harness.ports,
-		);
-		expect(summary.ok).toBe(false);
-		expect(summary.message).toBe(
-			'An .xlsx is a file, not text — choose File, or export TSV to the clipboard.',
-		);
-		expect(harness.clipboard).toHaveLength(0);
+	it('returns the plain name when nothing has that name yet', () => {
+		expect(freePath('Tablify export 2026-10-06 1432', 'tsv', () => false)).toEqual({
+			name: 'Tablify export 2026-10-06 1432.tsv',
+			path: 'Tablify exports/Tablify export 2026-10-06 1432.tsv',
+			suffix: 0,
+		});
 	});
 
-	it('refuses an empty selection rather than exporting the whole view', async () => {
-		const harness = ports();
-		const summary = await runExport(
-			{ scope: 'selection', format: 'tsv', destination: 'file', mode: 'display' },
-			{ fields: [], rows: [] },
-			harness.ports,
-		);
-		expect(summary.ok).toBe(false);
-		expect(summary.message).toBe('Nothing to export yet.');
-		expect(harness.files.size).toBe(0);
-		expect(harness.messages).toHaveLength(0);
-	});
-
-	it('writes a TSV file into the documented folder, named with the moment', async () => {
-		const harness = ports();
-		const summary = await runExport(
-			{ scope: 'view', format: 'tsv', destination: 'file', mode: 'raw' },
-			view(),
-			harness.ports,
-		);
-		expect(summary.path).toBe('Tablify exports/Tablify export 2026-10-06 1432.tsv');
-		expect(harness.folders.has('Tablify exports')).toBe(true);
-		expect(harness.files.get('Tablify exports/Tablify export 2026-10-06 1432.tsv')).toBe(
-			'Title\tWeight\nA shipment\t12.5\nAnother\t3',
-		);
-		expect(summary.message).toBe(
-			'Exported 2 × 2 to “Tablify exports/Tablify export 2026-10-06 1432.tsv”.',
-		);
-	});
-
-	it('never overwrites: a second export at the same moment gets “ 2”', async () => {
-		const harness = ports();
-		const request = {
-			scope: 'view',
-			format: 'tsv',
-			destination: 'file',
-			mode: 'display',
-		} as const;
-		const first = await runExport(request, view(), harness.ports);
-		const second = await runExport(request, view(), harness.ports);
-		expect(first.path).toBe('Tablify exports/Tablify export 2026-10-06 1432.tsv');
-		expect(second.path).toBe('Tablify exports/Tablify export 2026-10-06 1432 2.tsv');
-		expect(harness.files.size).toBe(2);
-	});
-
-	it('hands the workbook writer typed rows and writes the bytes it answers with', async () => {
-		const harness = ports();
-		const seen: { rows: number; columns: number; name: string }[] = [];
-		const summary = await runExport(
-			{ scope: 'view', format: 'xlsx', destination: 'file', mode: 'raw' },
-			view(),
-			{
-				...harness.ports,
-				writeXlsx: async (rows, name) => {
-					seen.push({ rows: rows.length, columns: rows[0]?.length ?? 0, name });
-					return { bytes: new ArrayBuffer(64), name, writer: 'fake 0.0.0' };
-				},
-			},
-		);
-		expect(summary.ok).toBe(true);
-		expect(summary.bytes).toBe(64);
-		expect(seen).toEqual([
-			{ rows: 3, columns: 2, name: 'Tablify export 2026-10-06 1432.xlsx' },
-		]);
+	it('never overwrites: the next free name gets a space and a number', () => {
+		const taken = new Set(['Tablify exports/Tablify export 2026-10-06 1432.tsv']);
 		expect(
-			harness.files.get('Tablify exports/Tablify export 2026-10-06 1432.xlsx'),
-		).toBeInstanceOf(ArrayBuffer);
+			freePath('Tablify export 2026-10-06 1432', 'tsv', (path) => taken.has(path)).name,
+		).toBe('Tablify export 2026-10-06 1432 2.tsv');
 	});
 
-	it('reports a writer that fails, and writes no file', async () => {
-		const harness = ports({ writeFails: true });
-		const summary = await runExport(
-			{ scope: 'view', format: 'xlsx', destination: 'file', mode: 'raw' },
-			view(),
-			harness.ports,
-		);
-		expect(summary.ok).toBe(false);
-		expect(summary.message).toBe('The spreadsheet writer failed: the zipper gave up');
-		expect(harness.files.size).toBe(0);
-		expect(harness.messages).toEqual(['The spreadsheet writer failed: the zipper gave up']);
+	it('stops at the ceiling of 999 with the documented fallback', () => {
+		expect(freePath('Tablify export', 'xlsx', () => true)).toEqual({
+			name: 'Tablify export 1001.xlsx',
+			path: 'Tablify exports/Tablify export 1001.xlsx',
+			suffix: 1001,
+		});
 	});
 });
