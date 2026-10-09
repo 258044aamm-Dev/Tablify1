@@ -21,6 +21,7 @@ import {
 	TablifyFileView,
 } from '../../src/plugin/TablifyFileView';
 import { parseDocument } from '../../src/core/database/index';
+import { fromHtml } from '../../src/core/selection/clipboard';
 import { Plugin, noticeLog } from '../mocks/obsidian';
 import { createFakeVaultFile } from '../fakes/vaultFile';
 import { augment } from './support/dom';
@@ -1268,6 +1269,89 @@ describe('native grid keyboard range', () => {
 		key({ key: 'Escape' });
 		await flush();
 		expect(gridOf().querySelectorAll('.is-in-range')).toHaveLength(0);
+		expect(rig.vault.writes).toEqual([]);
+	});
+
+	it('copies, cuts and pastes the range as TSV and HTML, one undo step per action', async () => {
+		const rig = loadPlugin({ [PATH]: databaseText() });
+		const view = await openPane(rig, PATH);
+		const gridOf = (): HTMLTableElement => {
+			const grid = view.containerEl.querySelector<HTMLTableElement>('[role="grid"]');
+			if (grid === null) {
+				throw new Error('the native table grid must be rendered');
+			}
+			return grid;
+		};
+		const cellOf = (rowId: string): HTMLElement => {
+			const cell = gridOf().querySelector<HTMLElement>(
+				`[data-row-id="${rowId}"][data-field-id="${FIRST_FIELD}"]`,
+			);
+			if (cell === null) {
+				throw new Error('the cell must be rendered');
+			}
+			return cell;
+		};
+		const textOf = (rowId: string): string => (cellOf(rowId).textContent ?? '').trim();
+		const key = (init: KeyboardEventInit): void => {
+			gridOf().dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, ...init }));
+		};
+		const clipboardEvent = (type: string, data: Map<string, string>): Event => {
+			const event = new Event(type, { bubbles: true, cancelable: true });
+			Object.defineProperty(event, 'clipboardData', {
+				value: {
+					getData: (format: string): string => data.get(format) ?? '',
+					setData: (format: string, value: string): void => {
+						data.set(format, value);
+					},
+				},
+			});
+			gridOf().dispatchEvent(event);
+			return event;
+		};
+		const undo = (): HTMLButtonElement => {
+			const button = Array.from(
+				view.containerEl.querySelectorAll<HTMLButtonElement>('button'),
+			).find((candidate) => (candidate.textContent ?? '').trim() === 'Undo');
+			if (button === undefined) {
+				throw new Error('the Undo button must be rendered');
+			}
+			return button;
+		};
+
+		cellOf(ROW_FIRST).click();
+		key({ key: 'ArrowDown', shiftKey: true });
+		await flush();
+
+		const copied = new Map<string, string>();
+		const copy = clipboardEvent('copy', copied);
+		expect(copy.defaultPrevented).toBe(true);
+		expect(copied.get('text/plain')).toBe('Shoots 1\nShoots 2');
+		expect(fromHtml(copied.get('text/html') ?? '')).toEqual([['Shoots 1'], ['Shoots 2']]);
+
+		const cut = clipboardEvent('cut', new Map());
+		expect(cut.defaultPrevented).toBe(true);
+		await flush();
+		expect(textOf(ROW_FIRST)).toBe('');
+		expect(textOf(ROW_SECOND)).toBe('');
+		undo().click();
+		await flush();
+		expect(textOf(ROW_FIRST)).toBe('Shoots 1');
+		expect(textOf(ROW_SECOND)).toBe('Shoots 2');
+
+		cellOf(ROW_FIRST).click();
+		clipboardEvent('paste', new Map([['text/plain', 'alpha\nbeta']]));
+		await flush();
+		expect(textOf(ROW_FIRST)).toBe('alpha');
+		expect(textOf(ROW_SECOND)).toBe('beta');
+		undo().click();
+		await flush();
+		expect(textOf(ROW_FIRST)).toBe('Shoots 1');
+		expect(textOf(ROW_SECOND)).toBe('Shoots 2');
+
+		cellOf(ROW_FIRST).click();
+		clipboardEvent('paste', new Map([['text/plain', '=1+1']]));
+		await flush();
+		expect(textOf(ROW_FIRST)).toBe('=1+1');
 		expect(rig.vault.writes).toEqual([]);
 	});
 });

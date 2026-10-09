@@ -25,6 +25,10 @@ import { buildView } from '../core/view/pipeline';
 import type { ViewResult } from '../core/view/pipeline';
 import type { RowView } from '../core/query/evaluate';
 import type { CellEdit, DatabaseOperation } from '../core/database/operations';
+import type { Matrix } from '../core/selection/clipboard';
+import { fromHtml, fromTsv, toHtml, toTsv } from '../core/selection/clipboard';
+import type { CellValue as ClipboardCellValue } from '../core/types';
+import { Notice } from 'obsidian';
 import { rowHeightOf, rowWindow } from '../grid/store/window';
 import type { RowDensity } from '../grid/store/window';
 
@@ -210,6 +214,11 @@ function gridValue(activeTable: ActiveTableSnapshot, rowId: string, fieldId: str
 		return null;
 	}
 	return stored;
+}
+
+/** True when the event came from an open cell editor, whose own text input keeps its native clipboard. */
+function isInsideEditor(target: EventTarget | null): boolean {
+	return target instanceof Element && target.closest('[data-native-editor]') !== null;
 }
 
 function editorOf(field: ResolvedField): EditorId {
@@ -927,6 +936,26 @@ export class NativeDatabaseGrid {
 		});
 		grid.addEventListener('keydown', (event: KeyboardEvent) => {
 			this.onKeyDown(event, scroll, grid, body, model, rowHeight, store);
+		});
+		grid.addEventListener('copy', (event: ClipboardEvent) => {
+			this.onClipboardCopy(event, model, store, false);
+		});
+		grid.addEventListener('cut', (event: ClipboardEvent) => {
+			this.onClipboardCopy(event, model, store, true);
+		});
+		grid.addEventListener('paste', (event: ClipboardEvent) => {
+			if (this.editing !== null || isInsideEditor(event.target)) {
+				return;
+			}
+			const data = event.clipboardData;
+			const html = data?.getData('text/html') ?? '';
+			const matrix =
+				(html === '' ? null : fromHtml(html)) ?? fromTsv(data?.getData('text/plain') ?? '');
+			if ((matrix[0]?.length ?? 0) === 0) {
+				return;
+			}
+			event.preventDefault();
+			this.pasteMatrix(matrix, model, store);
 		});
 		renderRows();
 		if (focusGridAfterRender) {
@@ -1938,7 +1967,11 @@ export class NativeDatabaseGrid {
 	 * Clear every editable cell in the range as one undoable step. Read-only cells and cells that
 	 * are already empty are skipped, so a clear never dispatches a no-op or a refused edit.
 	 */
-	private clearSelection(model: NativeGridModel, store: DatabaseStore): void {
+	private clearSelection(
+		model: NativeGridModel,
+		store: DatabaseStore,
+		options: { readonly keepLinks?: boolean } = {},
+	): void {
 		const range = this.rangeOf(model);
 		if (range === null) {
 			return;
@@ -1956,7 +1989,7 @@ export class NativeDatabaseGrid {
 					continue;
 				}
 				if (isLinkColumn(column)) {
-					if (!sameLinkSelection(current, [])) {
+					if (options.keepLinks !== true && !sameLinkSelection(current, [])) {
 						changed += 1;
 						operations.push({
 							kind: 'set-link',
@@ -1997,6 +2030,135 @@ export class NativeDatabaseGrid {
 			operations.length === 1 && operations[0] !== undefined ? operations[0] : operations,
 			label,
 		);
+	}
+
+	/** The range as text, one row per visible row. Link columns are left out here and counted by the caller. */
+	private rangeMatrix(
+		model: NativeGridModel,
+	): { readonly matrix: Matrix; readonly omittedLinks: number } | null {
+		const range = this.rangeOf(model);
+		if (range === null) {
+			return null;
+		}
+		const columns = range.columns.filter((column) => !isLinkColumn(column));
+		const matrix = range.rows.map((row) =>
+			columns.map((column) => {
+				const stored = viewCellOf(model.activeTable, row.rowId, column.field.definition.id);
+				if (stored === undefined || stored === null || isInvalidCell(stored)) {
+					return '';
+				}
+				return column.field.descriptor.formatPlain(stored, column.field.context);
+			}),
+		);
+		return { matrix, omittedLinks: range.columns.length - columns.length };
+	}
+
+	/** Copy (and, for cut, clear) the range onto the clipboard as TSV and HTML. */
+	private onClipboardCopy(
+		event: ClipboardEvent,
+		model: NativeGridModel,
+		store: DatabaseStore,
+		cut: boolean,
+	): void {
+		if (this.editing !== null || isInsideEditor(event.target)) {
+			return;
+		}
+		const copied = this.rangeMatrix(model);
+		if (copied === null) {
+			return;
+		}
+		event.preventDefault();
+		if (copied.omittedLinks > 0) {
+			new Notice(`${String(copied.omittedLinks)} link column(s) are not copied.`);
+		}
+		if ((copied.matrix[0]?.length ?? 0) === 0) {
+			return;
+		}
+		event.clipboardData?.setData('text/plain', toTsv(copied.matrix));
+		event.clipboardData?.setData('text/html', toHtml(copied.matrix));
+		if (cut) {
+			this.clearSelection(model, store, { keepLinks: true });
+		}
+	}
+
+	/**
+	 * Paste a clipboard matrix with its top-left cell at the range corner. Each cell is parsed by its
+	 * column's own `parse` and `toJson`, the same path a typed edit takes. Link columns, read-only cells,
+	 * unparseable text, and cells past the table edge are skipped and counted in one notice.
+	 */
+	private pasteMatrix(matrix: Matrix, model: NativeGridModel, store: DatabaseStore): void {
+		const range = this.rangeOf(model);
+		if (range === null) {
+			return;
+		}
+		const updatedAt = timestampFor(this.environment);
+		const stamp = updatedAt === null ? {} : { updatedAt };
+		const operations: DatabaseOperation[] = [];
+		let skippedLinks = 0;
+		let skippedReadOnly = 0;
+		let rejected = 0;
+		let outside = 0;
+		matrix.forEach((cells, offsetRow) => {
+			const targetRow = model.visibleRows[range.top + offsetRow];
+			if (targetRow === undefined) {
+				outside += cells.length;
+				return;
+			}
+			const edits: CellEdit[] = [];
+			cells.forEach((text, offsetColumn) => {
+				const column = model.visibleColumns[range.left + offsetColumn];
+				if (column === undefined) {
+					outside += 1;
+					return;
+				}
+				const fieldId = column.field.definition.id;
+				const current = viewCellOf(model.activeTable, targetRow.rowId, fieldId);
+				if (editDraftFor(model, column, targetRow.rowId, current) === null) {
+					skippedReadOnly += 1;
+					return;
+				}
+				if (isLinkColumn(column)) {
+					skippedLinks += 1;
+					return;
+				}
+				let value: ClipboardCellValue;
+				if (text.trim() === '') {
+					value = null;
+				} else {
+					const parsedCell = column.field.descriptor.parse(text, column.field.context);
+					if (!parsedCell.ok) {
+						rejected += 1;
+						return;
+					}
+					value = column.field.descriptor.toJson(parsedCell.value, column.field.context);
+				}
+				if (!sameCellValue(current, value)) {
+					edits.push({ fieldId, value });
+				}
+			});
+			if (edits.length > 0) {
+				operations.push({
+					kind: 'set-cells',
+					tableId: model.table.id,
+					rowId: targetRow.rowId,
+					edits,
+					...stamp,
+				});
+			}
+		});
+		const skipped = [
+			skippedLinks > 0 ? `${String(skippedLinks)} link cell(s)` : '',
+			skippedReadOnly > 0 ? `${String(skippedReadOnly)} read-only cell(s)` : '',
+			rejected > 0 ? `${String(rejected)} value(s) that do not fit their column` : '',
+			outside > 0 ? `${String(outside)} cell(s) past the table edge` : '',
+		].filter((part) => part !== '');
+		if (skipped.length > 0) {
+			new Notice(`Paste skipped ${skipped.join(', ')}.`);
+		}
+		if (operations.length === 0) {
+			return;
+		}
+		store.dispatch(operations, 'Paste cells');
 	}
 
 	private onKeyDown(
