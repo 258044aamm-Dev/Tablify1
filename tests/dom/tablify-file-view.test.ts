@@ -22,7 +22,7 @@ import {
 } from '../../src/plugin/TablifyFileView';
 import { parseDocument } from '../../src/core/database/index';
 import { fromHtml } from '../../src/core/selection/clipboard';
-import { Plugin, noticeLog } from '../mocks/obsidian';
+import { Plugin, findByText, noticeLog, openedModals } from '../mocks/obsidian';
 import { createFakeVaultFile } from '../fakes/vaultFile';
 import { augment } from './support/dom';
 import { makeTFile } from '../fakes/vaultFile';
@@ -1574,6 +1574,101 @@ describe('native grid keyboard range', () => {
 		undo().click();
 		await flush();
 		expect((doneCell().textContent ?? '').trim()).toBe(before);
+		expect(rig.vault.writes).toEqual([]);
+	});
+
+	it('adds, duplicates and deletes rows, with a confirmation before any delete', async () => {
+		const rig = loadPlugin({ [PATH]: databaseText() });
+		const view = await openPane(rig, PATH);
+		const gridOf = (): HTMLTableElement => {
+			const grid = view.containerEl.querySelector<HTMLTableElement>('[role="grid"]');
+			if (grid === null) {
+				throw new Error('the native table grid must be rendered');
+			}
+			return grid;
+		};
+		const rowIds = (): string[] =>
+			Array.from(gridOf().querySelectorAll<HTMLTableRowElement>('tbody tr[data-row-id]')).map(
+				(row) => row.getAttribute('data-row-id') ?? '',
+			);
+		const cellOf = (rowId: string): HTMLElement => {
+			const cell = gridOf().querySelector<HTMLElement>(
+				`[data-row-id="${rowId}"][data-field-id="${FIRST_FIELD}"]`,
+			);
+			if (cell === null) {
+				throw new Error('the cell must be rendered');
+			}
+			return cell;
+		};
+		const textOf = (rowId: string): string => (cellOf(rowId).textContent ?? '').trim();
+		const key = (init: KeyboardEventInit): void => {
+			gridOf().dispatchEvent(
+				new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init }),
+			);
+		};
+		const undo = (): HTMLButtonElement => {
+			const button = Array.from(
+				view.containerEl.querySelectorAll<HTMLButtonElement>('button'),
+			).find((candidate) => (candidate.textContent ?? '').trim() === 'Undo');
+			if (button === undefined) {
+				throw new Error('the Undo button must be rendered');
+			}
+			return button;
+		};
+
+		// Add: Ctrl/Cmd+Shift+Enter appends an empty row and selects its first cell.
+		cellOf(ROW_FIRST).click();
+		key({ key: 'Enter', ctrlKey: true, shiftKey: true });
+		await flush();
+		expect(rowIds()).toHaveLength(3);
+		const added = rowIds().find((id) => id !== ROW_FIRST && id !== ROW_SECOND) ?? '';
+		expect(added).not.toBe('');
+		expect(cellOf(added).classList.contains('is-active')).toBe(true);
+		undo().click();
+		await flush();
+		expect(rowIds()).toEqual([ROW_FIRST, ROW_SECOND]);
+
+		// Duplicate: Alt+Shift+D copies the active row directly below it.
+		cellOf(ROW_FIRST).click();
+		key({ key: 'D', code: 'KeyD', altKey: true, shiftKey: true });
+		await flush();
+		expect(rowIds()).toHaveLength(3);
+		expect(rowIds()[0]).toBe(ROW_FIRST);
+		expect(textOf(rowIds()[1] ?? '')).toBe('Shoots 1');
+		expect(textOf(ROW_SECOND)).toBe('Shoots 2');
+		undo().click();
+		await flush();
+		expect(rowIds()).toEqual([ROW_FIRST, ROW_SECOND]);
+
+		// Delete: Ctrl/Cmd+Shift+Backspace opens a confirmation. Cancel keeps the row.
+		cellOf(ROW_SECOND).click();
+		key({ key: 'Backspace', ctrlKey: true, shiftKey: true });
+		await flush();
+		const dialog = openedModals[openedModals.length - 1];
+		if (dialog === undefined) {
+			throw new Error('delete must open the confirmation dialog');
+		}
+		expect(
+			findByText(dialog.contentEl, 'Delete this row? You can undo the deletion with Undo.'),
+		).not.toBeNull();
+		findByText(dialog.contentEl, 'Cancel')?.click();
+		await flush();
+		expect(rowIds()).toEqual([ROW_FIRST, ROW_SECOND]);
+
+		// Delete again and confirm: the row is removed in one step, and Undo restores it.
+		cellOf(ROW_SECOND).click();
+		key({ key: 'Backspace', ctrlKey: true, shiftKey: true });
+		await flush();
+		const second = openedModals[openedModals.length - 1];
+		if (second === undefined) {
+			throw new Error('delete must open the confirmation dialog');
+		}
+		findByText(second.contentEl, 'Delete')?.click();
+		await flush();
+		expect(rowIds()).toEqual([ROW_FIRST]);
+		undo().click();
+		await flush();
+		expect(rowIds()).toEqual([ROW_FIRST, ROW_SECOND]);
 		expect(rig.vault.writes).toEqual([]);
 	});
 });

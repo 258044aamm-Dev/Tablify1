@@ -32,6 +32,12 @@ import { Notice } from 'obsidian';
 import { rowHeightOf, rowWindow } from '../grid/store/window';
 import type { RowDensity } from '../grid/store/window';
 
+/** Host capabilities for row actions: a secure row id, and a confirmation before a destructive write. */
+export interface NativeGridActions {
+	readonly newRowId: () => string;
+	readonly confirm: (message: string, actionLabel: string) => Promise<boolean>;
+}
+
 export interface NativeGridEnvironment {
 	readonly now: () => number;
 	readonly timezone: string;
@@ -705,7 +711,10 @@ export class NativeDatabaseGrid {
 	private pendingNavigation: NativeGridNavigationTarget | null = null;
 	private onNavigateToRow: (tableId: string, rowId: string) => void = () => undefined;
 
-	constructor(private readonly environment: NativeGridEnvironment) {}
+	constructor(
+		private readonly environment: NativeGridEnvironment,
+		private readonly actions: NativeGridActions,
+	) {}
 
 	/** Queue selection/scroll for a linked row before the target table is rendered. */
 	navigateToRecord(tableId: string, rowId: string): void {
@@ -2294,6 +2303,107 @@ export class NativeDatabaseGrid {
 		);
 	}
 
+	/** Append an empty row to the table and select its first column. Rejected writes leave the selection alone. */
+	private addRow(model: NativeGridModel, store: DatabaseStore): void {
+		const firstColumn = model.visibleColumns[0];
+		if (firstColumn === undefined) {
+			return;
+		}
+		const rowId = this.actions.newRowId();
+		const previous = this.selection;
+		const previousRange = this.rangeAnchor;
+		this.rangeAnchor = null;
+		this.selection = {
+			databaseId: model.databaseId,
+			tableId: model.table.id,
+			rowId,
+			fieldId: firstColumn.field.definition.id,
+		};
+		const timestamp = timestampFor(this.environment);
+		const stamp = timestamp === null ? {} : { createdAt: timestamp, updatedAt: timestamp };
+		const result = store.dispatch(
+			{ kind: 'create-record', tableId: model.table.id, rowId, ...stamp },
+			'Add row',
+		);
+		if (!result.ok) {
+			this.selection = previous;
+			this.rangeAnchor = previousRange;
+			new Notice(result.message);
+		}
+	}
+
+	/** Insert a copy of the active row directly below it, and select the copy's first cell in that row. */
+	private duplicateActiveRow(model: NativeGridModel, store: DatabaseStore): void {
+		const selection = this.selection;
+		if (
+			selection === null ||
+			selection.databaseId !== model.databaseId ||
+			selection.tableId !== model.table.id
+		) {
+			return;
+		}
+		const sourceIndex = model.activeTable.rowIndexById.get(selection.rowId);
+		if (sourceIndex === undefined) {
+			return;
+		}
+		const newRowId = this.actions.newRowId();
+		const previous = this.selection;
+		const previousRange = this.rangeAnchor;
+		this.rangeAnchor = null;
+		this.selection = { ...selection, rowId: newRowId };
+		const timestamp = timestampFor(this.environment);
+		const stamp = timestamp === null ? {} : { createdAt: timestamp, updatedAt: timestamp };
+		const result = store.dispatch(
+			{
+				kind: 'duplicate-record',
+				tableId: model.table.id,
+				rowId: selection.rowId,
+				newRowId,
+				toIndex: sourceIndex + 1,
+				...stamp,
+			},
+			'Duplicate row',
+		);
+		if (!result.ok) {
+			this.selection = previous;
+			this.rangeAnchor = previousRange;
+			new Notice(result.message);
+		}
+	}
+
+	/**
+	 * Delete every row in the range after the user confirms. Nothing is written until the dialog resolves
+	 * `true`, and the whole deletion is one undoable step.
+	 */
+	private async deleteRangeRows(model: NativeGridModel, store: DatabaseStore): Promise<void> {
+		const range = this.rangeOf(model);
+		if (range === null) {
+			return;
+		}
+		const rowIds = range.rows.map((row) => row.rowId);
+		const count = rowIds.length;
+		const message =
+			count === 1
+				? 'Delete this row? You can undo the deletion with Undo.'
+				: `Delete ${String(count)} rows? You can undo the deletion with Undo.`;
+		const confirmed = await this.actions.confirm(message, 'Delete');
+		if (!confirmed) {
+			return;
+		}
+		this.rangeAnchor = null;
+		const result = store.dispatch(
+			rowIds.map((rowId) => ({
+				kind: 'delete-record' as const,
+				tableId: model.table.id,
+				rowId,
+			})),
+			count === 1 ? 'Delete row' : 'Delete rows',
+		);
+		if (!result.ok) {
+			new Notice(result.message);
+		}
+	}
+
 	private onKeyDown(
 		event: KeyboardEvent,
 		scroll: HTMLElement,
@@ -2330,6 +2440,38 @@ export class NativeDatabaseGrid {
 		}
 		if (columnIndex < 0) {
 			columnIndex = 0;
+		}
+		if (
+			(event.ctrlKey || event.metaKey) &&
+			event.shiftKey &&
+			!event.altKey &&
+			event.key === 'Enter'
+		) {
+			event.preventDefault();
+			this.addRow(model, store);
+			return;
+		}
+		if (
+			event.altKey &&
+			event.shiftKey &&
+			!event.ctrlKey &&
+			!event.metaKey &&
+			hadSelection &&
+			event.code === 'KeyD'
+		) {
+			event.preventDefault();
+			this.duplicateActiveRow(model, store);
+			return;
+		}
+		if (
+			(event.ctrlKey || event.metaKey) &&
+			event.shiftKey &&
+			!event.altKey &&
+			event.key === 'Backspace'
+		) {
+			event.preventDefault();
+			void this.deleteRangeRows(model, store);
+			return;
 		}
 		if (event.key === 'Enter' || event.key === 'F2') {
 			event.preventDefault();

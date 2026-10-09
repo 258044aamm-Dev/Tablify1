@@ -28,6 +28,7 @@ import { NativeDatabaseGrid } from './NativeDatabaseGrid';
 import { NativeImportModal } from './nativeImport/NativeImportModal';
 import { NativeExportModal } from './nativeExport/NativeExportModal';
 import type { NativeGridEnvironment } from './NativeDatabaseGrid';
+import { confirmAction } from './ConfirmModal';
 import type { TablifyLeafState } from './viewState';
 import { EMPTY_LEAF_STATE, leafStateOf, readLeafState } from './viewState';
 
@@ -110,7 +111,10 @@ export class TablifyFileView extends FileView {
 	constructor(leaf: WorkspaceLeaf, host: TablifyFileViewHost) {
 		super(leaf);
 		this.host = host;
-		this.nativeGrid = new NativeDatabaseGrid(host.environment);
+		this.nativeGrid = new NativeDatabaseGrid(host.environment, {
+			newRowId: () => host.createId('row'),
+			confirm: (message, actionLabel) => confirmAction(this.app, message, actionLabel),
+		});
 	}
 
 	getViewType(): string {

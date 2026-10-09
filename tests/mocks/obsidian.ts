@@ -47,6 +47,8 @@ export type ElementStub = {
 	attributes: Record<string, string>;
 	createEl(tag: string, options?: { cls?: string; text?: string }): ElementStub;
 	createDiv(options?: { cls?: string; text?: string }): ElementStub;
+	addEventListener(type: string, handler: () => void): void;
+	click(): void;
 	createSpan(options?: { cls?: string; text?: string }): ElementStub;
 	addClass(...classes: string[]): void;
 	setText(text: string): void;
@@ -84,6 +86,7 @@ function buildChild(tag: string, options?: { cls?: string; text?: string }): Ele
 }
 
 export function elementStub(tag = 'div'): ElementStub {
+	const listeners: Record<string, Array<() => void>> = {};
 	const el: ElementStub = {
 		tag,
 		text: '',
@@ -113,6 +116,14 @@ export function elementStub(tag = 'div'): ElementStub {
 		},
 		setText(text) {
 			el.text = text;
+		},
+		addEventListener(type, handler) {
+			(listeners[type] ??= []).push(handler);
+		},
+		click() {
+			for (const handler of listeners.click ?? []) {
+				handler();
+			}
 		},
 		setAttribute(name, value) {
 			el.attributes[name] = value;
