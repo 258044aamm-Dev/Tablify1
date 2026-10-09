@@ -79,6 +79,30 @@ const TARGET_ROW_ONE = `row_${'p'.repeat(24)}01`;
 const TARGET_ROW_TWO = `row_${'q'.repeat(24)}02`;
 const MISSING_TARGET_ROW = `row_${'r'.repeat(24)}99`;
 
+function twoFieldDatabaseText(): string {
+	return JSON.stringify({
+		format: 'tablify',
+		version: 1,
+		databaseId: `db_${'t'.repeat(26)}`,
+		name: 'Two fields',
+		tables: [
+			{
+				id: FIRST_TABLE,
+				name: 'Shoots',
+				fields: [
+					{ id: FIRST_FIELD, name: 'Title', type: 'text' },
+					{ id: SECOND_FIELD, name: 'Notes', type: 'text' },
+				],
+				rows: [
+					{ id: ROW_FIRST, cells: { [FIRST_FIELD]: 'Shoots 1', [SECOND_FIELD]: 'x' } },
+					{ id: ROW_SECOND, cells: { [FIRST_FIELD]: 'Shoots 2' } },
+				],
+				views: [],
+			},
+		],
+	});
+}
+
 function checkboxDatabaseText(): string {
 	return JSON.stringify({
 		format: 'tablify',
@@ -1788,6 +1812,70 @@ describe('native grid keyboard range', () => {
 		expect((cellOf(ROW_SECOND).textContent ?? '').trim()).toBe('b');
 		expect((cellOf(ROW_FIRST).textContent ?? '').trim()).toBe('Shoots 1');
 		expect(gridOf().querySelectorAll('.is-in-range')).toHaveLength(0);
+		expect(rig.vault.writes).toEqual([]);
+	});
+
+	it('Shift+Space selects the whole row, Ctrl+Space the whole column, and Alt+R fills right', async () => {
+		const rig = loadPlugin({ [PATH]: twoFieldDatabaseText() });
+		const view = await openPane(rig, PATH);
+		const gridOf = (): HTMLTableElement => {
+			const grid = view.containerEl.querySelector<HTMLTableElement>('[role="grid"]');
+			if (grid === null) {
+				throw new Error('the native table grid must be rendered');
+			}
+			return grid;
+		};
+		const cellOf = (rowId: string, fieldId: string): HTMLElement => {
+			const cell = gridOf().querySelector<HTMLElement>(
+				`[data-row-id="${rowId}"][data-field-id="${fieldId}"]`,
+			);
+			if (cell === null) {
+				throw new Error('the cell must be rendered');
+			}
+			return cell;
+		};
+		const key = (init: KeyboardEventInit): void => {
+			gridOf().dispatchEvent(
+				new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init }),
+			);
+		};
+		const undo = (): HTMLButtonElement => {
+			const button = Array.from(
+				view.containerEl.querySelectorAll<HTMLButtonElement>('button'),
+			).find((candidate) => (candidate.textContent ?? '').trim() === 'Undo');
+			if (button === undefined) {
+				throw new Error('the Undo button must be rendered');
+			}
+			return button;
+		};
+
+		// Shift+Space: the whole row, both columns, and not the other row.
+		cellOf(ROW_FIRST, FIRST_FIELD).click();
+		key({ key: ' ', shiftKey: true });
+		await flush();
+		expect(cellOf(ROW_FIRST, FIRST_FIELD).classList.contains('is-in-range')).toBe(true);
+		expect(cellOf(ROW_FIRST, SECOND_FIELD).classList.contains('is-in-range')).toBe(true);
+		expect(cellOf(ROW_SECOND, FIRST_FIELD).classList.contains('is-in-range')).toBe(false);
+
+		// Ctrl+Space: the whole column, both rows, and not the other column.
+		cellOf(ROW_FIRST, FIRST_FIELD).click();
+		key({ key: ' ', ctrlKey: true });
+		await flush();
+		expect(cellOf(ROW_FIRST, FIRST_FIELD).classList.contains('is-in-range')).toBe(true);
+		expect(cellOf(ROW_SECOND, FIRST_FIELD).classList.contains('is-in-range')).toBe(true);
+		expect(cellOf(ROW_FIRST, SECOND_FIELD).classList.contains('is-in-range')).toBe(false);
+
+		// Alt+R: fill right from the first column into the second, then one Undo restores it.
+		cellOf(ROW_FIRST, FIRST_FIELD).click();
+		key({ key: 'ArrowRight', shiftKey: true });
+		await flush();
+		key({ key: 'r', code: 'KeyR', altKey: true });
+		await flush();
+		expect((cellOf(ROW_FIRST, SECOND_FIELD).textContent ?? '').trim()).toBe('Shoots 1');
+		expect((cellOf(ROW_SECOND, SECOND_FIELD).textContent ?? '').trim()).toBe('');
+		undo().click();
+		await flush();
+		expect((cellOf(ROW_FIRST, SECOND_FIELD).textContent ?? '').trim()).toBe('x');
 		expect(rig.vault.writes).toEqual([]);
 	});
 });

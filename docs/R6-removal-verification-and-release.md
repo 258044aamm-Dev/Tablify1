@@ -206,3 +206,11 @@ A non-run check remains `NOT RUN`; do not infer pass from the browser harness.
 - **Tests:** two new tests in `tests/dom/tablify-file-view.test.ts`, under "native grid keyboard range". One checks that typing `b` on a two-row range, then Ctrl+Enter, writes both cells, and that one Undo restores them. The other checks that a plain Enter edits only the active cell and leaves no range. The bulk test fails on the slice F grid.
 - **Gates:** `check` exit 0; 75 files; 1584 tests; bundle 134100 bytes gzip. Module comparison against `da14d03`, alias-normalised: only `NativeDatabaseGrid.ts` changed. Reachability: LIVE 109, DEAD 0. **NOT RUN:** Ctrl+Enter on macOS, where Cmd+Enter may differ in the host, and the bulk-edit status announcement for screen readers.
 - **Still open for R4:** whole-row and whole-column selection, and the Alt+R DOM test.
+
+### R4 slice H: whole-row and whole-column selection, and the Alt+R test
+
+- **Change:** Shift+Space selects the active row, from its first column to its last. Ctrl/Cmd+Space selects the active column, from its first row to its last. The selection is a range of two corner cells, so copy, cut, clear, fill, and bulk edit apply to it unchanged. Alt+Shift+Space and Meta+Space are not bound. Space alone still toggles a checkbox, as before.
+- **Limits:** these selections are keyboard-only. Clicking a row number or column header does not select a line yet, so the header affordance from the R4 list is still open.
+- **Test:** a new two-column fixture, "Shift+Space selects the whole row, Ctrl+Space the whole column, and Alt+R fills right". It checks the whole row (both columns, not the other row), the whole column (both rows, not the other column), and Alt+R filling `x` to `Shoots 1` with one Undo to `x`. The row and column checks fail on the slice G grid.
+- **Gates:** `check` exit 0; 75 files; 1585 tests; bundle 134270 bytes gzip. Module comparison against `2c1bcc7`, alias-normalised: only `NativeDatabaseGrid.ts` changed. Reachability: LIVE 109, DEAD 0. **NOT RUN:** the shortcuts on macOS and Windows layouts, and header-click selection, which is not built.
+- **Still open for R4:** clickable row and column headers, and the R4 list's Step 1 items that the old grid had and this one has not yet verified in the host: frozen primary column, column resize and reorder, and virtualized rows.

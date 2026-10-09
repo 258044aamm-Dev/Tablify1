@@ -2487,6 +2487,58 @@ export class NativeDatabaseGrid {
 		}
 	}
 
+	/**
+	 * Select the whole active row (Shift+Space) or whole active column (Ctrl+Space) as a range. The range is two
+	 * corner cells on the same line, so it reuses the range code: copy, clear, fill, and bulk edit apply to it.
+	 */
+	private selectLine(
+		kind: 'row' | 'column',
+		rowIndex: number,
+		columnIndex: number,
+		model: NativeGridModel,
+		scroll: HTMLElement,
+		grid: HTMLTableElement,
+		body: HTMLTableSectionElement,
+		rowHeight: number,
+		store: DatabaseStore,
+	): void {
+		const rows = model.visibleRows;
+		const columns = model.visibleColumns;
+		const row = rows[rowIndex];
+		const column = columns[columnIndex];
+		const firstRow = rows[0];
+		const lastRow = rows[rows.length - 1];
+		const firstColumn = columns[0];
+		const lastColumn = columns[columns.length - 1];
+		if (
+			row === undefined ||
+			column === undefined ||
+			firstRow === undefined ||
+			lastRow === undefined ||
+			firstColumn === undefined ||
+			lastColumn === undefined
+		) {
+			return;
+		}
+		const at = (rowId: string, fieldId: string): NativeCellSelection => ({
+			databaseId: model.databaseId,
+			tableId: model.table.id,
+			rowId,
+			fieldId,
+		});
+		const columnId = column.field.definition.id;
+		const anchor =
+			kind === 'row'
+				? at(row.rowId, firstColumn.field.definition.id)
+				: at(firstRow.rowId, columnId);
+		const focus =
+			kind === 'row'
+				? at(row.rowId, lastColumn.field.definition.id)
+				: at(lastRow.rowId, columnId);
+		this.rangeAnchor = anchor;
+		this.activate(focus, scroll, grid, body, model, rowHeight, store);
+	}
+
 	private onKeyDown(
 		event: KeyboardEvent,
 		scroll: HTMLElement,
@@ -2598,6 +2650,27 @@ export class NativeDatabaseGrid {
 					store,
 				);
 			}
+			return;
+		}
+		if (
+			event.key === ' ' &&
+			hadSelection &&
+			!event.altKey &&
+			!event.metaKey &&
+			event.shiftKey !== event.ctrlKey
+		) {
+			event.preventDefault();
+			this.selectLine(
+				event.shiftKey ? 'row' : 'column',
+				rowIndex,
+				columnIndex,
+				model,
+				scroll,
+				grid,
+				body,
+				rowHeight,
+				store,
+			);
 			return;
 		}
 		if (
