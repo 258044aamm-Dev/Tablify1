@@ -16,7 +16,7 @@ of the script, not a footnote — classifying it is the decision R3 step 1 exist
 
 ## Files, with the markers they carry
 
-### `replace` — 19 file(s)
+### `replace` — 9 file(s)
 
 Rule: `src/adapters/`, `src/core/fieldTypes/`, `src/core/`, `src/grid/`, `src/plugin/`
 
@@ -25,22 +25,12 @@ Rule: `src/adapters/`, `src/core/fieldTypes/`, `src/core/`, `src/grid/`, `src/pl
 | `src/adapters/RowSource.ts` | filePath ×1, PropertyId ×3, propertyId ×2, RowSource ×1 |
 | `src/adapters/optimistic.ts` | filePath ×15, PropertyId ×5, propertyId ×11, RowSource ×1 |
 | `src/adapters/writeQueue.ts` | filePath ×4, PropertyId ×3, propertyId ×4, RowSource ×2, processFrontMatter ×6 |
-| `src/core/ops/apply.ts` | filePath ×34, PropertyId ×14 |
-| `src/core/ops/build.ts` | filePath ×9, PropertyId ×2 |
-| `src/core/ops/history.ts` | filePath ×8 |
-| `src/core/ops/inverse.ts` | filePath ×2 |
 | `src/core/ops/types.ts` | filePath ×6, PropertyId ×13 |
 | `src/core/query/ast.ts` | PropertyId ×8 |
 | `src/core/query/evaluate.ts` | PropertyId ×6 |
 | `src/core/schema/propertySchema.ts` | PropertyId ×2 |
-| `src/core/selection/range.ts` | filePath ×25, PropertyId ×4 |
 | `src/core/types.ts` | PropertyId ×1 |
 | `src/core/view/pipeline.ts` | PropertyId ×20 |
-| `src/grid/clipboard/matrix.ts` | filePath ×2 |
-| `src/grid/store/commands.ts` | filePath ×27, PropertyId ×4 |
-| `src/grid/store/selectors.ts` | filePath ×35, PropertyId ×7, propertyId ×2 |
-| `src/grid/store/store.ts` | filePath ×6, PropertyId ×3, propertyId ×5, RowSource ×1 |
-| `src/grid/store/types.ts` | filePath ×2, PropertyId ×3, propertyId ×1, RowSource ×1 |
 
 ### `remote-record-id` — 3 file(s)
 
@@ -52,7 +42,7 @@ Rule: `src/sync/`
 | `src/sync/nativePort.ts` | filePath ×4, propertyId ×1, RowSource ×1 |
 | `src/sync/pullPush.ts` | filePath ×2, PropertyId ×3, RowSource ×1 |
 
-### `historical` — 11 file(s)
+### `historical` — 9 file(s)
 
 Rule: `tests/`
 
@@ -65,9 +55,7 @@ Rule: `tests/`
 | `tests/unit/diff.test.ts` | filePath ×1, RowSource ×1 |
 | `tests/unit/fakes-contract.test.ts` | processFrontMatter ×8, metadataCache ×2, getFileCache ×2 |
 | `tests/unit/native-port.test.ts` | filePath ×5, propertyId ×1 |
-| `tests/unit/ops-fixtures.ts` | filePath ×19, PropertyId ×2 |
 | `tests/unit/r3-inventory.test.ts` | YamlValue ×1, toYaml ×1 |
-| `tests/unit/selection.test.ts` | filePath ×24 |
 | `tests/unit/write-queue.test.ts` | filePath ×4, propertyId ×4, RowSource ×1, processFrontMatter ×10 |
 
 ### `guard` — 2 file(s)
@@ -81,12 +69,12 @@ Rule: `tests/unit/view-state.test.ts`, `tests/unit/value-vocabulary.test.ts`
 
 ## Totals
 
-35 files carry 451 marker occurrences.
+23 files carry 209 marker occurrences.
 
-- `replace`: 19 file(s), 311 occurrence(s)
+- `replace`: 9 file(s), 114 occurrence(s)
 - `host-path`: 0 file(s), 0 occurrence(s)
 - `remote-record-id`: 3 file(s), 13 occurrence(s)
-- `historical`: 11 file(s), 119 occurrence(s)
+- `historical`: 9 file(s), 74 occurrence(s)
 - `guard`: 2 file(s), 8 occurrence(s)
 - `native`: 0 file(s), 0 occurrence(s)
 
