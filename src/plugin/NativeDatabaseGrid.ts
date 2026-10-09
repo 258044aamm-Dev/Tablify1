@@ -2098,7 +2098,14 @@ export class NativeDatabaseGrid {
 		let skippedReadOnly = 0;
 		let rejected = 0;
 		let outside = 0;
-		matrix.forEach((cells, offsetRow) => {
+		const single = matrix[0]?.[0] ?? '';
+		const block: Matrix =
+			matrix.length === 1 &&
+			(matrix[0]?.length ?? 0) === 1 &&
+			range.rows.length * range.columns.length > 1
+				? range.rows.map(() => range.columns.map(() => single))
+				: matrix;
+		block.forEach((cells, offsetRow) => {
 			const targetRow = model.visibleRows[range.top + offsetRow];
 			if (targetRow === undefined) {
 				outside += cells.length;
@@ -2159,6 +2166,98 @@ export class NativeDatabaseGrid {
 			return;
 		}
 		store.dispatch(operations, 'Paste cells');
+	}
+
+	/**
+	 * Fill the range from its first row (down) or first column (right). The source cell's canonical value
+	 * is written into every editable target in one undoable step. Link columns, read-only cells, and invalid
+	 * source cells are skipped; a single notice counts what was left out.
+	 */
+	private fillRange(
+		direction: 'down' | 'right',
+		model: NativeGridModel,
+		store: DatabaseStore,
+	): void {
+		const range = this.rangeOf(model);
+		if (range === null || range.rows.length * range.columns.length <= 1) {
+			return;
+		}
+		const updatedAt = timestampFor(this.environment);
+		const stamp = updatedAt === null ? {} : { updatedAt };
+		const editsByRow = new Map<string, CellEdit[]>();
+		let skippedLinks = 0;
+		let skippedReadOnly = 0;
+		let skippedInvalid = 0;
+		const target = (
+			rowId: string,
+			column: NativeColumn,
+			source: CellState | undefined,
+		): void => {
+			const fieldId = column.field.definition.id;
+			if (isLinkColumn(column)) {
+				skippedLinks += 1;
+				return;
+			}
+			if (source === undefined || source === null || isInvalidCell(source)) {
+				skippedInvalid += 1;
+				return;
+			}
+			const current = viewCellOf(model.activeTable, rowId, fieldId);
+			if (editDraftFor(model, column, rowId, current) === null) {
+				skippedReadOnly += 1;
+				return;
+			}
+			if (!sameCellValue(current, source)) {
+				const edits = editsByRow.get(rowId) ?? [];
+				edits.push({ fieldId, value: source });
+				editsByRow.set(rowId, edits);
+			}
+		};
+		const first = range.rows[0];
+		const firstColumn = range.columns[0];
+		if (direction === 'down' && first !== undefined) {
+			for (const column of range.columns) {
+				const source = viewCellOf(
+					model.activeTable,
+					first.rowId,
+					column.field.definition.id,
+				);
+				for (const row of range.rows.slice(1)) {
+					target(row.rowId, column, source);
+				}
+			}
+		}
+		if (direction === 'right' && firstColumn !== undefined) {
+			for (const row of range.rows) {
+				const source = viewCellOf(
+					model.activeTable,
+					row.rowId,
+					firstColumn.field.definition.id,
+				);
+				for (const column of range.columns.slice(1)) {
+					target(row.rowId, column, source);
+				}
+			}
+		}
+		const skipped = [
+			skippedLinks > 0 ? `${String(skippedLinks)} link cell(s)` : '',
+			skippedReadOnly > 0 ? `${String(skippedReadOnly)} read-only cell(s)` : '',
+			skippedInvalid > 0 ? `${String(skippedInvalid)} invalid source value(s)` : '',
+		].filter((part) => part !== '');
+		if (skipped.length > 0) {
+			new Notice(`Fill skipped ${skipped.join(', ')}.`);
+		}
+		const operations: DatabaseOperation[] = [...editsByRow.entries()].map(([rowId, edits]) => ({
+			kind: 'set-cells' as const,
+			tableId: model.table.id,
+			rowId,
+			edits,
+			...stamp,
+		}));
+		if (operations.length === 0) {
+			return;
+		}
+		store.dispatch(operations, direction === 'down' ? 'Fill down' : 'Fill right');
 	}
 
 	private onKeyDown(
@@ -2241,6 +2340,17 @@ export class NativeDatabaseGrid {
 					store,
 				);
 			}
+			return;
+		}
+		if (
+			event.altKey &&
+			!event.ctrlKey &&
+			!event.metaKey &&
+			hadSelection &&
+			(event.code === 'KeyD' || event.code === 'KeyR')
+		) {
+			event.preventDefault();
+			this.fillRange(event.code === 'KeyD' ? 'down' : 'right', model, store);
 			return;
 		}
 		if (

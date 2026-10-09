@@ -1354,4 +1354,75 @@ describe('native grid keyboard range', () => {
 		expect(textOf(ROW_FIRST)).toBe('=1+1');
 		expect(rig.vault.writes).toEqual([]);
 	});
+
+	it('pastes one cell across a range, and Alt+D fills down, each as one undo step', async () => {
+		const rig = loadPlugin({ [PATH]: databaseText() });
+		const view = await openPane(rig, PATH);
+		const gridOf = (): HTMLTableElement => {
+			const grid = view.containerEl.querySelector<HTMLTableElement>('[role="grid"]');
+			if (grid === null) {
+				throw new Error('the native table grid must be rendered');
+			}
+			return grid;
+		};
+		const cellOf = (rowId: string): HTMLElement => {
+			const cell = gridOf().querySelector<HTMLElement>(
+				`[data-row-id="${rowId}"][data-field-id="${FIRST_FIELD}"]`,
+			);
+			if (cell === null) {
+				throw new Error('the cell must be rendered');
+			}
+			return cell;
+		};
+		const textOf = (rowId: string): string => (cellOf(rowId).textContent ?? '').trim();
+		const key = (init: KeyboardEventInit): void => {
+			gridOf().dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, ...init }));
+		};
+		const paste = (text: string): void => {
+			const event = new Event('paste', { bubbles: true, cancelable: true });
+			Object.defineProperty(event, 'clipboardData', {
+				value: {
+					getData: (format: string): string => (format === 'text/plain' ? text : ''),
+				},
+			});
+			gridOf().dispatchEvent(event);
+		};
+		const undo = (): HTMLButtonElement => {
+			const button = Array.from(
+				view.containerEl.querySelectorAll<HTMLButtonElement>('button'),
+			).find((candidate) => (candidate.textContent ?? '').trim() === 'Undo');
+			if (button === undefined) {
+				throw new Error('the Undo button must be rendered');
+			}
+			return button;
+		};
+
+		// One copied cell pastes across a two-row range.
+		cellOf(ROW_FIRST).click();
+		key({ key: 'ArrowDown', shiftKey: true });
+		await flush();
+		paste('pick');
+		await flush();
+		expect(textOf(ROW_FIRST)).toBe('pick');
+		expect(textOf(ROW_SECOND)).toBe('pick');
+		undo().click();
+		await flush();
+		expect(textOf(ROW_FIRST)).toBe('Shoots 1');
+		expect(textOf(ROW_SECOND)).toBe('Shoots 2');
+
+		// Alt+D copies the first row's value down the range.
+		cellOf(ROW_FIRST).click();
+		paste('alpha\nbeta');
+		await flush();
+		cellOf(ROW_FIRST).click();
+		key({ key: 'ArrowDown', shiftKey: true });
+		await flush();
+		key({ key: 'd', code: 'KeyD', altKey: true });
+		await flush();
+		expect(textOf(ROW_SECOND)).toBe('alpha');
+		undo().click();
+		await flush();
+		expect(textOf(ROW_SECOND)).toBe('beta');
+		expect(rig.vault.writes).toEqual([]);
+	});
 });
