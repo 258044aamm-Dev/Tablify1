@@ -207,6 +207,10 @@
 	background: var(--tablify-accent-subtle);
 }
 
+.tablify-native-grid-table tbody .tablify-native-cell.is-in-range {
+	background: var(--tablify-accent-subtle);
+}
+
 .tablify-native-grid-table tbody .tablify-native-cell.is-editing {
 	z-index: 5;
 	overflow: visible;

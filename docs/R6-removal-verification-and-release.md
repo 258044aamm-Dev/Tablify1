@@ -156,3 +156,11 @@ A non-run check remains `NOT RUN`; do not infer pass from the browser harness.
 - **Gates:** `check` exit 0; 75 files; 1575 tests; bundle 130975 bytes gzip. Module comparison against `1fb2a7d` (same directory, grid stashed): 230 modules, only `src/plugin/NativeDatabaseGrid.ts` changed. Reachability: LIVE 108, DEAD 0. **NOT RUN:** Obsidian host and device checks.
 - **Still missing from the gap list:** range and multi-cell selection, copy/cut/paste, fill, bulk edit, type-to-replace, select-all, Space checkbox toggle, PageUp/PageDown, and add/duplicate/delete row. The release stays blocked until these land.
 - **Environment note:** the workspace was reset to `45e204f` again. It was restored to `origin/refactor/native-tablify` (`1fb2a7d`), and the slice was reapplied from a saved patch. The remote had to be re-added.
+
+### R4 slice B: range selection
+
+- **Change:** Shift+Arrow extends a rectangular range from the anchor cell (the cell where the range started) to the active cell. Escape clears the range, and so does any other key, a click, or Enter/F2. Cells inside the range get `is-in-range` and a matching highlight in `native-workspace.css`. Without Shift the grid behaves as before: plain arrows, Home/End, and Enter/F2 are unchanged.
+- **Delete with a range:** clears every editable cell in the rectangle. Read-only cells and already-empty cells are skipped. The clear is one batch dispatch, so one Undo restores the whole range. The slice A single-cell clear now goes through the same path, and it also skips read-only cells instead of sending a refused edit.
+- **Test:** `tests/dom/tablify-file-view.test.ts`, "native grid keyboard range". Shift+ArrowDown selects two cells, Delete empties both, one Undo restores both, and Escape drops the highlight. The test fails on the slice A grid.
+- **Gates:** `check` exit 0; 75 files; 1576 tests; bundle 131450 bytes gzip. Module comparison against `74a0e57`: 230 modules, only `NativeDatabaseGrid.ts` changed. Reachability: LIVE 108, DEAD 0. **NOT RUN:** Obsidian host and device checks.
+- **Not in this slice:** Shift+click, Ctrl/Cmd+A, and copy/paste over a range. Those are slices C and E.

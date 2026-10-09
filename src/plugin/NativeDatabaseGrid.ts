@@ -24,6 +24,7 @@ import type { CellState } from '../core/database/rows';
 import { buildView } from '../core/view/pipeline';
 import type { ViewResult } from '../core/view/pipeline';
 import type { RowView } from '../core/query/evaluate';
+import type { CellEdit, DatabaseOperation } from '../core/database/operations';
 import { rowHeightOf, rowWindow } from '../grid/store/window';
 import type { RowDensity } from '../grid/store/window';
 
@@ -72,6 +73,17 @@ interface NativeGridModel {
 	readonly generatedInverseRowsByCell: ReadonlyMap<string, readonly NativeInverseRow[]>;
 	readonly density: RowDensity;
 	readonly notes: readonly string[];
+}
+
+/** A rectangle of visible cells, in visible-row and visible-column indices. */
+interface NativeCellRange {
+	readonly rows: readonly RowView[];
+	readonly columns: readonly NativeColumn[];
+	readonly top: number;
+	readonly bottom: number;
+	readonly left: number;
+	readonly right: number;
+	readonly rowIndex: ReadonlyMap<string, number>;
 }
 
 interface NativeCellSelection {
@@ -667,6 +679,9 @@ export class NativeDatabaseGrid {
 	private readonly instanceId = `tablify-native-grid-${String(nextGridInstance++)}`;
 	private tableKey: string | null = null;
 	private selection: NativeCellSelection | null = null;
+	/** Other corner of a shift-extended range; the active cell is the focus corner. */
+	private rangeAnchor: NativeCellSelection | null = null;
+	private renderedRange: NativeCellRange | null = null;
 	private editing: NativeCellEditor | null = null;
 	private context: NativeGridContext | null = null;
 	private readonly scrollTopByTable = new Map<string, number>();
@@ -869,6 +884,7 @@ export class NativeDatabaseGrid {
 			) {
 				return;
 			}
+			this.rangeAnchor = null;
 			const nextSelection = {
 				databaseId: model.databaseId,
 				tableId: model.table.id,
@@ -938,6 +954,7 @@ export class NativeDatabaseGrid {
 		rowHeight: number,
 		store: DatabaseStore,
 	): void {
+		this.renderedRange = this.rangeAnchor === null ? null : this.rangeOf(model);
 		const window = rowWindow({
 			scrollTop: Math.max(0, scroll.scrollTop - HEADER_HEIGHT),
 			viewportHeight: scroll.clientHeight,
@@ -1086,6 +1103,18 @@ export class NativeDatabaseGrid {
 			if (isSelected) {
 				cell.setAttribute('aria-selected', 'true');
 				cell.addClass('is-active');
+			}
+			const range = this.renderedRange;
+			const rowPosition = range?.rowIndex.get(item.rowId);
+			if (
+				range !== null &&
+				rowPosition !== undefined &&
+				rowPosition >= range.top &&
+				rowPosition <= range.bottom &&
+				index >= range.left &&
+				index <= range.right
+			) {
+				cell.addClass('is-in-range');
 			}
 			const width = model.view?.widths.get(fieldId) ?? DEFAULT_COLUMN_WIDTH;
 			cell.style.width = `${String(width)}px`;
@@ -1864,49 +1893,108 @@ export class NativeDatabaseGrid {
 		grid.focus({ preventScroll: true });
 	}
 
-	/** Clear one editable cell as a single undoable store operation; unchanged or refused cells dispatch nothing. */
-	private clearActiveCell(
-		row: { readonly rowId: string } | undefined,
-		column: NativeColumn | undefined,
-		model: NativeGridModel,
-		store: DatabaseStore,
-	): void {
-		if (row === undefined || column === undefined) {
+	/** The rectangle from the range anchor to the active cell; without an anchor, the active cell alone. */
+	private rangeOf(model: NativeGridModel): NativeCellRange | null {
+		const corner = this.rangeAnchor ?? this.selection;
+		const focus = this.selection;
+		if (
+			corner === null ||
+			focus === null ||
+			corner.databaseId !== model.databaseId ||
+			corner.tableId !== model.table.id ||
+			focus.databaseId !== model.databaseId ||
+			focus.tableId !== model.table.id
+		) {
+			return null;
+		}
+		const rowIndex = new Map(
+			model.visibleRows.map((row, index) => [row.rowId, index] as const),
+		);
+		const columnIndexOf = (fieldId: string): number =>
+			model.visibleColumns.findIndex((column) => column.field.definition.id === fieldId);
+		const rowA = rowIndex.get(corner.rowId);
+		const rowB = rowIndex.get(focus.rowId);
+		const colA = columnIndexOf(corner.fieldId);
+		const colB = columnIndexOf(focus.fieldId);
+		if (rowA === undefined || rowB === undefined || colA < 0 || colB < 0) {
+			return null;
+		}
+		const top = Math.min(rowA, rowB);
+		const bottom = Math.max(rowA, rowB);
+		const left = Math.min(colA, colB);
+		const right = Math.max(colA, colB);
+		return {
+			rows: model.visibleRows.slice(top, bottom + 1),
+			columns: model.visibleColumns.slice(left, right + 1),
+			top,
+			bottom,
+			left,
+			right,
+			rowIndex,
+		};
+	}
+
+	/**
+	 * Clear every editable cell in the range as one undoable step. Read-only cells and cells that
+	 * are already empty are skipped, so a clear never dispatches a no-op or a refused edit.
+	 */
+	private clearSelection(model: NativeGridModel, store: DatabaseStore): void {
+		const range = this.rangeOf(model);
+		if (range === null) {
 			return;
 		}
-		const fieldId = column.field.definition.id;
-		const current = viewCellOf(model.activeTable, row.rowId, fieldId);
 		const updatedAt = timestampFor(this.environment);
 		const stamp = updatedAt === null ? {} : { updatedAt };
-		const label = `Clear cell: ${column.field.definition.name}`;
-		if (isLinkColumn(column)) {
-			if (sameLinkSelection(current, [])) {
-				return;
+		const operations: DatabaseOperation[] = [];
+		let changed = 0;
+		for (const row of range.rows) {
+			const edits: CellEdit[] = [];
+			for (const column of range.columns) {
+				const fieldId = column.field.definition.id;
+				const current = viewCellOf(model.activeTable, row.rowId, fieldId);
+				if (editDraftFor(model, column, row.rowId, current) === null) {
+					continue;
+				}
+				if (isLinkColumn(column)) {
+					if (!sameLinkSelection(current, [])) {
+						changed += 1;
+						operations.push({
+							kind: 'set-link',
+							tableId: model.table.id,
+							rowId: row.rowId,
+							fieldId,
+							rowIds: [],
+							...stamp,
+						});
+					}
+					continue;
+				}
+				if (!sameCellValue(current, null)) {
+					changed += 1;
+					edits.push({ fieldId, value: null });
+				}
 			}
-			store.dispatch(
-				{
-					kind: 'set-link',
+			if (edits.length > 0) {
+				operations.push({
+					kind: 'set-cells',
 					tableId: model.table.id,
 					rowId: row.rowId,
-					fieldId,
-					rowIds: [],
+					edits,
 					...stamp,
-				},
-				label,
-			);
+				});
+			}
+		}
+		// The range ends with the clear: drop the anchor before dispatch so the re-render shows one cell.
+		this.rangeAnchor = null;
+		if (operations.length === 0) {
 			return;
 		}
-		if (sameCellValue(current, null)) {
-			return;
-		}
+		const label =
+			range.rows.length * range.columns.length === 1 && changed === 1
+				? `Clear cell: ${range.columns[0]?.field.definition.name ?? ''}`
+				: 'Clear cells';
 		store.dispatch(
-			{
-				kind: 'set-cells',
-				tableId: model.table.id,
-				rowId: row.rowId,
-				edits: [{ fieldId, value: null }],
-				...stamp,
-			},
+			operations.length === 1 && operations[0] !== undefined ? operations[0] : operations,
 			label,
 		);
 	}
@@ -1950,6 +2038,7 @@ export class NativeDatabaseGrid {
 		}
 		if (event.key === 'Enter' || event.key === 'F2') {
 			event.preventDefault();
+			this.rangeAnchor = null;
 			const row = rows[rowIndex];
 			const column = columns[columnIndex];
 			if (row !== undefined && column !== undefined) {
@@ -2001,8 +2090,19 @@ export class NativeDatabaseGrid {
 			!event.shiftKey
 		) {
 			event.preventDefault();
-			this.clearActiveCell(rows[rowIndex], columns[columnIndex], model, store);
+			this.clearSelection(model, store);
 			return;
+		}
+		if (event.key === 'Escape' && this.rangeAnchor !== null) {
+			event.preventDefault();
+			this.rangeAnchor = null;
+			this.renderRows(scroll, grid, body, model, rowHeight, store);
+			return;
+		}
+		if (event.shiftKey && event.key.startsWith('Arrow')) {
+			this.rangeAnchor ??= hadSelection ? this.selection : null;
+		} else {
+			this.rangeAnchor = null;
 		}
 		let handled = true;
 		switch (event.key) {

@@ -1170,7 +1170,7 @@ describe('a conflict is a choice, never a silent write', () => {
 	});
 });
 
-describe('native grid keyboard clear', () => {
+describe('native grid keyboard range', () => {
 	it('Delete clears the active cell as one undoable step, and Undo restores it', async () => {
 		const rig = loadPlugin({ [PATH]: databaseText() });
 		const view = await openPane(rig, PATH);
@@ -1209,6 +1209,65 @@ describe('native grid keyboard clear', () => {
 		undo().click();
 		await flush();
 		expect((cellOf().textContent ?? '').trim()).toBe('Shoots 1');
+		expect(rig.vault.writes).toEqual([]);
+	});
+
+	it('Shift+Arrow extends a range, Delete clears it in one undo step, and Escape drops the highlight', async () => {
+		const rig = loadPlugin({ [PATH]: databaseText() });
+		const view = await openPane(rig, PATH);
+		const gridOf = (): HTMLTableElement => {
+			const grid = view.containerEl.querySelector<HTMLTableElement>('[role="grid"]');
+			if (grid === null) {
+				throw new Error('the native table grid must be rendered');
+			}
+			return grid;
+		};
+		const cellOf = (rowId: string): HTMLElement => {
+			const cell = gridOf().querySelector<HTMLElement>(
+				`[data-row-id="${rowId}"][data-field-id="${FIRST_FIELD}"]`,
+			);
+			if (cell === null) {
+				throw new Error('the cell must be rendered');
+			}
+			return cell;
+		};
+		const textOf = (rowId: string): string => (cellOf(rowId).textContent ?? '').trim();
+		const key = (init: KeyboardEventInit): void => {
+			gridOf().dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, ...init }));
+		};
+		const undo = (): HTMLButtonElement => {
+			const button = Array.from(
+				view.containerEl.querySelectorAll<HTMLButtonElement>('button'),
+			).find((candidate) => (candidate.textContent ?? '').trim() === 'Undo');
+			if (button === undefined) {
+				throw new Error('the Undo button must be rendered');
+			}
+			return button;
+		};
+
+		cellOf(ROW_FIRST).click();
+		key({ key: 'ArrowDown', shiftKey: true });
+		await flush();
+		expect(cellOf(ROW_FIRST).classList.contains('is-in-range')).toBe(true);
+		expect(cellOf(ROW_SECOND).classList.contains('is-in-range')).toBe(true);
+
+		key({ key: 'Delete' });
+		await flush();
+		expect(textOf(ROW_FIRST)).toBe('');
+		expect(textOf(ROW_SECOND)).toBe('');
+		expect(gridOf().querySelectorAll('.is-in-range')).toHaveLength(0);
+
+		undo().click();
+		await flush();
+		expect(textOf(ROW_FIRST)).toBe('Shoots 1');
+		expect(textOf(ROW_SECOND)).toBe('Shoots 2');
+
+		cellOf(ROW_FIRST).click();
+		key({ key: 'ArrowDown', shiftKey: true });
+		await flush();
+		key({ key: 'Escape' });
+		await flush();
+		expect(gridOf().querySelectorAll('.is-in-range')).toHaveLength(0);
 		expect(rig.vault.writes).toEqual([]);
 	});
 });
