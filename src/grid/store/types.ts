@@ -12,7 +12,7 @@
  *     selectors and commands call. That is what keeps a keystroke from walking 5,000 rows.
  */
 import type { Overlay } from '../../adapters/optimistic';
-import type { ApplyResult, RowSource } from '../../adapters/RowSource';
+import type { ApplyResult } from '../../adapters/RowSource';
 import type { CellRef, Op, RowId, Skipped, TableState } from '../../core/ops/types';
 import type { History } from '../../core/ops/history';
 // `Range` shadows the DOM's own `Range` inside this module; the grid's range is what every name here means.
@@ -72,7 +72,6 @@ export type GridSnapshot = {
 
 /** Everything the store holds. Selectors and commands read it; components do not. */
 export type GridState = {
-	readonly source: RowSource;
 	/** The core's own state: the columns, every row's values, and the view options. */
 	readonly table: TableState;
 	/** The columns, resolved: the descriptor a value has to be formatted and parsed with. */

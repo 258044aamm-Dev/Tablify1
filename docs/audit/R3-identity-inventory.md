@@ -22,7 +22,7 @@ Rule: `src/adapters/`, `src/core/fieldTypes/`, `src/core/`, `src/grid/`, `src/pl
 
 | File | Matches |
 | --- | --- |
-| `src/adapters/RowSource.ts` | filePath ×1, PropertyId ×4, propertyId ×3, RowSource ×2 |
+| `src/adapters/RowSource.ts` | filePath ×1, PropertyId ×3, propertyId ×2, RowSource ×1 |
 | `src/adapters/optimistic.ts` | filePath ×15, PropertyId ×5, propertyId ×11, RowSource ×1 |
 | `src/adapters/writeQueue.ts` | filePath ×4, PropertyId ×3, propertyId ×4, RowSource ×2, processFrontMatter ×6 |
 | `src/core/ops/apply.ts` | filePath ×34, PropertyId ×14 |
@@ -39,8 +39,8 @@ Rule: `src/adapters/`, `src/core/fieldTypes/`, `src/core/`, `src/grid/`, `src/pl
 | `src/grid/clipboard/matrix.ts` | filePath ×2 |
 | `src/grid/store/commands.ts` | filePath ×27, PropertyId ×4 |
 | `src/grid/store/selectors.ts` | filePath ×35, PropertyId ×7, propertyId ×2 |
-| `src/grid/store/store.ts` | filePath ×76, PropertyId ×12, propertyId ×23, RowSource ×4 |
-| `src/grid/store/types.ts` | filePath ×2, PropertyId ×3, propertyId ×1, RowSource ×3 |
+| `src/grid/store/store.ts` | filePath ×6, PropertyId ×3, propertyId ×5, RowSource ×1 |
+| `src/grid/store/types.ts` | filePath ×2, PropertyId ×3, propertyId ×1, RowSource ×1 |
 | `src/plugin/export/runExport.ts` | filePath ×2, PropertyId ×2 |
 
 ### `remote-record-id` — 3 file(s)
@@ -53,15 +53,12 @@ Rule: `src/sync/`
 | `src/sync/nativePort.ts` | filePath ×4, propertyId ×1, RowSource ×1 |
 | `src/sync/pullPush.ts` | filePath ×2, PropertyId ×3, RowSource ×1 |
 
-### `historical` — 14 file(s)
+### `historical` — 11 file(s)
 
 Rule: `tests/`
 
 | File | Matches |
 | --- | --- |
-| `tests/dom/store-render.test.ts` | filePath ×15 |
-| `tests/dom/store.test.ts` | filePath ×28, RowSource ×1 |
-| `tests/fakes/rowSource.ts` | filePath ×56, PropertyId ×19, propertyId ×30, RowSource ×5 |
 | `tests/fakes/syncLocal.ts` | filePath ×3, PropertyId ×2, RowSource ×1 |
 | `tests/fakes/vault.ts` | processFrontMatter ×9, metadataCache ×5, getFileCache ×4 |
 | `tests/mocks/obsidian.ts` | propertyId ×6, metadataCache ×2 |
@@ -85,12 +82,12 @@ Rule: `tests/unit/view-state.test.ts`, `tests/unit/value-vocabulary.test.ts`
 
 ## Totals
 
-39 files carry 714 marker occurrences.
+36 files carry 455 marker occurrences.
 
-- `replace`: 20 file(s), 420 occurrence(s)
+- `replace`: 20 file(s), 315 occurrence(s)
 - `host-path`: 0 file(s), 0 occurrence(s)
 - `remote-record-id`: 3 file(s), 13 occurrence(s)
-- `historical`: 14 file(s), 273 occurrence(s)
+- `historical`: 11 file(s), 119 occurrence(s)
 - `guard`: 2 file(s), 8 occurrence(s)
 - `native`: 0 file(s), 0 occurrence(s)
 

@@ -1,24 +1,15 @@
 /**
- * The `RowSource` port: what the grid knows about where rows live.
+ * The shared result and row-id types for writes.
  *
- * `docs/02-architecture.md` §the port gives the shape, and it is implemented here exactly — with three
- * naming decisions worth stating, because the prompt and the doc disagree slightly and the doc wins:
+ * Before R6 Slice 2b this file also held the `RowSource` port, which had two implementations (`bases` and
+ * `tabula-file`), both removed. What remains is what the native sync, the optimistic overlay and the write
+ * queue still use: the row id, the refusal and error shapes, and the apply result with its helpers. The file
+ * keeps its name for now; renaming it is a follow-up.
  *
- *  - the doc's flag is `writable`; the step prompt calls it `readonly`. Both exist: `writable` is the doc's
- *    name, and `readonly` is derived from it so a caller written against either spelling compiles.
- *  - the doc's `getSchema(): PropertySchema` is kept as the method name, and `PropertySchema` is defined
- *    here as the resolved column list the rest of the core already speaks (`ResolvedField[]`), because a
- *    second column type would be a second source of truth.
- *  - the doc's `apply(ops): Promise<ApplyResult>` is kept. `ApplyResult` reports partial success, which is
- *    the doc's requirement 2 ("all-or-nothing per file … partial success is reported, never hidden").
- *
- * This file imports nothing: no `obsidian`, no DOM, no React. The fixture source in the layout harness, the
- * fake vault in the tests and the real Bases adapter all satisfy the same structural type, and that is the
- * whole point of a port.
+ * This file imports nothing that touches the vault, the DOM or React.
  */
 import type { ResolvedField } from '../core/schema/propertySchema';
-import type { Op } from '../core/ops/types';
-import type { CellValue, PropertyId } from '../core/types';
+import type { PropertyId } from '../core/types';
 
 /** A row id. A `TFile` path in `BasesSource`; a row id inside a `.tabula` file. */
 export type RowId = string;
@@ -56,47 +47,6 @@ export type ApplyResult = {
 	readonly refused: readonly Refusal[];
 	readonly errors: readonly ApplyError[];
 };
-
-/** The port. Two implementations exist and only one is ever primary. */
-export interface RowSource {
-	readonly kind: 'bases' | 'tabula-file';
-	/** Per the doc. */
-	readonly writable: boolean;
-	/** The prompt's spelling of the same flag; `true` when a cell can be edited at all. */
-	readonly readonly: boolean;
-	/** Whether the source can add rows (a new note, a new row in a file). */
-	readonly canCreateRows: boolean;
-	/** Whether the source can remove rows. */
-	readonly canDeleteRows: boolean;
-
-	/** Column set, order, types and read-only flags. Cheap: called on every render pass. */
-	getSchema(): PropertySchema;
-
-	/** Rows in view order (already filtered/sorted/grouped by Bases or by `core/view`). */
-	getRows(): readonly RowId[];
-
-	/** Canonical value in core form. Must be O(1) and allocation-light: it runs for thousands of cells. */
-	getValue(row: RowId, propertyId: PropertyId): CellValue;
-
-	/** Human-facing label for a row: titles, conflict review, migration reports. */
-	getRowLabel(row: RowId): string;
-
-	/** The single mutation entry point. Applies atomically per file and reports per-file results. */
-	apply(ops: readonly Op[]): Promise<ApplyResult>;
-
-	/** Fires when the row set, a value, or the schema changed for any reason, including externally. */
-	subscribe(listener: () => void): () => void;
-
-	/** Resolves when every queued write has hit disk. Called on blur, view close and undo. */
-	flush(): Promise<void>;
-
-	/**
-	 * Releases everything the source holds: subscriptions, timers, queued writes. Called when the view
-	 * closes. The port needs it because the alternative — a source that keeps a vault listener alive after
-	 * its pane is gone — is the exact bug class `docs/02` §error handling bans.
-	 */
-	dispose(): void;
-}
 
 /** An empty result, for the paths that have nothing to report. */
 export const EMPTY_APPLY_RESULT: ApplyResult = {

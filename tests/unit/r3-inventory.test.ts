@@ -35,7 +35,9 @@ describe('the committed inventory matches the tree', () => {
 		// scan now sees 39 files. 30 is the line below which the scan has stopped seeing the tree; it is not a target.
 		expect(inventory.files.length).toBeGreaterThan(30);
 		const occurrences = inventory.files.reduce((sum, file) => sum + file.total, 0);
-		expect(occurrences).toBeGreaterThan(500);
+		// Floor was 500 while the grid store's legacy markers were shipped in the tree; R6 Slice 2b removed them,
+		// leaving 455. 300 is the line below which the scan has stopped seeing the tree; it is not a target.
+		expect(occurrences).toBeGreaterThan(300);
 	});
 });
 
