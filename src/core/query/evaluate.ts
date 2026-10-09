@@ -5,8 +5,8 @@
  * implemented and repeated in PROGRESS.md:
  *
  * 1. **An `unparsed` fragment never hides a row.** It evaluates to `true`, exactly as the old build dropped
- *    an unreadable token instead of failing the whole filter. The fragment is still *reported* — the errors
- *    from `parseQueryString` are what the UI shows — so the fix is visible without the grid going blank.
+ *    an unreadable token instead of failing the whole filter. The fragment is kept as an `unparsed` node,
+ *    so the filter never goes blank because of it.
  * 2. **A filter that names a column the view does not have is ignored** (true), not false: a saved `.base`
  *    filter that mentions a deleted column must not hide the whole table while the user re-adds it.
  * 3. **`not` is boolean negation, and `isNot` is not.** `not (Status = Done)` is true for a row whose

@@ -18,8 +18,9 @@
  *   budget, not a benchmark, and the machine it was measured on is named in PROGRESS.md.
  */
 import { describe, expect, it } from 'vitest';
-import type { QueryContext } from '../../src/core/query/ast';
-import { parseQueryString } from '../../src/core/query/parse';
+import type { Expr, QueryContext } from '../../src/core/query/ast';
+import { andOf, comparison, emptyOf } from '../../src/core/query/ast';
+import type { FilterOpId } from '../../src/core/types';
 import type { RowView } from '../../src/core/query/evaluate';
 import { resolveField } from '../../src/core/schema/propertySchema';
 import type { ResolvedField } from '../../src/core/schema/propertySchema';
@@ -32,14 +33,14 @@ const base = makeContext();
 /** The columns of the fixture view: enough shapes to sort, group and search differently. */
 const fields: readonly ResolvedField[] = [
 	resolveField(
-		{ id: 'note.Name', name: 'Name', source: 'note', fieldOptions: { type: 'text' } },
+		{ id: 'note.Name', name: 'Name', source: 'database', fieldOptions: { type: 'text' } },
 		base,
 	),
 	resolveField(
 		{
 			id: 'note.Status',
 			name: 'Status',
-			source: 'note',
+			source: 'database',
 			fieldOptions: {
 				type: 'singleSelect',
 				options: [
@@ -52,18 +53,18 @@ const fields: readonly ResolvedField[] = [
 		base,
 	),
 	resolveField(
-		{ id: 'note.Size', name: 'Size', source: 'note', fieldOptions: { type: 'number' } },
+		{ id: 'note.Size', name: 'Size', source: 'database', fieldOptions: { type: 'number' } },
 		base,
 	),
 	resolveField(
-		{ id: 'note.Due', name: 'Due', source: 'note', fieldOptions: { type: 'date' } },
+		{ id: 'note.Due', name: 'Due', source: 'database', fieldOptions: { type: 'date' } },
 		base,
 	),
 	resolveField(
 		{
 			id: 'note.Tags',
 			name: 'Tags',
-			source: 'note',
+			source: 'database',
 			fieldOptions: {
 				type: 'multiSelect',
 				options: [
@@ -77,6 +78,19 @@ const fields: readonly ResolvedField[] = [
 ];
 
 const ctx: QueryContext = { fields };
+
+/** A comparison whose operand is read by the column's own reader, the way a typed filter value is read. */
+function cmp(name: string, op: FilterOpId, text: string): Expr {
+	const field = fields.find((candidate) => candidate.definition.name === name);
+	if (field === undefined) {
+		throw new Error(`no column named "${name}" in the pipeline fixture`);
+	}
+	const parsed = field.descriptor.parsePlain(text, field.context);
+	if (!parsed.ok) {
+		throw new Error(`"${text}" does not read as ${name}`);
+	}
+	return comparison(field.definition.id, op, parsed.value);
+}
 
 function row(rowId: string, cells: Record<string, RowView['cells'][string]>): RowView {
 	return { rowId, cells };
@@ -120,7 +134,7 @@ const EMPTY_VIEW: ViewConfig = {};
 
 describe('filters, then search', () => {
 	it('applies the query before the search box, and reports both counts', () => {
-		const ast = parseQueryString('Status:Done', ctx).ast;
+		const ast = cmp('Status', 'is', 'Done');
 		const result = buildView({
 			fields,
 			rows,
@@ -394,13 +408,13 @@ describe('the pipeline is pure', () => {
 			fields,
 			rows,
 			view: config,
-			queryAst: parseQueryString('Size >= 2', ctx).ast,
+			queryAst: cmp('Size', 'gte', '2'),
 		});
 		const second = buildView({
 			fields,
 			rows,
 			view: config,
-			queryAst: parseQueryString('Size >= 2', ctx).ast,
+			queryAst: cmp('Size', 'gte', '2'),
 		});
 		expect(JSON.stringify({ rows, config })).toBe(before);
 		expect(paths(second)).toEqual(paths(first));
@@ -415,7 +429,7 @@ describe('the pipeline is pure', () => {
 			fields,
 			rows: empty,
 			view: {},
-			queryAst: parseQueryString('Name:empty', ctx).ast,
+			queryAst: emptyOf('note.Name'),
 		});
 		expect(paths(filtered)).toEqual(['Rows/empty.md']);
 		const sorted = buildView({
@@ -450,7 +464,7 @@ describe('the 5,000-row budget', () => {
 
 	it('filters, searches, sorts and groups 5,000 rows in under 50 ms', () => {
 		const many = stressRows(5_000);
-		const ast = parseQueryString('Status:Done and Size >= 10', ctx).ast;
+		const ast = andOf([cmp('Status', 'is', 'Done'), cmp('Size', 'gte', '10')]);
 		const view: ViewConfig = {
 			search: 'row 1',
 			sorts: [

@@ -24,7 +24,6 @@ import type {
 	FieldTypeId,
 	FilterOpId,
 	Parsed,
-	PropertyId,
 	CellValue,
 } from '../types';
 import { isFieldTypeId, parseFailed, parsed } from '../types';
@@ -32,10 +31,10 @@ import { getField } from '../fieldTypes';
 import { textField } from '../fieldTypes/text';
 
 /**
- * Where one transient query-layer property comes from. `database` is an adapter-only tag for native
- * `.tablify` fields; the native schema itself has no source/property-source field.
+ * Where one transient query-layer property comes from. The only source the shipped adapters produce is
+ * `database`, the tag for native `.tablify` fields; the native schema itself has no source field.
  */
-export type PropertySource = 'note' | 'file' | 'formula' | 'unknown' | 'database';
+export type PropertySource = 'database';
 
 /** A query-layer column projection, plus the raw options its adapter supplied. */
 export type PropertyDefinition = {
@@ -91,39 +90,6 @@ function isDurationUnit(value: string): value is DurationUnit {
 
 /** The result of validating untrusted options: what survived, and why the rest did not. */
 type ValidatedOptions = { readonly options: FieldOptions; readonly reasons: readonly string[] };
-
-/** Reads a property's name and source out of a Bases id, treating a bare name as a note property. */
-export function propertyFromBasesId(id: PropertyId): PropertyDefinition {
-	const separator = id.indexOf('.');
-	if (separator < 0) {
-		return { id, name: id, source: 'note' };
-	}
-	const prefix = id.slice(0, separator);
-	const name = id.slice(separator + 1);
-	if (prefix === 'file' || prefix === 'formula' || prefix === 'note') {
-		return { id, name, source: prefix };
-	}
-	return { id, name: id, source: 'unknown' };
-}
-
-/** Trimmed, lower-cased, punctuation-free form of a name, for comparing spellings across eras. */
-function normalizeName(name: string): string {
-	return name.toLowerCase().replace(/[\s_-]/g, '');
-}
-
-/**
- * Names that mean "created" and "modified" downstream of P11. Applied to `file.*` properties, and to note
- * properties only under the exact legacy spellings, so a note property called "Created" keeps its own
- * value rather than silently becoming file metadata.
- */
-const CREATED_NAMES: readonly string[] = ['ctime', 'created', 'createdtime', 'creationtime'];
-const MODIFIED_NAMES: readonly string[] = [
-	'mtime',
-	'modified',
-	'lastmodifiedtime',
-	'modificationtime',
-];
-const LEGACY_STORED_NAMES: readonly string[] = ['createdtime', 'lastmodifiedtime'];
 
 /** The `FieldOption`s in a raw `options` array: kept when usable, dropped with a reason when not. */
 function readOptions(raw: readonly unknown[], reasons: string[]): readonly FieldOption[] {
@@ -453,32 +419,11 @@ export const lastModifiedTimeField = createTimestampField(
 	'lucide-history',
 );
 
-/** The legacy file-metadata descriptor a property means, if it means one. */
-function fileTimeFieldFor(property: PropertyDefinition): FieldDescriptor | undefined {
-	const folded = normalizeName(property.name);
-	if (property.source === 'file') {
-		if (CREATED_NAMES.some((name) => name === folded)) {
-			return createdTimeField;
-		}
-		if (MODIFIED_NAMES.some((name) => name === folded)) {
-			return lastModifiedTimeField;
-		}
-		return undefined;
-	}
-	// A note property is only ever file metadata under the exact names P11 retired: anything else keeps its
-	// own value, because a note property called "Created" is a value the user typed.
-	if (property.source === 'note' && LEGACY_STORED_NAMES.some((name) => name === folded)) {
-		return folded === 'createdtime' ? createdTimeField : lastModifiedTimeField;
-	}
-	return undefined;
-}
-
 /**
  * Resolves a column to the descriptor that renders and writes it.
  *
- * Order: legacy file metadata → native row timestamp metadata → a declared type from the registry → `text`
- * with a reason. Legacy file/formula properties and a descriptor marked non-editable are read-only; ordinary
- * native database fields remain eligible for writes.
+ * Order: native row timestamp metadata → a declared type from the registry → `text` with a reason. A
+ * descriptor marked non-editable is read-only; ordinary native database fields remain eligible for writes.
  */
 export function resolveField(
 	property: PropertyDefinition,
@@ -489,30 +434,13 @@ export function resolveField(
 	const reasons = [...validated.reasons];
 	const context = fieldContextFor(property, ctx, validated.options);
 
-	const fileTime = fileTimeFieldFor(property);
-	if (fileTime !== undefined) {
-		reasons.push(
-			'read-only: the value is file metadata, so it is never stored in frontmatter (P11)',
-		);
-		return {
-			definition: property,
-			descriptor: fileTime,
-			readOnly: true,
-			reasons,
-			options: validated.options,
-			context,
-		};
-	}
-
 	const declared = validated.options.type;
 	const databaseTime =
-		property.source === 'database'
-			? declared === 'createdTime'
-				? createdTimeField
-				: declared === 'lastModifiedTime'
-					? lastModifiedTimeField
-					: undefined
-			: undefined;
+		declared === 'createdTime'
+			? createdTimeField
+			: declared === 'lastModifiedTime'
+				? lastModifiedTimeField
+				: undefined;
 	if (databaseTime !== undefined) {
 		reasons.push(
 			'read-only: this value comes from row metadata and is never stored in cells (R3 step 7)',
@@ -527,18 +455,13 @@ export function resolveField(
 		};
 	}
 
-	const readOnlyBySource = property.source !== 'note' && property.source !== 'database';
-	if (readOnlyBySource) {
-		reasons.push(`read-only: ${property.source} properties are not writable from the grid`);
-	}
-
 	if (declared !== undefined && isFieldTypeId(declared)) {
 		const found = lookup(declared);
 		if (found !== undefined) {
 			return {
 				definition: property,
 				descriptor: found,
-				readOnly: readOnlyBySource || !found.editable,
+				readOnly: !found.editable,
 				reasons,
 				options: validated.options,
 				context,
@@ -559,7 +482,7 @@ export function resolveField(
 	return {
 		definition: property,
 		descriptor: fallback,
-		readOnly: readOnlyBySource,
+		readOnly: false,
 		reasons,
 		options: validated.options,
 		context,

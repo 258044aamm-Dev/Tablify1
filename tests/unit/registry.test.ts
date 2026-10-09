@@ -122,7 +122,7 @@ describe('the fallback path', () => {
 			{
 				id: 'note.Status',
 				name: 'Status',
-				source: 'note',
+				source: 'database',
 				fieldOptions: { type: 'currency' },
 			},
 			ctx,
@@ -137,7 +137,7 @@ describe('the fallback path', () => {
 
 	it('resolves a type name that does not exist at all to text, with a different reason', () => {
 		const resolved = resolveField(
-			{ id: 'note.Thing', name: 'Thing', source: 'note', fieldOptions: { type: 'wat' } },
+			{ id: 'note.Thing', name: 'Thing', source: 'database', fieldOptions: { type: 'wat' } },
 			ctx,
 		);
 		expect(resolved.descriptor.id).toBe('text');
@@ -146,7 +146,7 @@ describe('the fallback path', () => {
 
 	it('treats the auto-numbering type P11 dropped as unknown rather than resurrecting it', () => {
 		const resolved = resolveField(
-			{ id: 'note.N', name: 'N', source: 'note', fieldOptions: { type: 'autoNumber' } },
+			{ id: 'note.N', name: 'N', source: 'database', fieldOptions: { type: 'autoNumber' } },
 			ctx,
 		);
 		expect(resolved.descriptor.id).toBe('text');
@@ -155,7 +155,7 @@ describe('the fallback path', () => {
 
 	it('still resolves to something renderable when the lookup knows nothing at all', () => {
 		const resolved = resolveField(
-			{ id: 'note.X', name: 'X', source: 'note' },
+			{ id: 'note.X', name: 'X', source: 'database' },
 			ctx,
 			() => undefined,
 		);

@@ -36,13 +36,13 @@ const fields: readonly ResolvedField[] = [
 		{
 			id: 'note.Status',
 			name: 'Status',
-			source: 'note',
+			source: 'database',
 			fieldOptions: { type: 'singleSelect' },
 		},
 		base,
 	),
 	resolveField(
-		{ id: 'note.Number', name: 'Number', source: 'note', fieldOptions: { type: 'number' } },
+		{ id: 'note.Number', name: 'Number', source: 'database', fieldOptions: { type: 'number' } },
 		base,
 	),
 ];

@@ -56,7 +56,7 @@ function echoing(recordIds: readonly string[]): TransportResponse {
 /** A resolved field, built the way the grid builds one. */
 function field(name: string, type: FieldTypeId = 'text'): ResolvedField {
 	return resolveField(
-		{ id: `note.${name}`, name, source: 'note', fieldOptions: { type } },
+		{ id: `note.${name}`, name, source: 'database', fieldOptions: { type } },
 		{ ...CONTEXT, columnName: name, fieldOptions: { type } },
 	);
 }

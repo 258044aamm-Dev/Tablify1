@@ -1,14 +1,13 @@
 /**
  * The schema layer's three jobs: validating untrusted `fieldOptions` (never throwing, always explaining),
- * resolving the two file-metadata columns that P11 made read-only, and deciding what descriptor a column
- * gets when its declared type is missing or unknown.
+ * resolving the two native row-timestamp columns (read-only, from row metadata), and deciding what descriptor
+ * a column gets when its declared type is missing or unknown.
  */
 import { describe, expect, it } from 'vitest';
 import {
 	createdTimeField,
 	fieldContextFor,
 	lastModifiedTimeField,
-	propertyFromBasesId,
 	resolveField,
 	validateFieldOptions,
 } from '../../src/core/schema/propertySchema';
@@ -17,39 +16,6 @@ import { makeContext } from './field-contract.suite';
 const ctx = makeContext();
 const INSTANT = '2025-09-24T06:26:40.000Z';
 const INSTANT_MS = Date.parse(INSTANT);
-
-describe('propertyFromBasesId', () => {
-	it('reads the source from the prefix', () => {
-		expect(propertyFromBasesId('note.Status')).toEqual({
-			id: 'note.Status',
-			name: 'Status',
-			source: 'note',
-		});
-		expect(propertyFromBasesId('file.name')).toEqual({
-			id: 'file.name',
-			name: 'name',
-			source: 'file',
-		});
-		expect(propertyFromBasesId('formula.Total')).toEqual({
-			id: 'formula.Total',
-			name: 'Total',
-			source: 'formula',
-		});
-	});
-
-	it('treats a bare name as a note property', () => {
-		expect(propertyFromBasesId('Status').source).toBe('note');
-		expect(propertyFromBasesId('Status').name).toBe('Status');
-	});
-
-	it('keeps an unrecognised prefix whole and marks it unknown, rather than guessing a name', () => {
-		expect(propertyFromBasesId('weird.thing')).toEqual({
-			id: 'weird.thing',
-			name: 'weird.thing',
-			source: 'unknown',
-		});
-	});
-});
 
 describe('validateFieldOptions', () => {
 	it('accepts an absent entry silently: a column with no options is normal', () => {
@@ -164,32 +130,37 @@ describe('validateFieldOptions', () => {
 	});
 });
 
-describe('the file-metadata columns P11 made read-only', () => {
-	it('resolves file.ctime to the created-time column, with the reason recorded', () => {
-		const resolved = resolveField(propertyFromBasesId('file.ctime'), ctx);
-		expect(resolved.descriptor).toBe(createdTimeField);
-		expect(resolved.readOnly).toBe(true);
-		expect(resolved.reasons.join(' | ')).toContain('read-only: the value is file metadata');
-	});
-
-	it('resolves file.mtime, and the legacy note properties, to the same columns', () => {
-		expect(resolveField(propertyFromBasesId('file.mtime'), ctx).descriptor).toBe(
-			lastModifiedTimeField,
+describe('the native row-timestamp columns, read-only from row metadata', () => {
+	it('resolves a native createdTime and lastModifiedTime column to the timestamp descriptors', () => {
+		const created = resolveField(
+			{
+				id: 'createdTime',
+				name: 'Created',
+				source: 'database',
+				fieldOptions: { type: 'createdTime' },
+			},
+			ctx,
 		);
-		expect(
-			resolveField({ id: 'note.createdTime', name: 'createdTime', source: 'note' }, ctx)
-				.descriptor,
-		).toBe(createdTimeField);
-		expect(
-			resolveField(
-				{ id: 'note.lastModifiedTime', name: 'lastModifiedTime', source: 'note' },
-				ctx,
-			).descriptor,
-		).toBe(lastModifiedTimeField);
+		expect(created.descriptor).toBe(createdTimeField);
+		expect(created.readOnly).toBe(true);
+		expect(created.reasons.join(' | ')).toContain(
+			'read-only: this value comes from row metadata',
+		);
+		const modified = resolveField(
+			{
+				id: 'lastModifiedTime',
+				name: 'Modified',
+				source: 'database',
+				fieldOptions: { type: 'lastModifiedTime' },
+			},
+			ctx,
+		);
+		expect(modified.descriptor).toBe(lastModifiedTimeField);
+		expect(modified.readOnly).toBe(true);
 	});
 
-	it('does not claim a note property named "Created": that is a value the user typed', () => {
-		const resolved = resolveField({ id: 'note.Created', name: 'Created', source: 'note' }, ctx);
+	it('does not claim a column named "Created": that is a value the user typed', () => {
+		const resolved = resolveField({ id: 'Created', name: 'Created', source: 'database' }, ctx);
 		expect(resolved.descriptor.id).toBe('text');
 		expect(resolved.readOnly).toBe(false);
 		expect(resolved.reasons.join(' | ')).toContain('no field type declared');
@@ -266,10 +237,10 @@ describe('the file-metadata columns P11 made read-only', () => {
 	});
 });
 
-describe('resolveField, source by source', () => {
-	it('leaves a note column editable', () => {
+describe('resolveField, for a native column', () => {
+	it('leaves a native column editable', () => {
 		const resolved = resolveField(
-			{ id: 'note.Notes', name: 'Notes', source: 'note', fieldOptions: { type: 'text' } },
+			{ id: 'Notes', name: 'Notes', source: 'database', fieldOptions: { type: 'text' } },
 			ctx,
 		);
 		expect(resolved.descriptor.id).toBe('text');
@@ -277,33 +248,12 @@ describe('resolveField, source by source', () => {
 		expect(resolved.reasons).toEqual([]);
 	});
 
-	it('marks a file and a formula column read-only, whatever type it resolves to', () => {
-		for (const [id, source] of [
-			['file.name', 'file'],
-			['formula.Total', 'formula'],
-		] as const) {
-			const resolved = resolveField({ id, name: id.slice(id.indexOf('.') + 1), source }, ctx);
-			expect(resolved.readOnly, `${id} must be read-only`).toBe(true);
-			expect(resolved.reasons.join(' | '), `${id} must say why`).toContain(
-				'not writable from the grid',
-			);
-		}
-	});
-
-	it('marks an unmapped property read-only, since nothing knows how to write it', () => {
-		const resolved = resolveField(propertyFromBasesId('weird.thing'), ctx);
-		expect(resolved.readOnly).toBe(true);
-		expect(resolved.reasons.join(' ')).toContain(
-			'unknown properties are not writable from the grid',
-		);
-	});
-
 	it('carries the validated options and the column name into the descriptor context', () => {
 		const resolved = resolveField(
 			{
-				id: 'note.Notes',
+				id: 'Notes',
 				name: 'Notes',
-				source: 'note',
+				source: 'database',
 				fieldOptions: { type: 'text', max: 5, wat: true },
 			},
 			ctx,
@@ -318,7 +268,7 @@ describe('resolveField, source by source', () => {
 
 describe('fieldContextFor', () => {
 	it('replaces the column name and options and keeps everything else', () => {
-		const property = propertyFromBasesId('note.Status');
+		const property = { id: 'Status', name: 'Status', source: 'database' } as const;
 		const context = fieldContextFor(property, ctx, { max: 3 });
 		expect(context.columnName).toBe('Status');
 		expect(context.fieldOptions).toEqual({ max: 3 });

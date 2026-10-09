@@ -57,7 +57,7 @@ function field(
 	options: Record<string, unknown> = {},
 ): ResolvedField {
 	return resolveField(
-		{ id: `note.${name}`, name, source: 'note', fieldOptions: { type, ...options } },
+		{ id: `note.${name}`, name, source: 'database', fieldOptions: { type, ...options } },
 		{ ...CONTEXT, columnName: name, fieldOptions: { type, ...options } },
 	);
 }

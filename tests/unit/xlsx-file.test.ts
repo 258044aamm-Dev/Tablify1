@@ -40,7 +40,7 @@ const CONTEXT = {
 
 function field(name: string, type: FieldTypeId, options: Record<string, unknown> = {}) {
 	return resolveField(
-		{ id: `note.${name}`, name, source: 'note', fieldOptions: { type, ...options } },
+		{ id: `note.${name}`, name, source: 'database', fieldOptions: { type, ...options } },
 		{ ...CONTEXT, fieldOptions: { type, ...options }, columnName: name },
 	);
 }
